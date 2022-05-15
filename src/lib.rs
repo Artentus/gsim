@@ -25,10 +25,10 @@ pub struct ComponentId(u64);
 pub struct WireId(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
+#[repr(u32)]
 pub enum LogicState {
-    Undefined = 0,
-    HighZ = 1,
+    HighZ = 0,
+    Undefined = 1,
     Logic0 = 2,
     Logic1 = 3,
 }
@@ -41,16 +41,21 @@ impl LogicState {
             Self::Logic1 => '1',
         }
     }
+
+    #[inline]
+    const fn is_valid(v: u32) -> bool {
+        v <= 3
+    }
 }
 impl const Default for LogicState {
     #[inline]
     fn default() -> Self {
-        Self::Undefined
+        Self::HighZ
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
+#[repr(u32)]
 pub enum OutputStrength {
     Weak = 0,
     Strong = 1,
@@ -185,6 +190,11 @@ impl Wire {
     }
 
     #[inline]
+    pub const fn state(&self) -> LogicState {
+        self.state
+    }
+
+    #[inline]
     pub fn add_driver(&mut self, component: ComponentId, output_index: (u32, u32)) -> bool {
         self.drivers.insert(Driver {
             component,
@@ -261,7 +271,6 @@ pub struct Simulator {
     wires: AHashMap<WireId, Wire>,
 }
 impl Simulator {
-    #[inline]
     pub fn new() -> Self {
         Self {
             next_component_id: ComponentId(0),

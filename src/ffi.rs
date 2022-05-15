@@ -1,5 +1,6 @@
 use super::components::*;
 use super::*;
+use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -57,7 +58,7 @@ impl std::fmt::Display for Bool32 {
 pub enum Result {
     Success = 0,
     DriverAlreadyPresent = 1,
-    DriverDoesNotExist = 2,
+    DriverNotPresent = 2,
 
     NullPointerError = -1,
     InvalidComponentIdError = -2,
@@ -65,22 +66,39 @@ pub enum Result {
     InvalidComponentConfigurationError = -4,
     InvalidOutputIndexError = -5,
     ConflictError = -6,
+    InvalidLogicStateError = -7,
+}
+
+pub struct FfiSimulator {
+    simulator: Simulator,
+    input_pins: AHashMap<ComponentId, Arc<InputPin>>,
+    output_pins: AHashMap<ComponentId, Arc<OutputPin>>,
+}
+impl FfiSimulator {
+    #[inline]
+    fn new() -> Self {
+        Self {
+            simulator: Simulator::new(),
+            input_pins: AHashMap::new(),
+            output_pins: AHashMap::new(),
+        }
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn simulator_create(out_simulator: *mut *mut Simulator) -> Result {
+pub unsafe extern "cdecl" fn simulator_create(out_simulator: *mut *mut FfiSimulator) -> Result {
     if out_simulator.is_null() {
         return Result::NullPointerError;
     }
 
-    let simulator = Box::new(Simulator::new());
+    let simulator = Box::new(FfiSimulator::new());
     let ptr = Box::into_raw(simulator);
     (*out_simulator) = ptr;
     Result::Success
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn simulator_destroy(simulator: *mut Simulator) -> Result {
+pub unsafe extern "cdecl" fn simulator_destroy(simulator: *mut FfiSimulator) -> Result {
     if simulator.is_null() {
         return Result::NullPointerError;
     }
@@ -125,23 +143,31 @@ pub struct ComponentCreateInfo {
 }
 
 macro_rules! unary_behaviour {
-    ($op:ty, $create_info:expr) => {
+    ($op:ty, $create_info:expr) => {{
+        if $create_info.width == 0 {
+            return Result::InvalidComponentConfigurationError;
+        }
+
         Box::new(UnaryBehaviour::<$op>::new($create_info.width))
-    };
+    }};
 }
 
 macro_rules! binary_behaviour {
-    ($op:ty, $create_info:expr) => {
+    ($op:ty, $create_info:expr) => {{
+        if ($create_info.width == 0) {
+            return Result::InvalidComponentConfigurationError;
+        }
+
         Box::new(BinaryBehaviour::<$op>::new(
             $create_info.width,
             $create_info.input_count,
         ))
-    };
+    }};
 }
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn simulator_add_component(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     create_info: ComponentCreateInfo,
     out_id: *mut ComponentId,
 ) -> Result {
@@ -152,9 +178,17 @@ pub unsafe extern "cdecl" fn simulator_add_component(
     let behaviour: Box<dyn ComponentBehaviour> = match create_info.kind {
         ComponentKind::CONSTANT => match create_info.sub_kind {
             ComponentSubKind::CONSTANT_PULL_DOWN => {
+                if create_info.width == 0 {
+                    return Result::InvalidComponentConfigurationError;
+                }
+
                 Box::new(ConstantBehaviour::new_pull_down(create_info.width))
             }
             ComponentSubKind::CONSTANT_PULL_UP => {
+                if create_info.width == 0 {
+                    return Result::InvalidComponentConfigurationError;
+                }
+
                 Box::new(ConstantBehaviour::new_pull_up(create_info.width))
             }
             _ => return Result::InvalidComponentConfigurationError,
@@ -176,21 +210,56 @@ pub unsafe extern "cdecl" fn simulator_add_component(
     };
 
     let component = Component::new(behaviour);
-    let id = (*simulator).add_component(component);
+    let id = (*simulator).simulator.add_component(component);
+    (*out_id) = id;
+    Result::Success
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn simulator_add_input_pin(
+    simulator: *mut FfiSimulator,
+    width: u32,
+    out_id: *mut ComponentId,
+) -> Result {
+    let pin = InputPin::new(width);
+    let behaviour: Box<dyn ComponentBehaviour> = Box::new(InputPinBehaviour::new(Arc::clone(&pin)));
+
+    let component = Component::new(behaviour);
+    let id = (*simulator).simulator.add_component(component);
+    (*simulator).input_pins.insert(id, pin);
+    (*out_id) = id;
+    Result::Success
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn simulator_add_output_pin(
+    simulator: *mut FfiSimulator,
+    width: u32,
+    out_id: *mut ComponentId,
+) -> Result {
+    let pin = OutputPin::new(width);
+    let behaviour: Box<dyn ComponentBehaviour> =
+        Box::new(OutputPinBehaviour::new(Arc::clone(&pin)));
+
+    let component = Component::new(behaviour);
+    let id = (*simulator).simulator.add_component(component);
+    (*simulator).output_pins.insert(id, pin);
     (*out_id) = id;
     Result::Success
 }
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn simulator_remove_component(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     id: ComponentId,
 ) -> Result {
     if simulator.is_null() {
         return Result::NullPointerError;
     }
 
-    if (*simulator).remove_component(id).is_some() {
+    if (*simulator).simulator.remove_component(id).is_some() {
+        (*simulator).input_pins.remove(&id);
+        (*simulator).output_pins.remove(&id);
         Result::Success
     } else {
         Result::InvalidComponentIdError
@@ -199,7 +268,7 @@ pub unsafe extern "cdecl" fn simulator_remove_component(
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn simulator_add_wire(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     out_id: *mut WireId,
 ) -> Result {
     if simulator.is_null() || out_id.is_null() {
@@ -207,21 +276,21 @@ pub unsafe extern "cdecl" fn simulator_add_wire(
     }
 
     let wire = Wire::new();
-    let id = (*simulator).add_wire(wire);
+    let id = (*simulator).simulator.add_wire(wire);
     (*out_id) = id;
     Result::Success
 }
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn simulator_remove_wire(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     id: WireId,
 ) -> Result {
     if simulator.is_null() {
         return Result::NullPointerError;
     }
 
-    if (*simulator).remove_wire(id).is_some() {
+    if (*simulator).simulator.remove_wire(id).is_some() {
         Result::Success
     } else {
         Result::InvalidWireIdError
@@ -230,14 +299,14 @@ pub unsafe extern "cdecl" fn simulator_remove_wire(
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn simulator_step(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     out_changed: *mut Bool32,
 ) -> Result {
     if simulator.is_null() {
         return Result::NullPointerError;
     }
 
-    match (*simulator).step() {
+    match (*simulator).simulator.step() {
         Ok(changed) => {
             (*out_changed) = changed.into();
             Result::Success
@@ -253,7 +322,7 @@ pub unsafe extern "cdecl" fn simulator_step(
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn component_connect_input(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     component_id: ComponentId,
     input_index: u32,
     wire_count: u32,
@@ -263,7 +332,7 @@ pub unsafe extern "cdecl" fn component_connect_input(
         return Result::NullPointerError;
     }
 
-    if let Some(component) = (*simulator).get_component_mut(component_id) {
+    if let Some(component) = (*simulator).simulator.get_component_mut(component_id) {
         let wires = std::slice::from_raw_parts(wires, wire_count as usize);
         component.connect_input(input_index, wires);
         Result::Success
@@ -274,7 +343,7 @@ pub unsafe extern "cdecl" fn component_connect_input(
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn component_disconnect_input(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     component_id: ComponentId,
     input_index: u32,
 ) -> Result {
@@ -282,7 +351,7 @@ pub unsafe extern "cdecl" fn component_disconnect_input(
         return Result::NullPointerError;
     }
 
-    if let Some(component) = (*simulator).get_component_mut(component_id) {
+    if let Some(component) = (*simulator).simulator.get_component_mut(component_id) {
         component.disconnect_input(input_index);
         Result::Success
     } else {
@@ -291,8 +360,73 @@ pub unsafe extern "cdecl" fn component_disconnect_input(
 }
 
 #[no_mangle]
+pub unsafe extern "cdecl" fn input_pin_set(
+    simulator: *mut FfiSimulator,
+    component_id: ComponentId,
+    state_count: u32,
+    states: *const u32,
+) -> Result {
+    if simulator.is_null() || states.is_null() {
+        return Result::NullPointerError;
+    }
+
+    if let Some(pin) = (*simulator).input_pins.get(&component_id) {
+        let state = std::slice::from_raw_parts(states, state_count as usize);
+        for s in state.iter().copied() {
+            if !LogicState::is_valid(s) {
+                return Result::InvalidLogicStateError;
+            }
+        }
+
+        let state = std::slice::from_raw_parts(states as *const LogicState, state_count as usize);
+        pin.set(state);
+        Result::Success
+    } else {
+        Result::InvalidComponentIdError
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn output_pin_get(
+    simulator: *mut FfiSimulator,
+    component_id: ComponentId,
+    state_count: u32,
+    states: *mut LogicState,
+) -> Result {
+    if simulator.is_null() || states.is_null() {
+        return Result::NullPointerError;
+    }
+
+    if let Some(pin) = (*simulator).output_pins.get(&component_id) {
+        let state = std::slice::from_raw_parts_mut(states, state_count as usize);
+        pin.get(state);
+        Result::Success
+    } else {
+        Result::InvalidComponentIdError
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn wire_get_state(
+    simulator: *mut FfiSimulator,
+    wire_id: WireId,
+    out_state: *mut LogicState,
+) -> Result {
+    if simulator.is_null() || out_state.is_null() {
+        return Result::NullPointerError;
+    }
+
+    if let Some(wire) = (*simulator).simulator.get_wire(wire_id) {
+        (*out_state) = wire.state();
+        Result::Success
+    } else {
+        Result::InvalidWireIdError
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "cdecl" fn wire_add_driver(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     wire_id: WireId,
     component: ComponentId,
     output_index: u32,
@@ -302,11 +436,11 @@ pub unsafe extern "cdecl" fn wire_add_driver(
         return Result::NullPointerError;
     }
 
-    if let Some(wire) = (*simulator).get_wire_mut(wire_id) {
+    if let Some(wire) = (*simulator).simulator.get_wire_mut(wire_id) {
         if wire.add_driver(component, (output_index, output_sub_index)) {
-            Result::DriverAlreadyPresent
-        } else {
             Result::Success
+        } else {
+            Result::DriverAlreadyPresent
         }
     } else {
         Result::InvalidWireIdError
@@ -315,7 +449,7 @@ pub unsafe extern "cdecl" fn wire_add_driver(
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn wire_remove_driver(
-    simulator: *mut Simulator,
+    simulator: *mut FfiSimulator,
     wire_id: WireId,
     component: ComponentId,
     output_index: u32,
@@ -325,11 +459,11 @@ pub unsafe extern "cdecl" fn wire_remove_driver(
         return Result::NullPointerError;
     }
 
-    if let Some(wire) = (*simulator).get_wire_mut(wire_id) {
+    if let Some(wire) = (*simulator).simulator.get_wire_mut(wire_id) {
         if wire.remove_driver(component, (output_index, output_sub_index)) {
-            Result::DriverDoesNotExist
-        } else {
             Result::Success
+        } else {
+            Result::DriverNotPresent
         }
     } else {
         Result::InvalidWireIdError

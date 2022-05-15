@@ -1,6 +1,7 @@
-use std::marker::PhantomData;
-
 use super::*;
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::Arc;
 
 pub struct ConstantBehaviour {
     state: Box<[LogicState]>,
@@ -12,6 +13,8 @@ impl ConstantBehaviour {
     pub const fn new(state: Box<[LogicState]>, strength: OutputStrength) -> Self {
         assert!(state.len() <= (u32::MAX as usize));
         let width = state.len() as u32;
+        assert!(width > 0);
+
         Self {
             state,
             strength,
@@ -224,6 +227,7 @@ impl<Op: UnaryOperation> UnaryBehaviour<Op> {
     #[inline]
     pub const fn new(width: u32) -> Self {
         assert!(width > 0);
+
         Self {
             outputs: [width],
             inputs: [width],
@@ -307,5 +311,159 @@ impl<Op: BinaryOperation> ComponentBehaviour for BinaryBehaviour<Op> {
         }
 
         Ok(changed)
+    }
+}
+
+#[repr(transparent)]
+struct AtomicLogicState(AtomicU8);
+impl AtomicLogicState {
+    #[inline]
+    pub fn new_array(val: LogicState, n: usize) -> Box<[AtomicLogicState]> {
+        let u8_array = vec![(val as u32) as u8; n].into_boxed_slice();
+        let u8_raw = Box::into_raw(u8_array);
+
+        unsafe {
+            let atomic_raw = u8_raw as *mut [AtomicLogicState];
+            Box::from_raw(atomic_raw)
+        }
+    }
+
+    #[inline]
+    pub fn load(&self, order: Ordering) -> LogicState {
+        unsafe { std::mem::transmute(self.0.load(order) as u32) }
+    }
+
+    #[inline]
+    pub fn store(&self, val: LogicState, order: Ordering) {
+        self.0.store((val as u32) as u8, order);
+    }
+}
+
+pub struct InputPin {
+    state: Box<[AtomicLogicState]>,
+    changed: AtomicBool,
+}
+impl InputPin {
+    pub fn new(width: u32) -> Arc<Self> {
+        assert!(width > 0);
+
+        Arc::new(Self {
+            state: AtomicLogicState::new_array(LogicState::HighZ, width as usize),
+            changed: AtomicBool::new(false),
+        })
+    }
+
+    #[inline]
+    pub fn width(&self) -> u32 {
+        self.state.len() as u32
+    }
+
+    pub fn set(&self, state: &[LogicState]) {
+        for (i, s) in self.state.iter().enumerate() {
+            s.store(
+                state.get(i).copied().unwrap_or(LogicState::HighZ),
+                Ordering::Relaxed,
+            );
+        }
+
+        self.changed.store(true, Ordering::Relaxed);
+    }
+}
+
+pub struct InputPinBehaviour {
+    pin: Arc<InputPin>,
+    outputs: [u32; 1],
+}
+impl InputPinBehaviour {
+    pub fn new(pin: Arc<InputPin>) -> Self {
+        let outputs = [pin.width()];
+
+        Self { pin, outputs }
+    }
+}
+impl ComponentBehaviour for InputPinBehaviour {
+    fn output_configuration(&self) -> &[u32] {
+        &self.outputs
+    }
+
+    fn input_configuration(&self) -> &[u32] {
+        &[]
+    }
+
+    fn update(
+        &mut self,
+        outputs: &mut [Output],
+        _inputs: &[Box<[LogicState]>],
+    ) -> SimulationResult<bool> {
+        let changed = (outputs[0].strength != OutputStrength::Strong)
+            | self.pin.changed.swap(false, Ordering::Relaxed);
+        outputs[0].strength = OutputStrength::Strong;
+
+        for (i, state) in outputs[0].state.iter_mut().enumerate() {
+            *state = self.pin.state[i].load(Ordering::Relaxed);
+        }
+
+        Ok(changed)
+    }
+}
+
+pub struct OutputPin {
+    state: Box<[AtomicLogicState]>,
+}
+impl OutputPin {
+    pub fn new(width: u32) -> Arc<Self> {
+        assert!(width > 0);
+
+        Arc::new(Self {
+            state: AtomicLogicState::new_array(LogicState::HighZ, width as usize),
+        })
+    }
+
+    #[inline]
+    pub fn width(&self) -> u32 {
+        self.state.len() as u32
+    }
+
+    pub fn get(&self, state: &mut [LogicState]) {
+        for (i, s) in state.iter_mut().enumerate() {
+            (*s) = self
+                .state
+                .get(i)
+                .map(|a| a.load(Ordering::Relaxed))
+                .unwrap_or(LogicState::HighZ);
+        }
+    }
+}
+
+pub struct OutputPinBehaviour {
+    pin: Arc<OutputPin>,
+    inputs: [u32; 1],
+}
+impl OutputPinBehaviour {
+    pub fn new(pin: Arc<OutputPin>) -> Self {
+        let inputs = [pin.width()];
+
+        Self { pin, inputs }
+    }
+}
+impl ComponentBehaviour for OutputPinBehaviour {
+    fn output_configuration(&self) -> &[u32] {
+        &[]
+    }
+
+    fn input_configuration(&self) -> &[u32] {
+        &self.inputs
+    }
+
+    fn update(
+        &mut self,
+        _outputs: &mut [Output],
+        inputs: &[Box<[LogicState]>],
+    ) -> SimulationResult<bool> {
+        for (i, s) in self.pin.state.iter().enumerate() {
+            s.store(inputs[0][i], Ordering::Relaxed);
+        }
+
+        Ok(false)
     }
 }
