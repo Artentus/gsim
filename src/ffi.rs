@@ -1,471 +1,361 @@
-use super::components::*;
-use super::*;
-use std::sync::Arc;
+use crate::*;
 
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub struct Bool32(u32);
-impl const From<bool> for Bool32 {
-    #[inline]
-    fn from(b: bool) -> Self {
-        if b {
-            Self(1)
-        } else {
-            Self(0)
-        }
-    }
-}
-impl const Into<bool> for Bool32 {
-    #[inline]
-    fn into(self) -> bool {
-        self.0 > 0
-    }
-}
-impl const PartialEq for Bool32 {
-    #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        (self.0 > 0) == (other.0 > 0)
-    }
-}
-impl const PartialEq<bool> for Bool32 {
-    #[inline]
-    fn eq(&self, other: &bool) -> bool {
-        (self.0 > 0) == *other
-    }
-}
-impl Eq for Bool32 {}
-impl std::hash::Hash for Bool32 {
-    #[inline]
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        (self.0 > 0).hash(state);
-    }
-}
-impl std::fmt::Debug for Bool32 {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&(self.0 > 0), f)
-    }
-}
-impl std::fmt::Display for Bool32 {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Display::fmt(&(self.0 > 0), f)
-    }
+pub type Result = u32;
+
+pub const SUCCESS: Result = 0x00_000000;
+const GENERAL_ERROR: Result = 0x01_000000;
+const SPECIFIC_ERROR: Result = 0x02_000000;
+
+// Simulation-specific results
+pub const SIMULATION_UNCHANGED: Result = SUCCESS + 0;
+pub const SIMULATION_CHANGED: Result = SUCCESS + 1;
+
+pub const MAX_STEPS_REACHED: Result = SUCCESS + 1;
+
+// General errors
+pub const NULL_POINTER_ERROR: Result = GENERAL_ERROR + 0;
+pub const ARGUMENT_OUT_OF_RANGE_ERROR: Result = GENERAL_ERROR + 1;
+
+// Component-specific erros
+pub const WIRE_WIDTH_MISMATCH_ERROR: Result = SPECIFIC_ERROR + 0;
+pub const WIRE_WIDTH_INCOMPATIBLE_ERROR: Result = SPECIFIC_ERROR + 1;
+pub const OFFSET_OUT_OF_RANGE_ERROR: Result = SPECIFIC_ERROR + 2;
+
+// Simulation-specific errors
+pub const SIMULATION_ERROR: Result = SPECIFIC_ERROR + 0;
+
+fn boxed_slice_into_raw_parts<T>(b: Box<[T]>) -> (*mut T, usize) {
+    let slice = Box::leak(b);
+    let data = slice.as_mut_ptr();
+    let len = slice.len();
+    (data, len)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(i32)]
-pub enum Result {
-    Success = 0,
-    DriverAlreadyPresent = 1,
-    DriverNotPresent = 2,
-
-    NullPointerError = -1,
-    InvalidComponentIdError = -2,
-    InvalidWireIdError = -3,
-    InvalidComponentConfigurationError = -4,
-    InvalidOutputIndexError = -5,
-    ConflictError = -6,
-    InvalidLogicStateError = -7,
-}
-
-pub struct FfiSimulator {
-    simulator: Simulator,
-    input_pins: AHashMap<ComponentId, Arc<InputPin>>,
-    output_pins: AHashMap<ComponentId, Arc<OutputPin>>,
-}
-impl FfiSimulator {
-    #[inline]
-    fn new() -> Self {
-        Self {
-            simulator: Simulator::new(),
-            input_pins: AHashMap::new(),
-            output_pins: AHashMap::new(),
-        }
-    }
+unsafe fn boxed_slice_from_raw_parts<T>(data: *mut T, len: usize) -> Box<[T]> {
+    let slice = std::slice::from_raw_parts_mut(data, len);
+    Box::from_raw(slice)
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn simulator_create(out_simulator: *mut *mut FfiSimulator) -> Result {
-    if out_simulator.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let simulator = Box::new(FfiSimulator::new());
-    let ptr = Box::into_raw(simulator);
-    (*out_simulator) = ptr;
-    Result::Success
-}
-
-#[no_mangle]
-pub unsafe extern "cdecl" fn simulator_destroy(simulator: *mut FfiSimulator) -> Result {
-    if simulator.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let simulator = Box::from_raw(simulator);
-    std::mem::drop(simulator);
-    Result::Success
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct ComponentKind(u32);
-impl ComponentKind {
-    const CONSTANT: Self = Self(0);
-    const UNARY: Self = Self(1);
-    const BINARY: Self = Self(2);
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(transparent)]
-pub struct ComponentSubKind(u32);
-impl ComponentSubKind {
-    const CONSTANT_PULL_DOWN: Self = Self(0);
-    const CONSTANT_PULL_UP: Self = Self(1);
-
-    const UNARY_NOT: Self = Self(0);
-
-    const BINARY_AND: Self = Self(0);
-    const BINARY_NAND: Self = Self(1);
-    const BINARY_OR: Self = Self(2);
-    const BINARY_NOR: Self = Self(3);
-    const BINARY_XOR: Self = Self(4);
-    const BINARY_XNOR: Self = Self(5);
-}
-
-#[repr(C)]
-pub struct ComponentCreateInfo {
-    kind: ComponentKind,
-    sub_kind: ComponentSubKind,
-    width: u32,
-    input_count: u32,
-}
-
-macro_rules! unary_behaviour {
-    ($op:ty, $create_info:expr) => {{
-        if $create_info.width == 0 {
-            return Result::InvalidComponentConfigurationError;
-        }
-
-        Box::new(UnaryBehaviour::<$op>::new($create_info.width))
-    }};
-}
-
-macro_rules! binary_behaviour {
-    ($op:ty, $create_info:expr) => {{
-        if ($create_info.width == 0) {
-            return Result::InvalidComponentConfigurationError;
-        }
-
-        Box::new(BinaryBehaviour::<$op>::new(
-            $create_info.width,
-            $create_info.input_count,
-        ))
-    }};
-}
-
-#[no_mangle]
-pub unsafe extern "cdecl" fn simulator_add_component(
-    simulator: *mut FfiSimulator,
-    create_info: ComponentCreateInfo,
-    out_id: *mut ComponentId,
-) -> Result {
-    if simulator.is_null() || out_id.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let behaviour: Box<dyn ComponentBehaviour> = match create_info.kind {
-        ComponentKind::CONSTANT => match create_info.sub_kind {
-            ComponentSubKind::CONSTANT_PULL_DOWN => {
-                if create_info.width == 0 {
-                    return Result::InvalidComponentConfigurationError;
-                }
-
-                Box::new(ConstantBehaviour::new_pull_down(create_info.width))
-            }
-            ComponentSubKind::CONSTANT_PULL_UP => {
-                if create_info.width == 0 {
-                    return Result::InvalidComponentConfigurationError;
-                }
-
-                Box::new(ConstantBehaviour::new_pull_up(create_info.width))
-            }
-            _ => return Result::InvalidComponentConfigurationError,
-        },
-        ComponentKind::UNARY => match create_info.sub_kind {
-            ComponentSubKind::UNARY_NOT => unary_behaviour!(Not, create_info),
-            _ => return Result::InvalidComponentConfigurationError,
-        },
-        ComponentKind::BINARY => match create_info.sub_kind {
-            ComponentSubKind::BINARY_AND => binary_behaviour!(And, create_info),
-            ComponentSubKind::BINARY_NAND => binary_behaviour!(Nand, create_info),
-            ComponentSubKind::BINARY_OR => binary_behaviour!(Or, create_info),
-            ComponentSubKind::BINARY_NOR => binary_behaviour!(Nor, create_info),
-            ComponentSubKind::BINARY_XOR => binary_behaviour!(Xor, create_info),
-            ComponentSubKind::BINARY_XNOR => binary_behaviour!(Xnor, create_info),
-            _ => return Result::InvalidComponentConfigurationError,
-        },
-        _ => return Result::InvalidComponentConfigurationError,
+pub unsafe extern "cdecl" fn simulator_create(simulator: *mut *mut Simulator) -> Result {
+    let Some(simulator) = simulator.as_uninit_mut() else {
+        return NULL_POINTER_ERROR;
     };
 
-    let component = Component::new(behaviour);
-    let id = (*simulator).simulator.add_component(component);
-    (*out_id) = id;
-    Result::Success
+    let boxed_simulator = Box::new(Simulator::new());
+    simulator.write(Box::into_raw(boxed_simulator));
+    SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn simulator_add_input_pin(
-    simulator: *mut FfiSimulator,
-    width: u32,
-    out_id: *mut ComponentId,
-) -> Result {
-    let pin = InputPin::new(width);
-    let behaviour: Box<dyn ComponentBehaviour> = Box::new(InputPinBehaviour::new(Arc::clone(&pin)));
-
-    let component = Component::new(behaviour);
-    let id = (*simulator).simulator.add_component(component);
-    (*simulator).input_pins.insert(id, pin);
-    (*out_id) = id;
-    Result::Success
-}
-
-#[no_mangle]
-pub unsafe extern "cdecl" fn simulator_add_output_pin(
-    simulator: *mut FfiSimulator,
-    width: u32,
-    out_id: *mut ComponentId,
-) -> Result {
-    let pin = OutputPin::new(width);
-    let behaviour: Box<dyn ComponentBehaviour> =
-        Box::new(OutputPinBehaviour::new(Arc::clone(&pin)));
-
-    let component = Component::new(behaviour);
-    let id = (*simulator).simulator.add_component(component);
-    (*simulator).output_pins.insert(id, pin);
-    (*out_id) = id;
-    Result::Success
-}
-
-#[no_mangle]
-pub unsafe extern "cdecl" fn simulator_remove_component(
-    simulator: *mut FfiSimulator,
-    id: ComponentId,
-) -> Result {
+pub unsafe extern "cdecl" fn simulator_free(simulator: *mut Simulator) -> Result {
     if simulator.is_null() {
-        return Result::NullPointerError;
+        return NULL_POINTER_ERROR;
     }
 
-    if (*simulator).simulator.remove_component(id).is_some() {
-        (*simulator).input_pins.remove(&id);
-        (*simulator).output_pins.remove(&id);
-        Result::Success
-    } else {
-        Result::InvalidComponentIdError
-    }
+    let boxed_simulator = Box::from_raw(simulator);
+    std::mem::drop(boxed_simulator);
+    SUCCESS
 }
 
 #[no_mangle]
 pub unsafe extern "cdecl" fn simulator_add_wire(
-    simulator: *mut FfiSimulator,
-    out_id: *mut WireId,
+    simulator: *mut Simulator,
+    width: u8,
+    wire_id: *mut WireId,
 ) -> Result {
-    if simulator.is_null() || out_id.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    let wire = Wire::new();
-    let id = (*simulator).simulator.add_wire(wire);
-    (*out_id) = id;
-    Result::Success
+    let Some(width) = LogicWidth::new(width) else {
+        return ARGUMENT_OUT_OF_RANGE_ERROR;
+    };
+
+    let Some(wire_id) = wire_id.as_uninit_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    wire_id.write(simulator.add_wire(width));
+    SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn simulator_remove_wire(
-    simulator: *mut FfiSimulator,
-    id: WireId,
+pub unsafe extern "cdecl" fn simulator_get_wire_width(
+    simulator: *mut Simulator,
+    wire: WireId,
+    width: *mut u8,
 ) -> Result {
-    if simulator.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    if (*simulator).simulator.remove_wire(id).is_some() {
-        Result::Success
-    } else {
-        Result::InvalidWireIdError
-    }
+    let Some(width) = width.as_uninit_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    width.write(simulator.get_wire_width(wire).get());
+    SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn simulator_step(
-    simulator: *mut FfiSimulator,
-    out_changed: *mut Bool32,
+pub unsafe extern "cdecl" fn simulator_set_wire_base_drive(
+    simulator: *mut Simulator,
+    wire: WireId,
+    drive: LogicState,
 ) -> Result {
-    if simulator.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    match (*simulator).simulator.step() {
-        Ok(changed) => {
-            (*out_changed) = changed.into();
-            Result::Success
-        }
-        Err(err) => match err {
-            SimulationError::Conflict => Result::ConflictError,
-            SimulationError::InvalidComponentId => Result::InvalidComponentIdError,
-            SimulationError::InvalidWireId => Result::InvalidWireIdError,
-            SimulationError::InvalidOutputIndex => Result::InvalidOutputIndexError,
-        },
-    }
+    simulator.set_wire_base_drive(wire, drive);
+    SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn component_connect_input(
-    simulator: *mut FfiSimulator,
-    component_id: ComponentId,
-    input_index: u32,
-    wire_count: u32,
-    wires: *const WireId,
+pub unsafe extern "cdecl" fn simulator_get_wire_base_drive(
+    simulator: *mut Simulator,
+    wire: WireId,
+    drive: *mut LogicState,
 ) -> Result {
-    if simulator.is_null() || wires.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    if let Some(component) = (*simulator).simulator.get_component_mut(component_id) {
-        let wires = std::slice::from_raw_parts(wires, wire_count as usize);
-        component.connect_input(input_index, wires);
-        Result::Success
-    } else {
-        Result::InvalidComponentIdError
-    }
+    let Some(drive) = drive.as_uninit_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    drive.write(simulator.get_wire_base_drive(wire));
+    SUCCESS
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn component_disconnect_input(
-    simulator: *mut FfiSimulator,
-    component_id: ComponentId,
-    input_index: u32,
+pub unsafe extern "cdecl" fn simulator_get_wire_state(
+    simulator: *mut Simulator,
+    wire: WireId,
+    state: *mut LogicState,
 ) -> Result {
-    if simulator.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    if let Some(component) = (*simulator).simulator.get_component_mut(component_id) {
-        component.disconnect_input(input_index);
-        Result::Success
-    } else {
-        Result::InvalidComponentIdError
-    }
+    let Some(state) = state.as_uninit_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    state.write(simulator.get_wire_state(wire));
+    SUCCESS
 }
 
-#[no_mangle]
-pub unsafe extern "cdecl" fn input_pin_set(
-    simulator: *mut FfiSimulator,
-    component_id: ComponentId,
-    state_count: u32,
-    states: *const u32,
-) -> Result {
-    if simulator.is_null() || states.is_null() {
-        return Result::NullPointerError;
-    }
+#[rustfmt::skip]
+macro_rules! def_add_component {
+    ($name:ident($($arg:ident: $arg_ty:ty),* $(,)?), $inner_name:ident) => {
+        #[no_mangle]
+        pub unsafe extern "cdecl" fn $name(
+            simulator: *mut Simulator,
+            $($arg: $arg_ty,)*
+            component_id: *mut ComponentId,
+        ) -> Result {
+            let Some(simulator) = simulator.as_mut() else {
+                return NULL_POINTER_ERROR;
+            };
 
-    if let Some(pin) = (*simulator).input_pins.get(&component_id) {
-        let state = std::slice::from_raw_parts(states, state_count as usize);
-        for s in state.iter().copied() {
-            if !LogicState::is_valid(s) {
-                return Result::InvalidLogicStateError;
+            let Some(component_id) = component_id.as_uninit_mut() else {
+                return NULL_POINTER_ERROR;
+            };
+
+            match simulator.$inner_name($($arg),*) {
+                Ok(id) => {
+                    component_id.write(id);
+                    SUCCESS
+                }
+                Err(AddComponentError::WireWidthMismatch) => WIRE_WIDTH_MISMATCH_ERROR,
+                Err(AddComponentError::WireWidthIncompatible) => WIRE_WIDTH_INCOMPATIBLE_ERROR,
+                Err(AddComponentError::OffsetOutOfRange) => OFFSET_OUT_OF_RANGE_ERROR,
             }
         }
-
-        let state = std::slice::from_raw_parts(states as *const LogicState, state_count as usize);
-        pin.set(state);
-        Result::Success
-    } else {
-        Result::InvalidComponentIdError
-    }
+    };
 }
 
+def_add_component!(
+    simulator_add_and_gate(input_a: WireId, input_b: WireId, output: WireId),
+    add_and_gate
+);
+
+def_add_component!(
+    simulator_add_or_gate(input_a: WireId, input_b: WireId, output: WireId),
+    add_or_gate
+);
+
+def_add_component!(
+    simulator_add_xor_gate(input_a: WireId, input_b: WireId, output: WireId),
+    add_xor_gate
+);
+
+def_add_component!(
+    simulator_add_nand_gate(input_a: WireId, input_b: WireId, output: WireId),
+    add_nand_gate
+);
+
+def_add_component!(
+    simulator_add_nor_gate(input_a: WireId, input_b: WireId, output: WireId),
+    add_nor_gate
+);
+
+def_add_component!(
+    simulator_add_xnor_gate(input_a: WireId, input_b: WireId, output: WireId),
+    add_xnor_gate
+);
+
+def_add_component!(
+    simulator_add_not_gate(input: WireId, output: WireId),
+    add_not_gate
+);
+
+def_add_component!(
+    simulator_add_buffer(input: WireId, enable: WireId, output: WireId),
+    add_buffer
+);
+
+def_add_component!(
+    simulator_add_merge(input_a: WireId, input_b: WireId, output: WireId),
+    add_merge
+);
+
 #[no_mangle]
-pub unsafe extern "cdecl" fn output_pin_get(
-    simulator: *mut FfiSimulator,
-    component_id: ComponentId,
-    state_count: u32,
-    states: *mut LogicState,
+pub unsafe extern "cdecl" fn simulator_add_slice(
+    simulator: *mut Simulator,
+    input: WireId,
+    offset: u8,
+    output: WireId,
+    component_id: *mut ComponentId,
 ) -> Result {
-    if simulator.is_null() || states.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    if let Some(pin) = (*simulator).output_pins.get(&component_id) {
-        let state = std::slice::from_raw_parts_mut(states, state_count as usize);
-        pin.get(state);
-        Result::Success
-    } else {
-        Result::InvalidComponentIdError
-    }
-}
+    let Some(offset) = LogicOffset::new(offset) else {
+        return ARGUMENT_OUT_OF_RANGE_ERROR;
+    };
 
-#[no_mangle]
-pub unsafe extern "cdecl" fn wire_get_state(
-    simulator: *mut FfiSimulator,
-    wire_id: WireId,
-    out_state: *mut LogicState,
-) -> Result {
-    if simulator.is_null() || out_state.is_null() {
-        return Result::NullPointerError;
-    }
+    let Some(component_id) = component_id.as_uninit_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    if let Some(wire) = (*simulator).simulator.get_wire(wire_id) {
-        (*out_state) = wire.state();
-        Result::Success
-    } else {
-        Result::InvalidWireIdError
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "cdecl" fn wire_add_driver(
-    simulator: *mut FfiSimulator,
-    wire_id: WireId,
-    component: ComponentId,
-    output_index: u32,
-    output_sub_index: u32,
-) -> Result {
-    if simulator.is_null() {
-        return Result::NullPointerError;
-    }
-
-    if let Some(wire) = (*simulator).simulator.get_wire_mut(wire_id) {
-        if wire.add_driver(component, (output_index, output_sub_index)) {
-            Result::Success
-        } else {
-            Result::DriverAlreadyPresent
+    match simulator.add_slice(input, offset, output) {
+        Ok(id) => {
+            component_id.write(id);
+            SUCCESS
         }
-    } else {
-        Result::InvalidWireIdError
+        Err(AddComponentError::WireWidthMismatch) => WIRE_WIDTH_MISMATCH_ERROR,
+        Err(AddComponentError::WireWidthIncompatible) => WIRE_WIDTH_INCOMPATIBLE_ERROR,
+        Err(AddComponentError::OffsetOutOfRange) => OFFSET_OUT_OF_RANGE_ERROR,
     }
 }
 
 #[no_mangle]
-pub unsafe extern "cdecl" fn wire_remove_driver(
-    simulator: *mut FfiSimulator,
-    wire_id: WireId,
-    component: ComponentId,
-    output_index: u32,
-    output_sub_index: u32,
-) -> Result {
-    if simulator.is_null() {
-        return Result::NullPointerError;
-    }
+pub unsafe extern "cdecl" fn simulator_reset(simulator: *mut Simulator) -> Result {
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
 
-    if let Some(wire) = (*simulator).simulator.get_wire_mut(wire_id) {
-        if wire.remove_driver(component, (output_index, output_sub_index)) {
-            Result::Success
-        } else {
-            Result::DriverNotPresent
+    simulator.reset();
+    SUCCESS
+}
+
+#[repr(C)]
+pub struct SimulationErrors {
+    conflicts: *mut WireId,
+    conflicts_len: usize,
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn simulation_errors_free(errors: SimulationErrors) -> Result {
+    let conflicts = boxed_slice_from_raw_parts(errors.conflicts, errors.conflicts_len);
+    std::mem::drop(conflicts);
+
+    SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn simulator_begin_sim(
+    simulator: *mut Simulator,
+    errors: *mut SimulationErrors,
+) -> Result {
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    match simulator.begin_sim() {
+        SimulationStepResult::Unchanged => SIMULATION_UNCHANGED,
+        SimulationStepResult::Changed => SIMULATION_CHANGED,
+        SimulationStepResult::Err(err) => {
+            if let Some(errors) = errors.as_uninit_mut() {
+                let (conflicts, conflicts_len) = boxed_slice_into_raw_parts(err.conflicts);
+
+                errors.write(SimulationErrors {
+                    conflicts,
+                    conflicts_len,
+                });
+            }
+
+            SIMULATION_ERROR
         }
-    } else {
-        Result::InvalidWireIdError
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn simulator_step_sim(
+    simulator: *mut Simulator,
+    errors: *mut SimulationErrors,
+) -> Result {
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    match simulator.step_sim() {
+        SimulationStepResult::Unchanged => SIMULATION_UNCHANGED,
+        SimulationStepResult::Changed => SIMULATION_CHANGED,
+        SimulationStepResult::Err(err) => {
+            if let Some(errors) = errors.as_uninit_mut() {
+                let (conflicts, conflicts_len) = boxed_slice_into_raw_parts(err.conflicts);
+
+                errors.write(SimulationErrors {
+                    conflicts,
+                    conflicts_len,
+                });
+            }
+
+            SIMULATION_ERROR
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "cdecl" fn simulator_run_sim(
+    simulator: *mut Simulator,
+    max_steps: u64,
+    errors: *mut SimulationErrors,
+) -> Result {
+    let Some(simulator) = simulator.as_mut() else {
+        return NULL_POINTER_ERROR;
+    };
+
+    match simulator.run_sim(max_steps) {
+        SimulationRunResult::Ok => SUCCESS,
+        SimulationRunResult::MaxStepsReached => MAX_STEPS_REACHED,
+        SimulationRunResult::Err(err) => {
+            if let Some(errors) = errors.as_uninit_mut() {
+                let (conflicts, conflicts_len) = boxed_slice_into_raw_parts(err.conflicts);
+
+                errors.write(SimulationErrors {
+                    conflicts,
+                    conflicts_len,
+                });
+            }
+
+            SIMULATION_ERROR
+        }
     }
 }
