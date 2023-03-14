@@ -3,6 +3,7 @@
 #![feature(sync_unsafe_cell)]
 #![feature(array_windows)]
 #![feature(ptr_as_uninit)]
+#![feature(int_roundings)]
 #![deny(missing_docs)]
 
 #[macro_use]
@@ -23,6 +24,13 @@ pub mod ffi;
 
 use smallvec::{smallvec, SmallVec};
 use std::sync::Mutex;
+
+fn num_cpus() -> usize {
+    use once_cell::sync::OnceCell;
+
+    static NUM_CPUS: OnceCell<usize> = OnceCell::new();
+    *NUM_CPUS.get_or_init(|| num_cpus::get())
+}
 
 macro_rules! def_id_type {
     ($(#[$attr:meta])* $ns:ident::$id_name:ident) => {
@@ -609,11 +617,15 @@ impl Simulator {
 
         let conflicts = Mutex::new(Vec::new());
 
-        let component_update_queue_iter =
-            self.wire_update_queue
-                .par_iter()
-                .copied()
-                .flat_map_iter(|wire_id| {
+        let num_chunks = num_cpus() * 8;
+        let chunk_size = self.wire_update_queue.len().div_ceil(num_chunks).max(100);
+        let component_update_queue_iter = self
+            .wire_update_queue
+            .par_chunks(chunk_size)
+            .flat_map_iter(|chunk| {
+                let mut local_queue = Vec::new();
+
+                for &wire_id in chunk {
                     let wire = unsafe { self.wires.get_unchecked(wire_id) };
                     let width = unsafe { *self.wire_widths.get_unchecked(wire_id) };
                     let base_drive = unsafe { *self.wire_base_drives.get_unchecked(wire_id) };
@@ -625,10 +637,7 @@ impl Simulator {
                         WireUpdateResult::Ok(new_state) => {
                             if new_state != *state {
                                 *state = new_state;
-
-                                wire.driving.as_slice()
-                            } else {
-                                [].as_slice()
+                                local_queue.extend_from_slice(wire.driving.as_slice());
                             }
                         }
                         WireUpdateResult::Conflict => {
@@ -636,11 +645,12 @@ impl Simulator {
                             let mut conflict_list =
                                 conflicts.lock().expect("failed to aquire mutex");
                             conflict_list.push(wire_id);
-
-                            [].as_slice()
                         }
                     }
-                });
+                }
+
+                local_queue
+            });
 
         self.component_update_queue
             .par_extend(component_update_queue_iter);
@@ -669,6 +679,7 @@ impl Simulator {
         let wire_update_queue_iter = self
             .component_update_queue
             .par_iter()
+            .with_min_len(100)
             .copied()
             .flat_map_iter(|component_id| {
                 let component = unsafe { self.components.get_unchecked(component_id) };
