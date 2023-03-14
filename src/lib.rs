@@ -353,8 +353,6 @@ pub struct Simulator {
     wire_base_drives: WireBaseDriveList,
     wire_states: WireStateList,
 
-    small_component_heap: Vec<SmallComponent>,
-
     components: component_id::IdList<Component>,
     component_outputs: Vec<LogicStateCell>,
 
@@ -377,8 +375,6 @@ impl Simulator {
             wire_widths: WireWidthList::new(),
             wire_base_drives: WireBaseDriveList::new(),
             wire_states: WireStateList::new(),
-
-            small_component_heap: Vec::new(),
 
             components: component_id::IdList::new(),
             component_outputs: Vec::new(),
@@ -427,9 +423,6 @@ impl Simulator {
     }
 
     fn add_small_component(&mut self, component: SmallComponent) -> (usize, ComponentId) {
-        let index = self.small_component_heap.len();
-        self.small_component_heap.push(component);
-
         let output_offset = self.component_outputs.len();
         self.component_outputs
             .push(LogicStateCell::new(LogicState::HIGH_Z));
@@ -437,7 +430,7 @@ impl Simulator {
         (
             output_offset,
             self.components
-                .insert(Component::new_small(index, output_offset)),
+                .insert(Component::new_small(component, output_offset)),
         )
     }
 
@@ -685,7 +678,6 @@ impl Simulator {
                 let component = unsafe { self.components.get_unchecked(component_id) };
 
                 component.update(
-                    &self.small_component_heap,
                     &self.wire_widths,
                     &self.wire_states,
                     &self.component_outputs,

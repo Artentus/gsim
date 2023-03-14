@@ -384,7 +384,7 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
 
 #[derive(Debug)]
 enum ComponentKind {
-    Small(usize),
+    Small(SmallComponent),
     Large(Box<dyn LargeComponent>),
 }
 
@@ -396,9 +396,9 @@ pub(crate) struct Component {
 
 impl Component {
     #[inline]
-    pub(crate) fn new_small(index: usize, output_offset: usize) -> Self {
+    pub(crate) fn new_small(component: SmallComponent, output_offset: usize) -> Self {
         Self {
-            kind: ComponentKind::Small(index),
+            kind: ComponentKind::Small(component),
             output_offset,
         }
     }
@@ -416,15 +416,12 @@ impl Component {
 
     pub(crate) fn update(
         &self,
-        small_component_heap: &[SmallComponent],
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
     ) -> SmallVec<[WireId; 2]> {
         match &self.kind {
-            &ComponentKind::Small(index) => {
-                let component = unsafe { small_component_heap.get_unchecked(index) };
-
+            ComponentKind::Small(component) => {
                 let output_range = self.output_offset..(self.output_offset + 1);
                 component.update(wire_widths, wire_states, &outputs[output_range])
             }
