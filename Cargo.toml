@@ -9,8 +9,16 @@ description = "High speed digital logic simulation"
 [lib]
 crate-type = ["lib", "cdylib"]
 
+[[bench]]
+name = "sim"
+harness = false
+
 [dependencies]
 rayon = "1.6"
 static_assertions = "1.1"
 bounded-integer = { version = "0.5", features = ["types"] }
 smallvec = "1.10"
+
+[dev-dependencies]
+criterion = "0.4"
+rand = "0.8"
