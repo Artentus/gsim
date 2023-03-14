@@ -57,7 +57,7 @@ pub(crate) enum SmallComponent {
 impl SmallComponent {
     fn update(
         &self,
-        wires: &WireList,
+        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
     ) -> SmallVec<[WireId; 2]> {
@@ -67,8 +67,8 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
                 //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
@@ -107,8 +107,8 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
                 //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
@@ -144,8 +144,8 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
                 //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
@@ -179,8 +179,8 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
                 //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
@@ -216,8 +216,8 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
                 //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
@@ -256,8 +256,8 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
                 //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
@@ -287,7 +287,7 @@ impl SmallComponent {
                 )
             }
             &SmallComponent::NotGate { input, output } => {
-                let state = wire_states.get(input).expect("invalid wire ID").get();
+                let state = unsafe { wire_states.get_unchecked(input).get() };
 
                 //  I state | I valid | I meaning | O state | O valid | O meaning
                 // ---------|---------|-----------|---------|---------|-----------
@@ -309,8 +309,8 @@ impl SmallComponent {
                 enable,
                 output,
             } => {
-                let state = wire_states.get(input).expect("invalid wire ID").get();
-                let state_enable = wire_states.get(enable).expect("invalid wire ID").get();
+                let state = unsafe { wire_states.get_unchecked(input).get() };
+                let state_enable = unsafe { wire_states.get_unchecked(enable).get() };
 
                 let output_state = match state_enable.get_bit_state(LogicOffset::MIN) {
                     LogicBitState::HighZ | LogicBitState::Undefined => LogicState::UNDEFINED,
@@ -325,7 +325,7 @@ impl SmallComponent {
                 offset,
                 output,
             } => {
-                let state = wire_states.get(input).expect("invalid wire ID").get();
+                let state = unsafe { wire_states.get_unchecked(input).get() };
 
                 (
                     output,
@@ -340,12 +340,12 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let wire_a = wires.get(input_a).expect("invalid wire ID");
-                let state_a = wire_states.get(input_a).expect("invalid wire ID").get();
-                let state_b = wire_states.get(input_b).expect("invalid wire ID").get();
+                let wire_a_width = unsafe { *wire_widths.get_unchecked(input_a) };
+                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
 
-                let mask = LogicStorage::mask(wire_a.width);
-                let offset = width_to_offset(wire_a.width).expect("invalid merge offset");
+                let mask = LogicStorage::mask(wire_a_width);
+                let offset = width_to_offset(wire_a_width).expect("invalid merge offset");
 
                 (
                     output,
@@ -376,7 +376,7 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
 
     fn update(
         &self,
-        wires: &WireList,
+        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
     ) -> SmallVec<[WireId; 2]>;
@@ -417,21 +417,21 @@ impl Component {
     pub(crate) fn update(
         &self,
         small_component_heap: &[SmallComponent],
-        wires: &WireList,
+        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
     ) -> SmallVec<[WireId; 2]> {
         match &self.kind {
             &ComponentKind::Small(index) => {
-                let component = &small_component_heap[index];
+                let component = unsafe { small_component_heap.get_unchecked(index) };
 
                 let output_range = self.output_offset..(self.output_offset + 1);
-                component.update(wires, wire_states, &outputs[output_range])
+                component.update(wire_widths, wire_states, &outputs[output_range])
             }
             ComponentKind::Large(component) => {
                 let output_range =
                     self.output_offset..(self.output_offset + component.output_count());
-                component.update(wires, wire_states, &outputs[output_range])
+                component.update(wire_widths, wire_states, &outputs[output_range])
             }
         }
     }

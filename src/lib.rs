@@ -29,17 +29,17 @@ macro_rules! def_id_type {
         #[allow(dead_code)]
         mod $ns {
             use std::marker::PhantomData;
-            use std::num::NonZeroUsize;
+            use std::num::NonZeroU32;
             use std::ops::RangeInclusive;
 
             $(#[$attr])*
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
             #[repr(transparent)]
-            pub struct $id_name(NonZeroUsize);
-            assert_eq_size!($id_name, usize);
-            assert_eq_align!($id_name, usize);
-            assert_eq_size!(Option<$id_name>, usize);
-            assert_eq_align!(Option<$id_name>, usize);
+            pub struct $id_name(NonZeroU32);
+            assert_eq_size!($id_name, u32);
+            assert_eq_align!($id_name, u32);
+            assert_eq_size!(Option<$id_name>, u32);
+            assert_eq_align!(Option<$id_name>, u32);
 
             #[derive(Debug)]
             #[repr(transparent)]
@@ -56,26 +56,37 @@ macro_rules! def_id_type {
                 #[inline]
                 pub fn insert(&mut self, item: T) -> $id_name {
                     self.list.push(item);
+                    assert!(self.list.len() <= (u32::MAX as usize));
 
                     unsafe {
                         // SAFETY: the list contains at least one item now so its length is > 0
-                        $id_name(NonZeroUsize::new_unchecked(self.list.len()))
+                        $id_name(NonZeroU32::new_unchecked(self.list.len() as u32))
                     }
                 }
 
                 #[inline]
                 pub fn get(&self, id: $id_name) -> Option<&T> {
-                    self.list.get(id.0.get() - 1)
+                    self.list.get((id.0.get() as usize) - 1)
                 }
 
                 #[inline]
                 pub fn get_mut(&mut self, id: $id_name) -> Option<&mut T> {
-                    self.list.get_mut(id.0.get() - 1)
+                    self.list.get_mut((id.0.get() as usize) - 1)
+                }
+
+                #[inline]
+                pub unsafe fn get_unchecked(&self, id: $id_name) -> &T {
+                    self.list.get_unchecked((id.0.get() as usize) - 1)
+                }
+
+                #[inline]
+                pub unsafe fn get_unchecked_mut(&mut self, id: $id_name) -> &mut T {
+                    self.list.get_unchecked_mut((id.0.get() as usize) - 1)
                 }
 
                 #[inline]
                 pub fn ids<'a>(&'a self) -> IdIter<'a> {
-                    IdIter::new(self.list.len())
+                    IdIter::new(self.list.len() as u32)
                 }
 
                 #[inline]
@@ -89,16 +100,32 @@ macro_rules! def_id_type {
                 }
             }
 
+            impl<T> std::ops::Index<$id_name> for IdList<T> {
+                type Output = T;
+
+                #[inline]
+                fn index(&self, id: $id_name) -> &Self::Output {
+                    &self.list[(id.0.get() as usize) - 1]
+                }
+            }
+
+            impl<T> std::ops::IndexMut<$id_name> for IdList<T> {
+                #[inline]
+                fn index_mut(&mut self, id: $id_name) -> &mut Self::Output {
+                    &mut self.list[(id.0.get() as usize) - 1]
+                }
+            }
+
             #[derive(Clone)]
             #[repr(transparent)]
             pub(crate) struct IdIter<'a> {
-                range: RangeInclusive<usize>,
+                range: RangeInclusive<u32>,
                 _a: PhantomData<&'a ()>,
             }
 
             impl<'a> IdIter<'a> {
                 #[inline]
-                fn new(len: usize) -> Self {
+                fn new(len: u32) -> Self {
                     Self {
                         range: 1..=len,
                         _a: PhantomData,
@@ -112,7 +139,7 @@ macro_rules! def_id_type {
                 fn next(&mut self) -> Option<Self::Item> {
                     self.range.next().map(|i| unsafe {
                         // SAFETY: the range starts from 1
-                        $id_name(NonZeroUsize::new_unchecked(i))
+                        $id_name(NonZeroU32::new_unchecked(i))
                     })
                 }
             }
@@ -139,25 +166,25 @@ enum WireUpdateResult {
 
 #[derive(Debug)]
 struct Wire {
-    width: LogicWidth,
-    base_drive: LogicState,
-    // TODO: test what inline size yields the best performance
     drivers: SmallVec<[usize; 1]>,
-    driving: SmallVec<[ComponentId; 1]>,
+    driving: SmallVec<[ComponentId; 5]>,
 }
 
 impl Wire {
     #[inline]
-    fn new(width: LogicWidth) -> Self {
+    fn new() -> Self {
         Self {
-            width,
-            base_drive: LogicState::HIGH_Z,
             drivers: smallvec![],
             driving: smallvec![],
         }
     }
 
-    fn update(&self, component_outputs: &[LogicStateCell]) -> WireUpdateResult {
+    fn update(
+        &self,
+        width: LogicWidth,
+        base_drive: LogicState,
+        component_outputs: &[LogicStateCell],
+    ) -> WireUpdateResult {
         #[inline]
         fn combine(a: LogicState, b: LogicState, mask: LogicStorage) -> WireUpdateResult {
             //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning | conflict
@@ -196,11 +223,11 @@ impl Wire {
             }
         }
 
-        let mask = LogicStorage::mask(self.width);
+        let mask = LogicStorage::mask(width);
 
         let mut new_state = LogicState {
-            state: self.base_drive.state & mask,
-            valid: self.base_drive.valid & mask,
+            state: base_drive.state & mask,
+            valid: base_drive.valid & mask,
         };
 
         for driver in self.drivers.iter().copied() {
@@ -258,6 +285,8 @@ pub enum AddComponentError {
 pub type AddComponentResult = Result<ComponentId, AddComponentError>;
 
 type WireList = wire_id::IdList<Wire>;
+type WireWidthList = wire_id::IdList<LogicWidth>;
+type WireBaseDriveList = wire_id::IdList<LogicState>;
 type WireStateList = wire_id::IdList<LogicStateCell>;
 
 macro_rules! def_add_binary_gate {
@@ -312,6 +341,8 @@ macro_rules! def_add_unary_gate {
 /// A digital circuit simulator
 pub struct Simulator {
     wires: WireList,
+    wire_widths: WireWidthList,
+    wire_base_drives: WireBaseDriveList,
     wire_states: WireStateList,
 
     small_component_heap: Vec<SmallComponent>,
@@ -335,6 +366,8 @@ impl Simulator {
     pub fn new() -> Self {
         Self {
             wires: WireList::new(),
+            wire_widths: WireWidthList::new(),
+            wire_base_drives: WireBaseDriveList::new(),
             wire_states: WireStateList::new(),
 
             small_component_heap: Vec::new(),
@@ -349,33 +382,35 @@ impl Simulator {
 
     /// Adds a wire to the simulation
     pub fn add_wire(&mut self, width: LogicWidth) -> WireId {
-        let wire_id = self.wires.insert(Wire::new(width));
+        let wire_id = self.wires.insert(Wire::new());
+        let width_id = self.wire_widths.insert(width);
+        let base_drive_id = self.wire_base_drives.insert(LogicState::HIGH_Z);
         let state_id = self
             .wire_states
             .insert(LogicStateCell::new(LogicState::HIGH_Z));
-        assert_eq!(wire_id, state_id);
+        debug_assert_eq!(wire_id, width_id);
+        debug_assert_eq!(wire_id, base_drive_id);
+        debug_assert_eq!(wire_id, state_id);
         wire_id
     }
 
     /// Gets the width of a wire
     pub fn get_wire_width(&self, wire: WireId) -> LogicWidth {
-        self.wires.get(wire).expect("invalid wire ID").width
+        *self.wire_widths.get(wire).expect("invalid wire ID")
     }
 
     /// Drives a wire to a certain state without needing a component
     pub fn set_wire_base_drive(&mut self, wire: WireId, drive: LogicState) {
-        let wire = self.wires.get_mut(wire).expect("invalid wire ID");
-        let mask = LogicStorage::mask(wire.width);
-
-        wire.base_drive = LogicState {
-            state: drive.state & mask,
-            valid: drive.valid & mask,
-        };
+        let wire_base_drive = self
+            .wire_base_drives
+            .get_mut(wire)
+            .expect("invalid wire ID");
+        *wire_base_drive = drive;
     }
 
     /// Gets the current base drive of a wire
     pub fn get_wire_base_drive(&self, wire: WireId) -> LogicState {
-        self.wires.get(wire).expect("invalid wire ID").base_drive
+        *self.wire_base_drives.get(wire).expect("invalid wire ID")
     }
 
     /// Gets the current state of a wire
@@ -417,9 +452,9 @@ impl Simulator {
 
     fn check_wire_widths_match(&self, wires: &[WireId]) -> Result<(), AddComponentError> {
         if wires.array_windows::<2>().all(|w| {
-            let w0 = self.wires.get(w[0]).expect("invalid wire ID");
-            let w1 = self.wires.get(w[1]).expect("invalid wire ID");
-            w0.width == w1.width
+            let w0 = self.wire_widths.get(w[0]).expect("invalid wire ID");
+            let w1 = self.wire_widths.get(w[1]).expect("invalid wire ID");
+            *w0 == *w1
         }) {
             Ok(())
         } else {
@@ -478,8 +513,8 @@ impl Simulator {
     ) -> AddComponentResult {
         self.check_wire_widths_match(&[input, output])?;
 
-        let enable_wire = self.wires.get(enable).expect("invalid wire ID");
-        if enable_wire.width != 1 {
+        let enable_wire_width = self.wire_widths.get(enable).expect("invalid wire ID");
+        if *enable_wire_width != 1 {
             return Err(AddComponentError::WireWidthIncompatible);
         }
 
@@ -507,14 +542,14 @@ impl Simulator {
         offset: LogicOffset,
         output: WireId,
     ) -> AddComponentResult {
-        let input_wire = self.wires.get(input).expect("invalid wire ID");
-        let output_wire = self.wires.get(output).expect("invalid wire ID");
+        let input_wire_width = *self.wire_widths.get(input).expect("invalid wire ID");
+        let output_wire_width = *self.wire_widths.get(output).expect("invalid wire ID");
 
-        if output_wire.width > input_wire.width {
+        if output_wire_width > input_wire_width {
             return Err(AddComponentError::WireWidthIncompatible);
         }
 
-        if (offset.get() + output_wire.width.get()) > input_wire.width.get() {
+        if (offset.get() + output_wire_width.get()) > input_wire_width.get() {
             return Err(AddComponentError::OffsetOutOfRange);
         }
 
@@ -540,11 +575,11 @@ impl Simulator {
         input_b: WireId,
         output: WireId,
     ) -> AddComponentResult {
-        let input_wire_a = self.wires.get(input_a).expect("invalid wire ID");
-        let input_wire_b = self.wires.get(input_b).expect("invalid wire ID");
-        let output_wire = self.wires.get(output).expect("invalid wire ID");
+        let input_wire_a_width = *self.wire_widths.get(input_a).expect("invalid wire ID");
+        let input_wire_b_width = *self.wire_widths.get(input_b).expect("invalid wire ID");
+        let output_wire_width = *self.wire_widths.get(output).expect("invalid wire ID");
 
-        if (input_wire_a.width.get() + input_wire_b.width.get()) != output_wire.width.get() {
+        if (input_wire_a_width.get() + input_wire_b_width.get()) != output_wire_width.get() {
             return Err(AddComponentError::WireWidthIncompatible);
         }
 
@@ -579,12 +614,14 @@ impl Simulator {
                 .par_iter()
                 .copied()
                 .flat_map_iter(|wire_id| {
-                    let wire = self.wires.get(wire_id).expect("invalid wire ID");
-                    let state = self.wire_states.get(wire_id).expect("invalid wire ID");
+                    let wire = unsafe { self.wires.get_unchecked(wire_id) };
+                    let width = unsafe { *self.wire_widths.get_unchecked(wire_id) };
+                    let base_drive = unsafe { *self.wire_base_drives.get_unchecked(wire_id) };
+                    let state = unsafe { self.wire_states.get_unchecked(wire_id) };
                     // SAFETY: sort_unstable + dedup ensure wire_id is unique between all iterations
                     let state = unsafe { state.get_mut_unsafe() };
 
-                    match wire.update(&self.component_outputs) {
+                    match wire.update(width, base_drive, &self.component_outputs) {
                         WireUpdateResult::Ok(new_state) => {
                             if new_state != *state {
                                 *state = new_state;
@@ -613,12 +650,12 @@ impl Simulator {
             .expect("failed to aquire mutex")
             .into_boxed_slice();
 
-        if conflicts.len() > 0 {
+        if !conflicts.is_empty() {
             SimulationStepResult::Err(SimulationErrors { conflicts })
-        } else if self.component_update_queue.len() > 0 {
-            SimulationStepResult::Changed
-        } else {
+        } else if self.component_update_queue.is_empty() {
             SimulationStepResult::Unchanged
+        } else {
+            SimulationStepResult::Changed
         }
     }
 
@@ -634,14 +671,11 @@ impl Simulator {
             .par_iter()
             .copied()
             .flat_map_iter(|component_id| {
-                let component = self
-                    .components
-                    .get(component_id)
-                    .expect("invalid component ID");
+                let component = unsafe { self.components.get_unchecked(component_id) };
 
                 component.update(
                     &self.small_component_heap,
-                    &self.wires,
+                    &self.wire_widths,
                     &self.wire_states,
                     &self.component_outputs,
                 )
@@ -649,10 +683,10 @@ impl Simulator {
 
         self.wire_update_queue.par_extend(wire_update_queue_iter);
 
-        if self.wire_update_queue.len() > 0 {
-            SimulationStepResult::Changed
-        } else {
+        if self.wire_update_queue.is_empty() {
             SimulationStepResult::Unchanged
+        } else {
+            SimulationStepResult::Changed
         }
     }
 
