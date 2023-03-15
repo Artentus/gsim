@@ -526,8 +526,8 @@ macro_rules! def_add_binary_gate {
 
             let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
             input_wire_a.driving.push(id);
-            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
             if input_b != input_a {
+                let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
                 input_wire_b.driving.push(id);
             }
             let output_wire = self.sim.wires.get_mut(output).unwrap();
@@ -747,8 +747,8 @@ impl SimulatorBuilder {
 
         let input_wire = self.sim.wires.get_mut(input).unwrap();
         input_wire.driving.push(id);
-        let enable_wire = self.sim.wires.get_mut(enable).unwrap();
         if enable != input {
+            let enable_wire = self.sim.wires.get_mut(enable).unwrap();
             enable_wire.driving.push(id);
         }
         let output_wire = self.sim.wires.get_mut(output).unwrap();
@@ -814,8 +814,10 @@ impl SimulatorBuilder {
 
         let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
         input_wire_a.driving.push(id);
-        let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
-        input_wire_b.driving.push(id);
+        if input_b != input_a {
+            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
+            input_wire_b.driving.push(id);
+        }
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
 
