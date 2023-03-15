@@ -69,38 +69,7 @@ impl SmallComponent {
             } => {
                 let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-
-                //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-
-                (
-                    output,
-                    LogicState {
-                        state: (state_a.state & state_b.state)
-                            | (!state_a.valid & !state_b.valid)
-                            | (state_a.state & !state_b.valid)
-                            | (state_b.state & !state_a.valid),
-                        valid: (state_a.valid & state_b.valid)
-                            | (!state_a.state & state_a.valid)
-                            | (!state_b.state & state_b.valid),
-                    },
-                )
+                (output, state_a.logic_and(state_b))
             }
             &SmallComponent::OrGate {
                 input_a,
@@ -109,35 +78,7 @@ impl SmallComponent {
             } => {
                 let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-
-                //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    1    |    1    | Logic 1
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    1    |    1    | Logic 1
-                //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-                //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-
-                (
-                    output,
-                    LogicState {
-                        state: state_a.state | !state_a.valid | state_b.state | !state_b.valid,
-                        valid: (state_a.state & state_a.valid)
-                            | (state_b.state & state_b.valid)
-                            | (state_a.valid & state_b.valid),
-                    },
-                )
+                (output, state_a.logic_or(state_b))
             }
             &SmallComponent::XorGate {
                 input_a,
@@ -146,33 +87,7 @@ impl SmallComponent {
             } => {
                 let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-
-                //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-
-                (
-                    output,
-                    LogicState {
-                        state: (state_a.state ^ state_b.state) | !state_a.valid | !state_b.valid,
-                        valid: state_a.valid & state_b.valid,
-                    },
-                )
+                (output, state_a.logic_xor(state_b))
             }
             &SmallComponent::NandGate {
                 input_a,
@@ -181,35 +96,7 @@ impl SmallComponent {
             } => {
                 let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-
-                //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-
-                (
-                    output,
-                    LogicState {
-                        state: !state_a.state | !state_a.valid | !state_b.state | !state_b.valid,
-                        valid: (state_a.valid & state_b.valid)
-                            | (!state_a.state & state_a.valid)
-                            | (!state_b.state & state_b.valid),
-                    },
-                )
+                (output, state_a.logic_nand(state_b))
             }
             &SmallComponent::NorGate {
                 input_a,
@@ -218,38 +105,7 @@ impl SmallComponent {
             } => {
                 let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-
-                //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    0    |    1    | Logic 0
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    0    |    1    | Logic 0
-                //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-                //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-
-                (
-                    output,
-                    LogicState {
-                        state: (!state_a.state & !state_b.state)
-                            | (!state_a.valid & !state_b.valid)
-                            | (!state_a.state & !state_b.valid)
-                            | (!state_b.state & !state_a.valid),
-                        valid: (state_a.state & state_a.valid)
-                            | (state_b.state & state_b.valid)
-                            | (state_a.valid & state_b.valid),
-                    },
-                )
+                (output, state_a.logic_nor(state_b))
             }
             &SmallComponent::XnorGate {
                 input_a,
@@ -258,51 +114,11 @@ impl SmallComponent {
             } => {
                 let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-
-                //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    0    |    1    | Logic 0
-                //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    0    |    1    | Logic 0
-                //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    1    |    1    | Logic 1
-
-                (
-                    output,
-                    LogicState {
-                        state: !(state_a.state ^ state_b.state) | !state_a.valid | !state_b.valid,
-                        valid: state_a.valid & state_b.valid,
-                    },
-                )
+                (output, state_a.logic_xnor(state_b))
             }
             &SmallComponent::NotGate { input, output } => {
                 let state = unsafe { wire_states.get_unchecked(input).get() };
-
-                //  I state | I valid | I meaning | O state | O valid | O meaning
-                // ---------|---------|-----------|---------|---------|-----------
-                //     0    |    0    | High-Z    |    1    |    0    | Undefined
-                //     1    |    0    | Undefined |    1    |    0    | Undefined
-                //     0    |    1    | Logic 0   |    1    |    1    | Logic 1
-                //     1    |    1    | Logic 1   |    0    |    1    | Logic 0
-
-                (
-                    output,
-                    LogicState {
-                        state: !state.state | !state.valid,
-                        valid: state.valid,
-                    },
-                )
+                (output, state.logic_not())
             }
             &SmallComponent::Buffer {
                 input,
@@ -381,6 +197,118 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
         outputs: &[LogicStateCell],
     ) -> SmallVec<[WireId; 2]>;
 }
+
+macro_rules! wide_gate {
+    ($name:ident, $op:ident) => {
+        #[derive(Debug)]
+        pub(crate) struct $name {
+            inputs: SmallVec<[WireId; 8]>,
+            output: WireId,
+        }
+
+        impl $name {
+            #[inline]
+            pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
+                Self {
+                    inputs: inputs.into(),
+                    output,
+                }
+            }
+        }
+
+        impl LargeComponent for $name {
+            fn output_count(&self) -> usize {
+                1
+            }
+
+            fn update(
+                &self,
+                _wire_widths: &WireWidthList,
+                wire_states: &WireStateList,
+                outputs: &[LogicStateCell],
+            ) -> SmallVec<[WireId; 2]> {
+                let new_output_state = self
+                    .inputs
+                    .iter()
+                    .map(|&input| unsafe { wire_states.get_unchecked(input).get() })
+                    .reduce(|a, b| a.$op(b))
+                    .unwrap_or(LogicState::UNDEFINED);
+
+                // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+                //         and `outputs` is a slice uniquely associated with this component
+                let output_state = unsafe { outputs[0].get_mut_unsafe() };
+
+                if new_output_state != *output_state {
+                    *output_state = new_output_state;
+
+                    smallvec![self.output]
+                } else {
+                    smallvec![]
+                }
+            }
+        }
+    };
+}
+
+macro_rules! wide_gate_inv {
+    ($name:ident, $op:ident) => {
+        #[derive(Debug)]
+        pub(crate) struct $name {
+            inputs: SmallVec<[WireId; 8]>,
+            output: WireId,
+        }
+
+        impl $name {
+            #[inline]
+            pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
+                Self {
+                    inputs: inputs.into(),
+                    output,
+                }
+            }
+        }
+
+        impl LargeComponent for $name {
+            fn output_count(&self) -> usize {
+                1
+            }
+
+            fn update(
+                &self,
+                _wire_widths: &WireWidthList,
+                wire_states: &WireStateList,
+                outputs: &[LogicStateCell],
+            ) -> SmallVec<[WireId; 2]> {
+                let new_output_state = self
+                    .inputs
+                    .iter()
+                    .map(|&input| unsafe { wire_states.get_unchecked(input).get() })
+                    .reduce(|a, b| a.$op(b))
+                    .unwrap_or(LogicState::UNDEFINED)
+                    .logic_not();
+
+                // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+                //         and `outputs` is a slice uniquely associated with this component
+                let output_state = unsafe { outputs[0].get_mut_unsafe() };
+
+                if new_output_state != *output_state {
+                    *output_state = new_output_state;
+
+                    smallvec![self.output]
+                } else {
+                    smallvec![]
+                }
+            }
+        }
+    };
+}
+
+wide_gate!(WideAndGate, logic_and);
+wide_gate!(WideOrGate, logic_or);
+wide_gate!(WideXorGate, logic_xor);
+wide_gate_inv!(WideNandGate, logic_and);
+wide_gate_inv!(WideNorGate, logic_or);
+wide_gate_inv!(WideXnorGate, logic_xor);
 
 #[derive(Debug)]
 enum ComponentKind {

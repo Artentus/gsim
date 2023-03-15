@@ -1,5 +1,8 @@
 #![allow(dead_code)]
 
+mod ops;
+use ops::*;
+
 use std::cell::UnsafeCell;
 use std::ops::*;
 
@@ -40,7 +43,7 @@ impl LogicStorage {
     }
 }
 
-impl BitAnd for LogicStorage {
+impl const BitAnd for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -49,7 +52,7 @@ impl BitAnd for LogicStorage {
     }
 }
 
-impl BitOr for LogicStorage {
+impl const BitOr for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -58,7 +61,7 @@ impl BitOr for LogicStorage {
     }
 }
 
-impl BitXor for LogicStorage {
+impl const BitXor for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -67,7 +70,7 @@ impl BitXor for LogicStorage {
     }
 }
 
-impl Not for LogicStorage {
+impl const Not for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -76,7 +79,7 @@ impl Not for LogicStorage {
     }
 }
 
-impl Add for LogicStorage {
+impl const Add for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -85,14 +88,14 @@ impl Add for LogicStorage {
     }
 }
 
-impl AddAssign for LogicStorage {
+impl const AddAssign for LogicStorage {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
         self.0 = self.0.wrapping_add(rhs.0);
     }
 }
 
-impl Sub for LogicStorage {
+impl const Sub for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -101,14 +104,14 @@ impl Sub for LogicStorage {
     }
 }
 
-impl SubAssign for LogicStorage {
+impl const SubAssign for LogicStorage {
     #[inline]
     fn sub_assign(&mut self, rhs: Self) {
         self.0 = self.0.wrapping_sub(rhs.0);
     }
 }
 
-impl Neg for LogicStorage {
+impl const Neg for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -117,7 +120,7 @@ impl Neg for LogicStorage {
     }
 }
 
-impl Shl<LogicOffset> for LogicStorage {
+impl const Shl<LogicOffset> for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -126,14 +129,14 @@ impl Shl<LogicOffset> for LogicStorage {
     }
 }
 
-impl ShlAssign<LogicOffset> for LogicStorage {
+impl const ShlAssign<LogicOffset> for LogicStorage {
     #[inline]
     fn shl_assign(&mut self, rhs: LogicOffset) {
         self.0 <<= rhs.get();
     }
 }
 
-impl Shr<LogicOffset> for LogicStorage {
+impl const Shr<LogicOffset> for LogicStorage {
     type Output = Self;
 
     #[inline]
@@ -142,7 +145,7 @@ impl Shr<LogicOffset> for LogicStorage {
     }
 }
 
-impl ShrAssign<LogicOffset> for LogicStorage {
+impl const ShrAssign<LogicOffset> for LogicStorage {
     #[inline]
     fn shr_assign(&mut self, rhs: LogicOffset) {
         self.0 >>= rhs.get();
@@ -286,6 +289,41 @@ impl LogicState {
     pub fn eq_width(&self, rhs: &Self, width: LogicWidth) -> bool {
         let mask = LogicStorage::mask(width);
         ((self.state & mask) == (rhs.state & mask)) && ((self.valid & mask) == (rhs.valid & mask))
+    }
+
+    /// Computes logical AND between this state and `rhs`
+    pub const fn logic_and(self, rhs: Self) -> Self {
+        logic_and(self, rhs)
+    }
+
+    /// Computes logical OR between this state and `rhs`
+    pub const fn logic_or(self, rhs: Self) -> Self {
+        logic_or(self, rhs)
+    }
+
+    /// Computes logical XOR between this state and `rhs`
+    pub const fn logic_xor(self, rhs: Self) -> Self {
+        logic_xor(self, rhs)
+    }
+
+    /// Computes logical NAND between this state and `rhs`
+    pub const fn logic_nand(self, rhs: Self) -> Self {
+        logic_nand(self, rhs)
+    }
+
+    /// Computes logical NOR between this state and `rhs`
+    pub const fn logic_nor(self, rhs: Self) -> Self {
+        logic_nor(self, rhs)
+    }
+
+    /// Computes logical XNOR between this state and `rhs`
+    pub const fn logic_xnor(self, rhs: Self) -> Self {
+        logic_xnor(self, rhs)
+    }
+
+    /// Computes logical NOT of this state
+    pub const fn logic_not(self) -> Self {
+        logic_not(self)
     }
 }
 

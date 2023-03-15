@@ -4,6 +4,8 @@
 #![feature(array_windows)]
 #![feature(ptr_as_uninit)]
 #![feature(int_roundings)]
+#![feature(const_trait_impl)]
+#![feature(const_mut_refs)]
 #![deny(missing_docs)]
 
 #[macro_use]
@@ -17,10 +19,6 @@ pub use logic::*;
 
 #[cfg(test)]
 mod test;
-
-#[doc(hidden)]
-#[allow(missing_docs)]
-pub mod ffi;
 
 use smallvec::{smallvec, SmallVec};
 use std::sync::Mutex;
@@ -287,6 +285,8 @@ pub enum AddComponentError {
     WireWidthIncompatible,
     /// A specified offset was outside the range of its corresponding wire's width
     OffsetOutOfRange,
+    /// Too few inputs were specified
+    TooFewInputs,
 }
 
 /// The result of adding a component to a simulator
@@ -338,6 +338,36 @@ macro_rules! def_add_unary_gate {
 
             let input_wire = self.wires.get_mut(input).unwrap();
             input_wire.driving.push(id);
+            let output_wire = self.wires.get_mut(output).unwrap();
+            output_wire.drivers.push(output_offset);
+
+            Ok(id)
+        }
+    };
+}
+
+macro_rules! def_add_wide_gate {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(
+            &mut self,
+            inputs: &[WireId],
+            output: WireId,
+        ) -> AddComponentResult {
+            if inputs.len() < 3 {
+                return Err(AddComponentError::TooFewInputs);
+            }
+
+            self.check_wire_widths_match(inputs)?;
+            self.check_wire_widths_match(&[inputs[0], output])?;
+
+            let gate = $gate::new(inputs, output);
+            let (output_offset, id) = self.add_large_component(gate);
+
+            for &input in inputs {
+                let wire = self.wires.get_mut(input).unwrap();
+                wire.driving.push(id);
+            }
             let output_wire = self.wires.get_mut(output).unwrap();
             output_wire.drivers.push(output_offset);
 
@@ -600,6 +630,42 @@ impl Simulator {
 
         Ok(id)
     }
+
+    def_add_wide_gate!(
+        /// Adds an `AND Gate` component to the simulation
+        add_wide_and_gate,
+        WideAndGate
+    );
+
+    def_add_wide_gate!(
+        /// Adds an `OR Gate` component to the simulation
+        add_wide_or_gate,
+        WideOrGate
+    );
+
+    def_add_wide_gate!(
+        /// Adds an `XOR Gate` component to the simulation
+        add_wide_xor_gate,
+        WideXorGate
+    );
+
+    def_add_wide_gate!(
+        /// Adds a `NAND Gate` component to the simulation
+        add_wide_nand_gate,
+        WideNandGate
+    );
+
+    def_add_wide_gate!(
+        /// Adds a `NOR Gate` component to the simulation
+        add_wide_nor_gate,
+        WideNorGate
+    );
+
+    def_add_wide_gate!(
+        /// Adds an `XNOR Gate` component to the simulation
+        add_wide_xnor_gate,
+        WideXnorGate
+    );
 
     fn update_wires(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;

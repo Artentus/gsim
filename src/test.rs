@@ -108,6 +108,64 @@ macro_rules! unary_gate_test_data {
     };
 }
 
+struct WideGateTestData {
+    inputs: &'static [LogicState],
+    output: LogicState,
+}
+
+fn test_wide_gate<F>(add_gate: F, width: LogicWidth, test_data: &[WideGateTestData])
+where
+    F: Fn(&mut Simulator, &[WireId], WireId) -> AddComponentResult,
+{
+    for (i, test_data) in test_data.iter().enumerate() {
+        let mut simulator = Simulator::default();
+
+        let inputs: Vec<_> = test_data
+            .inputs
+            .iter()
+            .map(|&drive| {
+                let wire = simulator.add_wire(width);
+                simulator.set_wire_base_drive(wire, drive);
+                wire
+            })
+            .collect();
+        let output = simulator.add_wire(width);
+        let _gate = add_gate(&mut simulator, &inputs, output).unwrap();
+
+        let mut sim_result = simulator.begin_sim();
+        loop {
+            match sim_result {
+                SimulationStepResult::Unchanged => break,
+                SimulationStepResult::Changed => sim_result = simulator.step_sim(),
+                SimulationStepResult::Err(err) => panic!("{err:?}"),
+            }
+        }
+
+        let output_state = simulator.get_wire_state(output);
+
+        println!(
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(width),
+            output_state.display_string(width),
+        );
+
+        assert!(output_state.eq_width(&test_data.output, width));
+    }
+}
+
+macro_rules! wide_gate_test_data {
+    ($(($($i:ident),+) -> $o:ident),* $(,)?) => {
+        &[
+            $(
+                WideGateTestData {
+                    inputs: &[$(LogicState::$i),+],
+                    output: LogicState::$o,
+                },
+            )*
+        ]
+    };
+}
+
 #[test]
 fn test_and_gate() {
     const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
@@ -136,22 +194,22 @@ fn test_and_gate() {
 #[test]
 fn test_or_gate() {
     const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
-        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, HIGH_Z)       -> UNDEFINED,
+        (HIGH_Z, UNDEFINED)    -> UNDEFINED,
+        (UNDEFINED, HIGH_Z)    -> UNDEFINED,
         (UNDEFINED, UNDEFINED) -> UNDEFINED,
-        (HIGH_Z, LOGIC_0) -> UNDEFINED,
-        (HIGH_Z, LOGIC_1) -> LOGIC_1,
-        (UNDEFINED, LOGIC_0) -> UNDEFINED,
-        (UNDEFINED, LOGIC_1) -> LOGIC_1,
-        (LOGIC_0, HIGH_Z) -> UNDEFINED,
-        (LOGIC_1, HIGH_Z) -> LOGIC_1,
-        (LOGIC_0, UNDEFINED) -> UNDEFINED,
-        (LOGIC_1, UNDEFINED) -> LOGIC_1,
-        (LOGIC_0, LOGIC_0) -> LOGIC_0,
-        (LOGIC_0, LOGIC_1) -> LOGIC_1,
-        (LOGIC_1, LOGIC_0) -> LOGIC_1,
-        (LOGIC_1, LOGIC_1) -> LOGIC_1,
+        (HIGH_Z, LOGIC_0)      -> UNDEFINED,
+        (HIGH_Z, LOGIC_1)      -> LOGIC_1,
+        (UNDEFINED, LOGIC_0)   -> UNDEFINED,
+        (UNDEFINED, LOGIC_1)   -> LOGIC_1,
+        (LOGIC_0, HIGH_Z)      -> UNDEFINED,
+        (LOGIC_1, HIGH_Z)      -> LOGIC_1,
+        (LOGIC_0, UNDEFINED)   -> UNDEFINED,
+        (LOGIC_1, UNDEFINED)   -> LOGIC_1,
+        (LOGIC_0, LOGIC_0)     -> LOGIC_0,
+        (LOGIC_0, LOGIC_1)     -> LOGIC_1,
+        (LOGIC_1, LOGIC_0)     -> LOGIC_1,
+        (LOGIC_1, LOGIC_1)     -> LOGIC_1,
     );
 
     test_binary_gate(Simulator::add_or_gate, LogicWidth::MIN, TEST_DATA);
@@ -161,22 +219,22 @@ fn test_or_gate() {
 #[test]
 fn test_xor_gate() {
     const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
-        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, HIGH_Z)       -> UNDEFINED,
+        (HIGH_Z, UNDEFINED)    -> UNDEFINED,
+        (UNDEFINED, HIGH_Z)    -> UNDEFINED,
         (UNDEFINED, UNDEFINED) -> UNDEFINED,
-        (HIGH_Z, LOGIC_0) -> UNDEFINED,
-        (HIGH_Z, LOGIC_1) -> UNDEFINED,
-        (UNDEFINED, LOGIC_0) -> UNDEFINED,
-        (UNDEFINED, LOGIC_1) -> UNDEFINED,
-        (LOGIC_0, HIGH_Z) -> UNDEFINED,
-        (LOGIC_1, HIGH_Z) -> UNDEFINED,
-        (LOGIC_0, UNDEFINED) -> UNDEFINED,
-        (LOGIC_1, UNDEFINED) -> UNDEFINED,
-        (LOGIC_0, LOGIC_0) -> LOGIC_0,
-        (LOGIC_0, LOGIC_1) -> LOGIC_1,
-        (LOGIC_1, LOGIC_0) -> LOGIC_1,
-        (LOGIC_1, LOGIC_1) -> LOGIC_0,
+        (HIGH_Z, LOGIC_0)      -> UNDEFINED,
+        (HIGH_Z, LOGIC_1)      -> UNDEFINED,
+        (UNDEFINED, LOGIC_0)   -> UNDEFINED,
+        (UNDEFINED, LOGIC_1)   -> UNDEFINED,
+        (LOGIC_0, HIGH_Z)      -> UNDEFINED,
+        (LOGIC_1, HIGH_Z)      -> UNDEFINED,
+        (LOGIC_0, UNDEFINED)   -> UNDEFINED,
+        (LOGIC_1, UNDEFINED)   -> UNDEFINED,
+        (LOGIC_0, LOGIC_0)     -> LOGIC_0,
+        (LOGIC_0, LOGIC_1)     -> LOGIC_1,
+        (LOGIC_1, LOGIC_0)     -> LOGIC_1,
+        (LOGIC_1, LOGIC_1)     -> LOGIC_0,
     );
 
     test_binary_gate(Simulator::add_xor_gate, LogicWidth::MIN, TEST_DATA);
@@ -324,4 +382,460 @@ fn test_buffer() {
             assert!(output_state.eq_width(&test_data.output, width));
         }
     }
+}
+
+#[test]
+fn test_wide_and_gate() {
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
+        (HIGH_Z   , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , HIGH_Z) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , HIGH_Z) -> LOGIC_0,
+        (UNDEFINED, LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , HIGH_Z) -> LOGIC_0,
+        (LOGIC_1  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, HIGH_Z) -> LOGIC_0,
+        (LOGIC_1  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , HIGH_Z) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , HIGH_Z) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , HIGH_Z) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , UNDEFINED) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , UNDEFINED) -> LOGIC_0,
+        (UNDEFINED, LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , UNDEFINED) -> LOGIC_0,
+        (LOGIC_1  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, UNDEFINED) -> LOGIC_0,
+        (LOGIC_1  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , UNDEFINED) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , UNDEFINED) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , UNDEFINED) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_0) -> LOGIC_0,
+        (HIGH_Z   , UNDEFINED, LOGIC_0) -> LOGIC_0,
+        (UNDEFINED, HIGH_Z   , LOGIC_0) -> LOGIC_0,
+        (UNDEFINED, UNDEFINED, LOGIC_0) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (UNDEFINED, LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (UNDEFINED, LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , HIGH_Z   , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , HIGH_Z   , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , UNDEFINED, LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , UNDEFINED, LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (UNDEFINED, LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+    );
+
+    test_wide_gate(Simulator::add_wide_and_gate, LogicWidth::MIN, TEST_DATA);
+    test_wide_gate(Simulator::add_wide_and_gate, LogicWidth::MAX, TEST_DATA);
+}
+
+#[test]
+fn test_wide_or_gate() {
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
+        (HIGH_Z   , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , HIGH_Z) -> LOGIC_1,
+        (UNDEFINED, LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , HIGH_Z) -> LOGIC_1,
+        (LOGIC_0  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , HIGH_Z) -> LOGIC_1,
+        (LOGIC_0  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, HIGH_Z) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , HIGH_Z) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , HIGH_Z) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , HIGH_Z) -> LOGIC_1,
+
+        (HIGH_Z   , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , UNDEFINED) -> LOGIC_1,
+        (UNDEFINED, LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , UNDEFINED) -> LOGIC_1,
+        (LOGIC_0  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , UNDEFINED) -> LOGIC_1,
+        (LOGIC_0  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, UNDEFINED) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , UNDEFINED) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , UNDEFINED) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , UNDEFINED) -> LOGIC_1,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (UNDEFINED, LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_1) -> LOGIC_1,
+        (HIGH_Z   , UNDEFINED, LOGIC_1) -> LOGIC_1,
+        (UNDEFINED, HIGH_Z   , LOGIC_1) -> LOGIC_1,
+        (UNDEFINED, UNDEFINED, LOGIC_1) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+        (UNDEFINED, LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (UNDEFINED, LOGIC_1  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_0  , HIGH_Z   , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , HIGH_Z   , LOGIC_1) -> LOGIC_1,
+        (LOGIC_0  , UNDEFINED, LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , UNDEFINED, LOGIC_1) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+    );
+
+    test_wide_gate(Simulator::add_wide_or_gate, LogicWidth::MIN, TEST_DATA);
+    test_wide_gate(Simulator::add_wide_or_gate, LogicWidth::MAX, TEST_DATA);
+}
+
+#[test]
+fn test_wide_xor_gate() {
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
+        (HIGH_Z   , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , LOGIC_0) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+    );
+
+    test_wide_gate(Simulator::add_wide_xor_gate, LogicWidth::MIN, TEST_DATA);
+    test_wide_gate(Simulator::add_wide_xor_gate, LogicWidth::MAX, TEST_DATA);
+}
+
+#[test]
+fn test_wide_nand_gate() {
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
+        (HIGH_Z   , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , HIGH_Z) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , HIGH_Z) -> LOGIC_1,
+        (UNDEFINED, LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , HIGH_Z) -> LOGIC_1,
+        (LOGIC_1  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, HIGH_Z) -> LOGIC_1,
+        (LOGIC_1  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , HIGH_Z) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , HIGH_Z) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , HIGH_Z) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , UNDEFINED) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , UNDEFINED) -> LOGIC_1,
+        (UNDEFINED, LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , UNDEFINED) -> LOGIC_1,
+        (LOGIC_1  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, UNDEFINED) -> LOGIC_1,
+        (LOGIC_1  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , UNDEFINED) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , UNDEFINED) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , UNDEFINED) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_0) -> LOGIC_1,
+        (HIGH_Z   , UNDEFINED, LOGIC_0) -> LOGIC_1,
+        (UNDEFINED, HIGH_Z   , LOGIC_0) -> LOGIC_1,
+        (UNDEFINED, UNDEFINED, LOGIC_0) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (UNDEFINED, LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (UNDEFINED, LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , HIGH_Z   , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , HIGH_Z   , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , UNDEFINED, LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , UNDEFINED, LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (HIGH_Z   , LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (UNDEFINED, LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+    );
+
+    test_wide_gate(Simulator::add_wide_nand_gate, LogicWidth::MIN, TEST_DATA);
+    test_wide_gate(Simulator::add_wide_nand_gate, LogicWidth::MAX, TEST_DATA);
+}
+
+#[test]
+fn test_wide_nor_gate() {
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
+        (HIGH_Z   , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , HIGH_Z) -> LOGIC_0,
+        (UNDEFINED, LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , HIGH_Z) -> LOGIC_0,
+        (LOGIC_0  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , HIGH_Z) -> LOGIC_0,
+        (LOGIC_0  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, HIGH_Z) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , HIGH_Z) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , HIGH_Z) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , HIGH_Z) -> LOGIC_0,
+
+        (HIGH_Z   , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , UNDEFINED) -> LOGIC_0,
+        (UNDEFINED, LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , UNDEFINED) -> LOGIC_0,
+        (LOGIC_0  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , UNDEFINED) -> LOGIC_0,
+        (LOGIC_0  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, UNDEFINED) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , UNDEFINED) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , UNDEFINED) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , UNDEFINED) -> LOGIC_0,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (UNDEFINED, LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, LOGIC_0) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_1) -> LOGIC_0,
+        (HIGH_Z   , UNDEFINED, LOGIC_1) -> LOGIC_0,
+        (UNDEFINED, HIGH_Z   , LOGIC_1) -> LOGIC_0,
+        (UNDEFINED, UNDEFINED, LOGIC_1) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (HIGH_Z   , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+        (UNDEFINED, LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (UNDEFINED, LOGIC_1  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_0  , HIGH_Z   , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , HIGH_Z   , LOGIC_1) -> LOGIC_0,
+        (LOGIC_0  , UNDEFINED, LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , UNDEFINED, LOGIC_1) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+    );
+
+    test_wide_gate(Simulator::add_wide_nor_gate, LogicWidth::MIN, TEST_DATA);
+    test_wide_gate(Simulator::add_wide_nor_gate, LogicWidth::MAX, TEST_DATA);
+}
+
+#[test]
+fn test_wide_xnor_gate() {
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
+        (HIGH_Z   , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_0  , HIGH_Z) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_1  , HIGH_Z) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_0  , UNDEFINED) -> UNDEFINED,
+        (LOGIC_1  , LOGIC_1  , UNDEFINED) -> UNDEFINED,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , LOGIC_0) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , LOGIC_0) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , LOGIC_0) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, LOGIC_0) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , LOGIC_0) -> LOGIC_1,
+        (LOGIC_0  , LOGIC_1  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_0  , LOGIC_0) -> LOGIC_0,
+        (LOGIC_1  , LOGIC_1  , LOGIC_0) -> LOGIC_1,
+
+        (HIGH_Z   , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_0  , LOGIC_1) -> UNDEFINED,
+        (HIGH_Z   , LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, LOGIC_0  , LOGIC_1) -> UNDEFINED,
+        (UNDEFINED, LOGIC_1  , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (LOGIC_1  , HIGH_Z   , LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (LOGIC_1  , UNDEFINED, LOGIC_1) -> UNDEFINED,
+        (LOGIC_0  , LOGIC_0  , LOGIC_1) -> LOGIC_0,
+        (LOGIC_0  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_0  , LOGIC_1) -> LOGIC_1,
+        (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_0,
+    );
+
+    test_wide_gate(Simulator::add_wide_xnor_gate, LogicWidth::MIN, TEST_DATA);
+    test_wide_gate(Simulator::add_wide_xnor_gate, LogicWidth::MAX, TEST_DATA);
 }
