@@ -1,7 +1,7 @@
 use super::LogicState;
 
 #[inline]
-pub(super) const fn logic_and(a: LogicState, b: LogicState) -> LogicState {
+pub(super) fn logic_and(a: LogicState, b: LogicState) -> LogicState {
     //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
@@ -31,7 +31,7 @@ pub(super) const fn logic_and(a: LogicState, b: LogicState) -> LogicState {
 }
 
 #[inline]
-pub(super) const fn logic_or(a: LogicState, b: LogicState) -> LogicState {
+pub(super) fn logic_or(a: LogicState, b: LogicState) -> LogicState {
     //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
@@ -58,7 +58,7 @@ pub(super) const fn logic_or(a: LogicState, b: LogicState) -> LogicState {
 }
 
 #[inline]
-pub(super) const fn logic_xor(a: LogicState, b: LogicState) -> LogicState {
+pub(super) fn logic_xor(a: LogicState, b: LogicState) -> LogicState {
     //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
@@ -85,7 +85,7 @@ pub(super) const fn logic_xor(a: LogicState, b: LogicState) -> LogicState {
 }
 
 #[inline]
-pub(super) const fn logic_nand(a: LogicState, b: LogicState) -> LogicState {
+pub(super) fn logic_nand(a: LogicState, b: LogicState) -> LogicState {
     //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
@@ -112,7 +112,7 @@ pub(super) const fn logic_nand(a: LogicState, b: LogicState) -> LogicState {
 }
 
 #[inline]
-pub(super) const fn logic_nor(a: LogicState, b: LogicState) -> LogicState {
+pub(super) fn logic_nor(a: LogicState, b: LogicState) -> LogicState {
     //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
@@ -142,7 +142,7 @@ pub(super) const fn logic_nor(a: LogicState, b: LogicState) -> LogicState {
 }
 
 #[inline]
-pub(super) const fn logic_xnor(a: LogicState, b: LogicState) -> LogicState {
+pub(super) fn logic_xnor(a: LogicState, b: LogicState) -> LogicState {
     //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    1    |    0    | Undefined
@@ -169,7 +169,7 @@ pub(super) const fn logic_xnor(a: LogicState, b: LogicState) -> LogicState {
 }
 
 #[inline]
-pub(super) const fn logic_not(v: LogicState) -> LogicState {
+pub(super) fn logic_not(v: LogicState) -> LogicState {
     //  I state | I valid | I meaning | O state | O valid | O meaning
     // ---------|---------|-----------|---------|---------|-----------
     //     0    |    0    | High-Z    |    1    |    0    | Undefined
