@@ -1,11 +1,5 @@
 //! High speed digital logic simulation
 
-#![feature(sync_unsafe_cell)]
-#![feature(array_windows)]
-#![feature(ptr_as_uninit)]
-#![feature(int_roundings)]
-#![feature(const_trait_impl)]
-#![feature(const_mut_refs)]
 #![deny(missing_docs)]
 
 #[macro_use]
@@ -28,6 +22,18 @@ fn num_cpus() -> usize {
 
     static NUM_CPUS: OnceCell<usize> = OnceCell::new();
     *NUM_CPUS.get_or_init(|| num_cpus::get())
+}
+
+const fn div_ceil(lhs: usize, rhs: usize) -> usize {
+    assert!(rhs > 0);
+
+    let d = lhs / rhs;
+    let r = lhs % rhs;
+    if r > 0 {
+        d + 1
+    } else {
+        d
+    }
 }
 
 macro_rules! def_id_type {
@@ -361,8 +367,10 @@ impl Simulator {
 
         let conflicts = Mutex::new(Vec::new());
 
+        const MIN_CHUNK_SIZE: usize = 100;
         let num_chunks = num_cpus() * 8;
-        let chunk_size = self.wire_update_queue.len().div_ceil(num_chunks).max(100);
+        let chunk_size = div_ceil(self.wire_update_queue.len(), num_chunks).max(MIN_CHUNK_SIZE);
+
         let component_update_queue_iter = self
             .wire_update_queue
             .par_chunks(chunk_size)
@@ -671,7 +679,7 @@ impl SimulatorBuilder {
     }
 
     fn check_wire_widths_match(&self, wires: &[WireId]) -> Result<(), AddComponentError> {
-        if wires.array_windows::<2>().all(|w| {
+        if wires.windows(2).all(|w| {
             let w0 = self.sim.wire_widths.get(w[0]).expect("invalid wire ID");
             let w1 = self.sim.wire_widths.get(w[1]).expect("invalid wire ID");
             *w0 == *w1
