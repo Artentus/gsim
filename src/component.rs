@@ -59,8 +59,8 @@ impl SmallComponent {
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
-    ) -> SmallVec<[WireId; 2]> {
+        output_state: &LogicStateCell,
+    ) -> SmallVec<[WireId; 4]> {
         let (output, new_output_state) = match self {
             &SmallComponent::AndGate {
                 input_a,
@@ -174,8 +174,8 @@ impl SmallComponent {
         };
 
         // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-        //         and `outputs` is a slice uniquely associated with this component
-        let output_state = unsafe { outputs[0].get_mut_unsafe() };
+        //         and `output` is a reference uniquely associated with this component
+        let output_state = unsafe { output_state.get_mut_unsafe() };
 
         if new_output_state != *output_state {
             *output_state = new_output_state;
@@ -195,14 +195,14 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
-    ) -> SmallVec<[WireId; 2]>;
+    ) -> SmallVec<[WireId; 4]>;
 }
 
 macro_rules! wide_gate {
     ($name:ident, $op:ident) => {
         #[derive(Debug)]
         pub(crate) struct $name {
-            inputs: SmallVec<[WireId; 8]>,
+            inputs: SmallVec<[WireId; 4]>,
             output: WireId,
         }
 
@@ -226,7 +226,7 @@ macro_rules! wide_gate {
                 _wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
                 outputs: &[LogicStateCell],
-            ) -> SmallVec<[WireId; 2]> {
+            ) -> SmallVec<[WireId; 4]> {
                 let new_output_state = self
                     .inputs
                     .iter()
@@ -254,7 +254,7 @@ macro_rules! wide_gate_inv {
     ($name:ident, $op:ident) => {
         #[derive(Debug)]
         pub(crate) struct $name {
-            inputs: SmallVec<[WireId; 8]>,
+            inputs: SmallVec<[WireId; 4]>,
             output: WireId,
         }
 
@@ -278,7 +278,7 @@ macro_rules! wide_gate_inv {
                 _wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
                 outputs: &[LogicStateCell],
-            ) -> SmallVec<[WireId; 2]> {
+            ) -> SmallVec<[WireId; 4]> {
                 let new_output_state = self
                     .inputs
                     .iter()
@@ -342,16 +342,16 @@ impl Component {
         }
     }
 
+    #[inline]
     pub(crate) fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
-    ) -> SmallVec<[WireId; 2]> {
+    ) -> SmallVec<[WireId; 4]> {
         match &self.kind {
             ComponentKind::Small(component) => {
-                let output_range = self.output_offset..(self.output_offset + 1);
-                component.update(wire_widths, wire_states, &outputs[output_range])
+                component.update(wire_widths, wire_states, &outputs[self.output_offset])
             }
             ComponentKind::Large(component) => {
                 let output_range =

@@ -17,7 +17,7 @@ harness = false
 rayon = "1.6"
 static_assertions = "1.1"
 bounded-integer = { version = "0.5", features = ["types"] }
-smallvec = "1.10"
+smallvec = { version = "1.10", features = ["serde", "union", "const_generics"] }
 num_cpus = "1.15"
 once_cell = "1.17"
 

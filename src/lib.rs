@@ -178,8 +178,8 @@ enum WireUpdateResult {
 
 #[derive(Debug)]
 struct Wire {
-    drivers: SmallVec<[usize; 1]>,
-    driving: SmallVec<[ComponentId; 5]>,
+    drivers: SmallVec<[usize; 2]>,
+    driving: SmallVec<[ComponentId; 4]>,
 }
 
 impl Wire {
