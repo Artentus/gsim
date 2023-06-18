@@ -173,13 +173,13 @@ impl SmallComponent {
             }
         };
 
-        // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-        //         and `output` is a reference uniquely associated with this component
-        let output_state = unsafe { output_state.get_mut_unsafe() };
+        let changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `output_state` is a reference uniquely associated with this component
+            output_state.set_unsafe(new_output_state)
+        };
 
-        if new_output_state != *output_state {
-            *output_state = new_output_state;
-
+        if changed {
             smallvec![output]
         } else {
             smallvec![]
@@ -234,13 +234,13 @@ macro_rules! wide_gate {
                     .reduce(|a, b| a.$op(b))
                     .unwrap_or(LogicState::UNDEFINED);
 
-                // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-                //         and `outputs` is a slice uniquely associated with this component
-                let output_state = unsafe { outputs[0].get_mut_unsafe() };
+                let changed = unsafe {
+                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+                    //         and `outputs` is a slice uniquely associated with this component
+                    outputs[0].set_unsafe(new_output_state)
+                };
 
-                if new_output_state != *output_state {
-                    *output_state = new_output_state;
-
+                if changed {
                     smallvec![self.output]
                 } else {
                     smallvec![]
@@ -287,13 +287,13 @@ macro_rules! wide_gate_inv {
                     .unwrap_or(LogicState::UNDEFINED)
                     .logic_not();
 
-                // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-                //         and `outputs` is a slice uniquely associated with this component
-                let output_state = unsafe { outputs[0].get_mut_unsafe() };
+                let changed = unsafe {
+                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+                    //         and `outputs` is a slice uniquely associated with this component
+                    outputs[0].set_unsafe(new_output_state)
+                };
 
-                if new_output_state != *output_state {
-                    *output_state = new_output_state;
-
+                if changed {
                     smallvec![self.output]
                 } else {
                     smallvec![]

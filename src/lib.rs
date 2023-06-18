@@ -382,13 +382,15 @@ impl Simulator {
                     let width = unsafe { *self.wire_widths.get_unchecked(wire_id) };
                     let base_drive = unsafe { *self.wire_base_drives.get_unchecked(wire_id) };
                     let state = unsafe { self.wire_states.get_unchecked(wire_id) };
-                    // SAFETY: sort_unstable + dedup ensure wire_id is unique between all iterations
-                    let state = unsafe { state.get_mut_unsafe() };
 
                     match wire.update(width, base_drive, &self.component_outputs) {
                         WireUpdateResult::Ok(new_state) => {
-                            if new_state != *state {
-                                *state = new_state;
+                            let changed = unsafe {
+                                // SAFETY: sort_unstable + dedup ensure wire_id is unique between all iterations
+                                state.set_unsafe(new_state)
+                            };
+
+                            if changed {
                                 local_queue.extend_from_slice(wire.driving.as_slice());
                             }
                         }

@@ -347,8 +347,14 @@ impl LogicStateCell {
     }
 
     #[inline]
-    pub(crate) unsafe fn get_mut_unsafe(&self) -> &mut LogicState {
-        &mut *self.inner.get()
+    pub(crate) unsafe fn set_unsafe(&self, value: LogicState) -> bool {
+        let ptr = self.inner.get();
+        if value != *ptr {
+            *ptr = value;
+            true
+        } else {
+            false
+        }
     }
 
     #[inline]
