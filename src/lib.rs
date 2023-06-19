@@ -42,7 +42,6 @@ macro_rules! def_id_type {
         mod $ns {
             use std::marker::PhantomData;
             use std::num::NonZeroU32;
-            use std::ops::RangeInclusive;
 
             $(#[$attr])*
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -129,9 +128,9 @@ macro_rules! def_id_type {
             }
 
             #[derive(Clone)]
-            #[repr(transparent)]
             pub(crate) struct IdIter<'a> {
-                range: RangeInclusive<u32>,
+                index: u32,
+                len: u32,
                 _a: PhantomData<&'a ()>,
             }
 
@@ -139,7 +138,8 @@ macro_rules! def_id_type {
                 #[inline]
                 fn new(len: u32) -> Self {
                     Self {
-                        range: 1..=len,
+                        index: 0,
+                        len,
                         _a: PhantomData,
                     }
                 }
@@ -148,11 +148,37 @@ macro_rules! def_id_type {
             impl<'a> Iterator for IdIter<'a> {
                 type Item = $id_name;
 
+                #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
-                    self.range.next().map(|i| unsafe {
-                        // SAFETY: the range starts from 1
-                        $id_name(NonZeroU32::new_unchecked(i))
-                    })
+                    if self.index < self.len {
+                        self.index += 1;
+
+                        Some($id_name(unsafe {
+                            // SAFETY:
+                            //   We just incremented self.index so it cannot be 0.
+                            NonZeroU32::new_unchecked(self.index)
+                        }))
+                    } else {
+                        None
+                    }
+                }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    let len = self.len();
+                    (len, Some(len))
+                }
+
+                #[inline]
+                fn count(self) -> usize {
+                    self.len()
+                }
+            }
+
+            impl<'a> ExactSizeIterator for IdIter<'a> {
+                #[inline]
+                fn len(&self) -> usize {
+                    (self.len - self.index) as usize
                 }
             }
         }
