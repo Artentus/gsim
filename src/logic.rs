@@ -55,6 +55,13 @@ impl BitAnd for LogicStorage {
     }
 }
 
+impl BitAndAssign for LogicStorage {
+    #[inline]
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
+    }
+}
+
 impl BitOr for LogicStorage {
     type Output = Self;
 
@@ -64,12 +71,26 @@ impl BitOr for LogicStorage {
     }
 }
 
+impl BitOrAssign for LogicStorage {
+    #[inline]
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
 impl BitXor for LogicStorage {
     type Output = Self;
 
     #[inline]
     fn bitxor(self, rhs: Self) -> Self::Output {
         Self(self.0 ^ rhs.0)
+    }
+}
+
+impl BitXorAssign for LogicStorage {
+    #[inline]
+    fn bitxor_assign(&mut self, rhs: Self) {
+        self.0 ^= rhs.0;
     }
 }
 

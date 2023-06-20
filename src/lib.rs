@@ -197,10 +197,7 @@ def_id_type!(
     component_id::ComponentId
 );
 
-enum WireUpdateResult {
-    Ok(LogicState),
-    Conflict,
-}
+type WireUpdateResult = Result<LogicState, ()>;
 
 #[derive(Debug)]
 struct Wire {
@@ -249,32 +246,31 @@ impl Wire {
             } & mask;
 
             if conflict == LogicStorage::ALL_ZERO {
-                WireUpdateResult::Ok(LogicState {
-                    state: (a.state | b.state) & mask,
-                    valid: (a.valid | b.valid) & mask,
+                Ok(LogicState {
+                    state: a.state | b.state,
+                    valid: a.valid | b.valid,
                 })
             } else {
-                WireUpdateResult::Conflict
+                Err(())
             }
         }
 
         let mask = LogicStorage::mask(width);
 
         let mut new_state = LogicState {
-            state: self.base_drive.state & mask,
-            valid: self.base_drive.valid & mask,
+            state: self.base_drive.state,
+            valid: self.base_drive.valid,
         };
 
         for driver in self.drivers.iter().copied() {
             let output = component_outputs[driver].get();
-
-            match combine(new_state, output, mask) {
-                WireUpdateResult::Ok(state) => new_state = state,
-                WireUpdateResult::Conflict => return WireUpdateResult::Conflict,
-            }
+            new_state = combine(new_state, output, mask)?;
         }
 
-        WireUpdateResult::Ok(new_state)
+        new_state.state &= mask;
+        new_state.valid &= mask;
+
+        Ok(new_state)
     }
 }
 
@@ -401,7 +397,7 @@ impl Simulator {
                     let state = unsafe { self.wire_states.get_unchecked(wire_id) };
 
                     match wire.update(width, &self.component_outputs) {
-                        WireUpdateResult::Ok(new_state) => {
+                        Ok(new_state) => {
                             let changed = unsafe {
                                 // SAFETY: sort_unstable + dedup ensure wire_id is unique between all iterations
                                 state.set_unsafe(new_state)
@@ -411,7 +407,7 @@ impl Simulator {
                                 local_queue.extend_from_slice(wire.driving.as_slice());
                             }
                         }
-                        WireUpdateResult::Conflict => {
+                        Err(()) => {
                             // Locking here is ok because we are in the error path
                             let mut conflict_list =
                                 conflicts.lock().expect("failed to aquire mutex");
