@@ -18,11 +18,14 @@ macro_rules! bit_size_of {
     };
 }
 
+/// An integer type of the same bit width as LogicState.
+pub type LogicSizeInteger = u32;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub(crate) struct LogicStorage(u64);
-assert_eq_size!(LogicStorage, u64);
-assert_eq_align!(LogicStorage, u64);
+pub(crate) struct LogicStorage(LogicSizeInteger);
+assert_eq_size!(LogicStorage, LogicSizeInteger);
+assert_eq_align!(LogicStorage, LogicSizeInteger);
 
 impl LogicStorage {
     pub(crate) const ALL_ZERO: Self = Self(0);
@@ -219,7 +222,7 @@ impl LogicBitState {
     }
 }
 
-/// Stores the logic state of up to 64 bits
+/// Stores the logic state of up to `MAX_LOGIC_WIDTH` bits
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct LogicState {
@@ -260,7 +263,7 @@ impl LogicState {
 
     /// Creates a new logic state representing the given integer value
     #[inline]
-    pub const fn new(value: u64) -> Self {
+    pub const fn new(value: LogicSizeInteger) -> Self {
         Self {
             state: LogicStorage(value),
             valid: LogicStorage::ALL_ONE,
