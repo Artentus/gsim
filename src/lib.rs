@@ -206,6 +206,7 @@ enum WireUpdateResult {
 struct Wire {
     drivers: SmallVec<[usize; 2]>,
     driving: SmallVec<[ComponentId; 4]>,
+    base_drive: LogicState,
 }
 
 impl Wire {
@@ -214,15 +215,11 @@ impl Wire {
         Self {
             drivers: smallvec![],
             driving: smallvec![],
+            base_drive: LogicState::HIGH_Z,
         }
     }
 
-    fn update(
-        &self,
-        width: LogicWidth,
-        base_drive: LogicState,
-        component_outputs: &[LogicStateCell],
-    ) -> WireUpdateResult {
+    fn update(&self, width: LogicWidth, component_outputs: &[LogicStateCell]) -> WireUpdateResult {
         #[inline]
         fn combine(a: LogicState, b: LogicState, mask: LogicStorage) -> WireUpdateResult {
             //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning | conflict
@@ -264,8 +261,8 @@ impl Wire {
         let mask = LogicStorage::mask(width);
 
         let mut new_state = LogicState {
-            state: base_drive.state & mask,
-            valid: base_drive.valid & mask,
+            state: self.base_drive.state & mask,
+            valid: self.base_drive.valid & mask,
         };
 
         for driver in self.drivers.iter().copied() {
@@ -326,14 +323,12 @@ pub type AddComponentResult = Result<ComponentId, AddComponentError>;
 
 type WireList = wire_id::IdList<Wire>;
 type WireWidthList = wire_id::IdList<LogicWidth>;
-type WireBaseDriveList = wire_id::IdList<LogicState>;
 type WireStateList = wire_id::IdList<LogicStateCell>;
 
 /// A digital circuit simulator
 pub struct Simulator {
     wires: WireList,
     wire_widths: WireWidthList,
-    wire_base_drives: WireBaseDriveList,
     wire_states: WireStateList,
 
     components: component_id::IdList<Component>,
@@ -349,7 +344,6 @@ impl Simulator {
         Self {
             wires: WireList::new(),
             wire_widths: WireWidthList::new(),
-            wire_base_drives: WireBaseDriveList::new(),
             wire_states: WireStateList::new(),
 
             components: component_id::IdList::new(),
@@ -367,16 +361,14 @@ impl Simulator {
 
     /// Drives a wire to a certain state without needing a component
     pub fn set_wire_base_drive(&mut self, wire: WireId, drive: LogicState) {
-        let wire_base_drive = self
-            .wire_base_drives
-            .get_mut(wire)
-            .expect("invalid wire ID");
-        *wire_base_drive = drive;
+        let wire = self.wires.get_mut(wire).expect("invalid wire ID");
+        wire.base_drive = drive;
     }
 
     /// Gets the current base drive of a wire
     pub fn get_wire_base_drive(&self, wire: WireId) -> LogicState {
-        *self.wire_base_drives.get(wire).expect("invalid wire ID")
+        let wire = self.wires.get(wire).expect("invalid wire ID");
+        wire.base_drive
     }
 
     /// Gets the current state of a wire
@@ -406,10 +398,9 @@ impl Simulator {
                 for &wire_id in chunk {
                     let wire = unsafe { self.wires.get_unchecked(wire_id) };
                     let width = unsafe { *self.wire_widths.get_unchecked(wire_id) };
-                    let base_drive = unsafe { *self.wire_base_drives.get_unchecked(wire_id) };
                     let state = unsafe { self.wire_states.get_unchecked(wire_id) };
 
-                    match wire.update(width, base_drive, &self.component_outputs) {
+                    match wire.update(width, &self.component_outputs) {
                         WireUpdateResult::Ok(new_state) => {
                             let changed = unsafe {
                                 // SAFETY: sort_unstable + dedup ensure wire_id is unique between all iterations
@@ -644,13 +635,11 @@ impl SimulatorBuilder {
     pub fn add_wire(&mut self, width: LogicWidth) -> WireId {
         let wire_id = self.sim.wires.insert(Wire::new());
         let width_id = self.sim.wire_widths.insert(width);
-        let base_drive_id = self.sim.wire_base_drives.insert(LogicState::HIGH_Z);
         let state_id = self
             .sim
             .wire_states
             .insert(LogicStateCell::new(LogicState::HIGH_Z));
         debug_assert_eq!(wire_id, width_id);
-        debug_assert_eq!(wire_id, base_drive_id);
         debug_assert_eq!(wire_id, state_id);
         wire_id
     }
