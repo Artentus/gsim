@@ -284,9 +284,18 @@ impl LogicState {
 
     /// Creates a new logic state representing the given integer value
     #[inline]
-    pub const fn new(value: LogicSizeInteger) -> Self {
+    pub const fn from_int(value: LogicSizeInteger) -> Self {
         Self {
             state: LogicStorage(value),
+            valid: LogicStorage::ALL_ONE,
+        }
+    }
+
+    /// Creates a new logic state representing the given boolean value
+    #[inline]
+    pub const fn from_bool(value: bool) -> Self {
+        Self {
+            state: LogicStorage(if value { 1 } else { 0 }),
             valid: LogicStorage::ALL_ONE,
         }
     }
@@ -316,38 +325,54 @@ impl LogicState {
     }
 
     /// Computes logical AND between this state and `rhs`
+    #[inline]
     pub fn logic_and(self, rhs: Self) -> Self {
         logic_and(self, rhs)
     }
 
     /// Computes logical OR between this state and `rhs`
+    #[inline]
     pub fn logic_or(self, rhs: Self) -> Self {
         logic_or(self, rhs)
     }
 
     /// Computes logical XOR between this state and `rhs`
+    #[inline]
     pub fn logic_xor(self, rhs: Self) -> Self {
         logic_xor(self, rhs)
     }
 
     /// Computes logical NAND between this state and `rhs`
+    #[inline]
     pub fn logic_nand(self, rhs: Self) -> Self {
         logic_nand(self, rhs)
     }
 
     /// Computes logical NOR between this state and `rhs`
+    #[inline]
     pub fn logic_nor(self, rhs: Self) -> Self {
         logic_nor(self, rhs)
     }
 
     /// Computes logical XNOR between this state and `rhs`
+    #[inline]
     pub fn logic_xnor(self, rhs: Self) -> Self {
         logic_xnor(self, rhs)
     }
 
     /// Computes logical NOT of this state
+    #[inline]
     pub fn logic_not(self) -> Self {
         logic_not(self)
+    }
+
+    /// Turns all HIGH Z bits into UNDEFINED bits
+    #[inline]
+    pub fn high_z_to_undefined(self) -> Self {
+        Self {
+            state: self.state | !self.valid,
+            valid: self.valid,
+        }
     }
 }
 

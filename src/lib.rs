@@ -6,6 +6,7 @@
 extern crate static_assertions;
 
 mod component;
+pub use component::ComponentData;
 use component::*;
 
 mod logic;
@@ -372,6 +373,14 @@ impl Simulator {
         self.wire_states.get(wire).expect("invalid wire ID").get()
     }
 
+    /// Gets a components data
+    pub fn get_component_data<'a>(&'a mut self, component: ComponentId) -> ComponentData<'a> {
+        self.components
+            .get_mut(component)
+            .expect("invalid component ID")
+            .get_data()
+    }
+
     fn update_wires(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
 
@@ -477,6 +486,10 @@ impl Simulator {
         for output in self.component_outputs.iter_mut() {
             let output = output.get_mut();
             *output = LogicState::HIGH_Z;
+        }
+
+        for component in self.components.iter_mut() {
+            component.reset();
         }
     }
 
@@ -656,6 +669,12 @@ impl SimulatorBuilder {
     #[inline]
     pub fn get_wire_base_drive(&self, wire: WireId) -> LogicState {
         self.sim.get_wire_base_drive(wire)
+    }
+
+    /// Gets a components data
+    #[inline]
+    pub fn get_component_data<'a>(&'a mut self, component: ComponentId) -> ComponentData<'a> {
+        self.sim.get_component_data(component)
     }
 
     fn add_small_component(&mut self, component: SmallComponent) -> (usize, ComponentId) {
@@ -880,6 +899,48 @@ impl SimulatorBuilder {
         add_wide_xnor_gate,
         WideXnorGate
     );
+
+    /// Adds a `Register` component to the simulation
+    pub fn add_register(
+        &mut self,
+        data_in: WireId,
+        data_out: WireId,
+        enable: WireId,
+        clock: WireId,
+    ) -> AddComponentResult {
+        self.check_wire_widths_match(&[data_in, data_out])?;
+
+        let enable_wire_width = self.sim.wire_widths.get(enable).expect("invalid wire ID");
+        if *enable_wire_width != 1 {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let clock_wire_width = self.sim.wire_widths.get(clock).expect("invalid wire ID");
+        if *clock_wire_width != 1 {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let register = Register::new(data_in, data_out, enable, clock);
+        let (output_offset, id) = self.add_large_component(register);
+
+        let data_in_wire = self.sim.wires.get_mut(data_in).unwrap();
+        data_in_wire.driving.push(id);
+
+        let enable_wire = self.sim.wires.get_mut(enable).unwrap();
+        if !enable_wire.driving.contains(&id) {
+            enable_wire.driving.push(id);
+        }
+
+        let clock_wire = self.sim.wires.get_mut(clock).unwrap();
+        if !clock_wire.driving.contains(&id) {
+            clock_wire.driving.push(id);
+        }
+
+        let data_out_wire = self.sim.wires.get_mut(data_out).unwrap();
+        data_out_wire.drivers.push(output_offset);
+
+        Ok(id)
+    }
 
     /// Creates the simulator
     #[inline]

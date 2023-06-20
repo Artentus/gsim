@@ -1,6 +1,49 @@
 use crate::*;
 use smallvec::{smallvec, SmallVec};
 
+#[repr(transparent)]
+struct SyncCell<T> {
+    inner: std::cell::Cell<T>,
+}
+
+impl<T> SyncCell<T> {
+    #[inline]
+    fn new(value: T) -> Self {
+        Self {
+            inner: std::cell::Cell::new(value),
+        }
+    }
+
+    #[inline]
+    fn get(&self) -> T
+    where
+        T: Copy,
+    {
+        self.inner.get()
+    }
+
+    #[inline]
+    fn get_mut(&mut self) -> &mut T {
+        self.inner.get_mut()
+    }
+
+    #[inline]
+    fn set(&self, value: T) {
+        self.inner.set(value)
+    }
+}
+
+impl<T: Copy + std::fmt::Debug> std::fmt::Debug for SyncCell<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.get(), f)
+    }
+}
+
+// SAFETY:
+//   This is not safe in general, but through guarantees of the simulator
+//   all structs in this module are only accesses by one thread at a time.
+unsafe impl<T> Sync for SyncCell<T> {}
+
 #[derive(Debug)]
 pub(crate) enum SmallComponent {
     AndGate {
@@ -187,8 +230,22 @@ impl SmallComponent {
     }
 }
 
+/// Contains mutable data of a component
+pub enum ComponentData<'a> {
+    /// The component does not store any data
+    None,
+    /// The component stores a single register value
+    RegisterValue(&'a mut LogicState),
+}
+
 pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
     fn output_count(&self) -> usize;
+
+    fn get_data<'a>(&'a mut self) -> ComponentData<'a> {
+        ComponentData::None
+    }
+
+    fn reset(&mut self) {}
 
     fn update(
         &self,
@@ -311,6 +368,87 @@ wide_gate_inv!(WideNorGate, logic_or);
 wide_gate_inv!(WideXnorGate, logic_xor);
 
 #[derive(Debug)]
+pub(crate) struct Register {
+    data_in: WireId,
+    data_out: WireId,
+    enable: WireId,
+    clock: WireId,
+    prev_clock: SyncCell<Option<bool>>,
+    data: SyncCell<LogicState>,
+}
+
+impl Register {
+    #[inline]
+    pub(crate) fn new(data_in: WireId, data_out: WireId, enable: WireId, clock: WireId) -> Self {
+        Self {
+            data_in,
+            data_out,
+            enable,
+            clock,
+            prev_clock: SyncCell::new(None),
+            data: SyncCell::new(LogicState::UNDEFINED),
+        }
+    }
+}
+
+impl LargeComponent for Register {
+    fn output_count(&self) -> usize {
+        1
+    }
+
+    fn get_data<'a>(&'a mut self) -> ComponentData<'a> {
+        ComponentData::RegisterValue(self.data.get_mut())
+    }
+
+    fn reset(&mut self) {
+        *self.prev_clock.get_mut() = None;
+        *self.data.get_mut() = LogicState::UNDEFINED;
+    }
+
+    fn update(
+        &self,
+        _wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &[LogicStateCell],
+    ) -> SmallVec<[WireId; 4]> {
+        let data_in_state = unsafe { wire_states.get_unchecked(self.data_in).get() };
+        let enable_state = unsafe { wire_states.get_unchecked(self.enable).get() };
+        let clock_state = unsafe { wire_states.get_unchecked(self.clock).get() };
+
+        let new_clock = match clock_state.get_bit_state(LogicOffset::MIN) {
+            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock.get(),
+            LogicBitState::Logic0 => Some(false),
+            LogicBitState::Logic1 => Some(true),
+        };
+
+        let new_data = if let (Some(false), Some(true)) = (self.prev_clock.get(), new_clock) {
+            match enable_state.get_bit_state(LogicOffset::MIN) {
+                LogicBitState::HighZ | LogicBitState::Undefined => LogicState::UNDEFINED,
+                LogicBitState::Logic0 => self.data.get(),
+                LogicBitState::Logic1 => data_in_state.high_z_to_undefined(),
+            }
+        } else {
+            self.data.get()
+        };
+
+        let changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `outputs` is a slice uniquely associated with this component
+            outputs[0].set_unsafe(new_data)
+        };
+
+        self.prev_clock.set(new_clock);
+        self.data.set(new_data);
+
+        if changed {
+            smallvec![self.data_out]
+        } else {
+            smallvec![]
+        }
+    }
+}
+
+#[derive(Debug)]
 enum ComponentKind {
     Small(SmallComponent),
     Large(Box<dyn LargeComponent>),
@@ -339,6 +477,22 @@ impl Component {
         Self {
             kind: ComponentKind::Large(Box::new(component)),
             output_offset,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn get_data<'a>(&'a mut self) -> ComponentData<'a> {
+        match &mut self.kind {
+            ComponentKind::Small(_) => ComponentData::None,
+            ComponentKind::Large(component) => component.get_data(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn reset(&mut self) {
+        match &mut self.kind {
+            ComponentKind::Small(_) => {}
+            ComponentKind::Large(component) => component.reset(),
         }
     }
 

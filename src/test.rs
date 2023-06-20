@@ -959,3 +959,126 @@ fn test_wide_xnor_gate() {
         2,
     );
 }
+
+#[test]
+fn test_register() {
+    let mut builder = SimulatorBuilder::default();
+
+    let data_in = builder.add_wire(LogicWidth::MAX);
+    let data_out = builder.add_wire(LogicWidth::MAX);
+    let enable = builder.add_wire(LogicWidth::MIN);
+    let clock = builder.add_wire(LogicWidth::MIN);
+    let register = builder
+        .add_register(data_in, data_out, enable, clock)
+        .unwrap();
+
+    let mut sim = builder.build();
+
+    struct TestData {
+        data_in: LogicState,
+        enable: bool,
+        clock: bool,
+        data_out: LogicState,
+    }
+
+    macro_rules! test_data {
+        (@INNER ($in:ident, $e:literal, $c:literal) -> $out:ident) => {
+            TestData {
+                data_in: LogicState::$in,
+                enable: $e,
+                clock: $c,
+                data_out: LogicState::$out,
+            }
+        };
+        (@INNER ($in:literal, $e:literal, $c:literal) -> $out:ident) => {
+            TestData {
+                data_in: LogicState::from_int($in),
+                enable: $e,
+                clock: $c,
+                data_out: LogicState::$out,
+            }
+        };
+        (@INNER ($in:ident, $e:literal, $c:literal) -> $out:literal) => {
+            TestData {
+                data_in: LogicState::$in,
+                enable: $e,
+                clock: $c,
+                data_out: LogicState::from_int($out),
+            }
+        };
+        (@INNER ($in:literal, $e:literal, $c:literal) -> $out:literal) => {
+            TestData {
+                data_in: LogicState::from_int($in),
+                enable: $e,
+                clock: $c,
+                data_out: LogicState::from_int($out),
+            }
+        };
+        ($(($in:tt, $e:literal, $c:literal) -> $out:tt),* $(,)?) => {
+            &[$(test_data!(@INNER ($in, $e, $c) -> $out),)*]
+        };
+    }
+
+    const TEST_DATA: &[TestData] = test_data![
+        (HIGH_Z, false, false) -> UNDEFINED,
+        (HIGH_Z, false, true) -> UNDEFINED,
+        (HIGH_Z, true, false) -> UNDEFINED,
+        (HIGH_Z, true, true) -> UNDEFINED,
+
+        (0, false, false) -> UNDEFINED,
+        (0, false, true) -> UNDEFINED,
+        (0, true, false) -> UNDEFINED,
+        (0, true, true) -> 0,
+
+        (1, false, false) -> 0,
+        (1, false, true) -> 0,
+        (1, true, false) -> 0,
+        (1, true, true) -> 1,
+
+        (HIGH_Z, false, false) -> 1,
+        (HIGH_Z, false, true) -> 1,
+        (HIGH_Z, true, false) -> 1,
+        (HIGH_Z, true, true) -> UNDEFINED,
+
+        (0, false, true) -> UNDEFINED,
+        (0, true, true) -> UNDEFINED,
+        (0, true, false) -> UNDEFINED,
+        (0, true, true) -> 0,
+
+        (0, true, false) -> 0,
+        (UNDEFINED, true, true) -> UNDEFINED,
+        (UNDEFINED, true, false) -> UNDEFINED,
+        (0xAA55, true, true) -> 0xAA55,
+    ];
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        sim.set_wire_base_drive(data_in, test_data.data_in);
+        sim.set_wire_base_drive(enable, LogicState::from_bool(test_data.enable));
+        sim.set_wire_base_drive(clock, LogicState::from_bool(test_data.clock));
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(data_out);
+
+        assert!(
+            output_state.eq_width(&test_data.data_out, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.data_out.display_string(LogicWidth::MAX),
+            output_state.display_string(LogicWidth::MAX),
+        );
+
+        let register_data = sim.get_component_data(register);
+        let ComponentData::RegisterValue(register_data) = register_data else {
+            panic!("[TEST {i}] invalid component data");
+        };
+
+        assert!(
+            register_data.eq_width(&output_state, LogicWidth::MAX),
+            "[TEST {i}] register data differs from output",
+        );
+    }
+}
