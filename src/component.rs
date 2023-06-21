@@ -95,6 +95,31 @@ pub(crate) enum SmallComponent {
         input_b: WireId,
         output: WireId,
     },
+    Add {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    Sub {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    Mul {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    Div {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    Rem {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
 }
 
 impl SmallComponent {
@@ -104,61 +129,54 @@ impl SmallComponent {
         wire_states: &WireStateList,
         output_state: &LogicStateCell,
     ) -> SmallVec<[WireId; 4]> {
+        macro_rules! impl_gate {
+            ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
+                let state_a = unsafe { wire_states.get_unchecked($input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked($input_b).get() };
+                ($output, state_a.$op(state_b))
+            }};
+        }
+
+        macro_rules! impl_arithmetic {
+            ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
+                let wire_width = unsafe { *wire_widths.get_unchecked($input_a) };
+                let state_a = unsafe { wire_states.get_unchecked($input_a).get() };
+                let state_b = unsafe { wire_states.get_unchecked($input_b).get() };
+                ($output, state_a.$op(state_b, wire_width))
+            }};
+        }
+
         let (output, new_output_state) = match self {
             &SmallComponent::AndGate {
                 input_a,
                 input_b,
                 output,
-            } => {
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-                (output, state_a.logic_and(state_b))
-            }
+            } => impl_gate!(input_a, input_b, output => logic_and),
             &SmallComponent::OrGate {
                 input_a,
                 input_b,
                 output,
-            } => {
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-                (output, state_a.logic_or(state_b))
-            }
+            } => impl_gate!(input_a, input_b, output => logic_or),
             &SmallComponent::XorGate {
                 input_a,
                 input_b,
                 output,
-            } => {
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-                (output, state_a.logic_xor(state_b))
-            }
+            } => impl_gate!(input_a, input_b, output => logic_xor),
             &SmallComponent::NandGate {
                 input_a,
                 input_b,
                 output,
-            } => {
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-                (output, state_a.logic_nand(state_b))
-            }
+            } => impl_gate!(input_a, input_b, output => logic_nand),
             &SmallComponent::NorGate {
                 input_a,
                 input_b,
                 output,
-            } => {
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-                (output, state_a.logic_nor(state_b))
-            }
+            } => impl_gate!(input_a, input_b, output => logic_nor),
             &SmallComponent::XnorGate {
                 input_a,
                 input_b,
                 output,
-            } => {
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
-                (output, state_a.logic_xnor(state_b))
-            }
+            } => impl_gate!(input_a, input_b, output => logic_xnor),
             &SmallComponent::NotGate { input, output } => {
                 let state = unsafe { wire_states.get_unchecked(input).get() };
                 (output, state.logic_not())
@@ -214,6 +232,31 @@ impl SmallComponent {
                     },
                 )
             }
+            &SmallComponent::Add {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => add),
+            &SmallComponent::Sub {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => sub),
+            &SmallComponent::Mul {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => mul),
+            &SmallComponent::Div {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => div),
+            &SmallComponent::Rem {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => rem),
         };
 
         let changed = unsafe {
@@ -252,14 +295,14 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
-    ) -> SmallVec<[WireId; 4]>;
+    ) -> inline_vec!(WireId);
 }
 
 macro_rules! wide_gate {
     ($name:ident, $op:ident) => {
         #[derive(Debug)]
         pub(crate) struct $name {
-            inputs: SmallVec<[WireId; 4]>,
+            inputs: inline_vec!(WireId),
             output: WireId,
         }
 
@@ -283,7 +326,7 @@ macro_rules! wide_gate {
                 _wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
                 outputs: &[LogicStateCell],
-            ) -> SmallVec<[WireId; 4]> {
+            ) -> inline_vec!(WireId) {
                 let new_output_state = self
                     .inputs
                     .iter()
@@ -311,7 +354,7 @@ macro_rules! wide_gate_inv {
     ($name:ident, $op:ident) => {
         #[derive(Debug)]
         pub(crate) struct $name {
-            inputs: SmallVec<[WireId; 4]>,
+            inputs: inline_vec!(WireId),
             output: WireId,
         }
 
@@ -335,7 +378,7 @@ macro_rules! wide_gate_inv {
                 _wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
                 outputs: &[LogicStateCell],
-            ) -> SmallVec<[WireId; 4]> {
+            ) -> inline_vec!(WireId) {
                 let new_output_state = self
                     .inputs
                     .iter()
@@ -410,7 +453,7 @@ impl LargeComponent for Register {
         _wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
-    ) -> SmallVec<[WireId; 4]> {
+    ) -> inline_vec!(WireId) {
         let data_in_state = unsafe { wire_states.get_unchecked(self.data_in).get() };
         let enable_state = unsafe { wire_states.get_unchecked(self.enable).get() };
         let clock_state = unsafe { wire_states.get_unchecked(self.clock).get() };
@@ -502,7 +545,7 @@ impl Component {
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
-    ) -> SmallVec<[WireId; 4]> {
+    ) -> inline_vec!(WireId) {
         match &self.kind {
             ComponentKind::Small(component) => {
                 component.update(wire_widths, wire_states, &outputs[self.output_offset])

@@ -969,6 +969,36 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
+    def_add_binary_gate!(
+        /// Adds an `ADD` component to the simulation
+        add_add,
+        Add
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `SUB` component to the simulation
+        add_sub,
+        Sub
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `MUL` component to the simulation
+        add_mul,
+        Mul
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `DIV` component to the simulation
+        add_div,
+        Div
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `REM` component to the simulation
+        add_rem,
+        Rem
+    );
+
     /// Creates the simulator
     #[inline]
     pub fn build(self) -> Simulator {

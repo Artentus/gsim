@@ -144,6 +144,54 @@ impl Neg for LogicStorage {
     }
 }
 
+impl Mul for LogicStorage {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self(self.0.wrapping_mul(rhs.0))
+    }
+}
+
+impl MulAssign for LogicStorage {
+    #[inline]
+    fn mul_assign(&mut self, rhs: Self) {
+        self.0 = self.0.wrapping_mul(rhs.0);
+    }
+}
+
+impl Div for LogicStorage {
+    type Output = Self;
+
+    #[inline]
+    fn div(self, rhs: Self) -> Self::Output {
+        Self(self.0.wrapping_div(rhs.0))
+    }
+}
+
+impl DivAssign for LogicStorage {
+    #[inline]
+    fn div_assign(&mut self, rhs: Self) {
+        self.0 = self.0.wrapping_div(rhs.0);
+    }
+}
+
+impl Rem for LogicStorage {
+    type Output = Self;
+
+    #[inline]
+    fn rem(self, rhs: Self) -> Self::Output {
+        Self(self.0.wrapping_rem(rhs.0))
+    }
+}
+
+impl RemAssign for LogicStorage {
+    #[inline]
+    fn rem_assign(&mut self, rhs: Self) {
+        self.0 = self.0.wrapping_rem(rhs.0);
+    }
+}
+
 impl Shl<LogicOffset> for LogicStorage {
     type Output = Self;
 
@@ -364,6 +412,36 @@ impl LogicState {
     #[inline]
     pub fn logic_not(self) -> Self {
         logic_not(self)
+    }
+
+    /// Computes the sum of this state and `rhs`
+    #[inline]
+    pub fn add(self, rhs: Self, width: LogicWidth) -> Self {
+        add(self, rhs, width)
+    }
+
+    /// Computes the difference between this state and `rhs`
+    #[inline]
+    pub fn sub(self, rhs: Self, width: LogicWidth) -> Self {
+        sub(self, rhs, width)
+    }
+
+    /// Computes the product of this state and `rhs`
+    #[inline]
+    pub fn mul(self, rhs: Self, width: LogicWidth) -> Self {
+        mul(self, rhs, width)
+    }
+
+    /// Computes the quotient of this state and `rhs`
+    #[inline]
+    pub fn div(self, rhs: Self, width: LogicWidth) -> Self {
+        div(self, rhs, width)
+    }
+
+    /// Computes the remainder of the quotient of this state and `rhs`
+    #[inline]
+    pub fn rem(self, rhs: Self, width: LogicWidth) -> Self {
+        rem(self, rhs, width)
     }
 
     /// Turns all HIGH Z bits into UNDEFINED bits

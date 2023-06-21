@@ -1,4 +1,4 @@
-use super::LogicState;
+use super::{LogicState, LogicStorage, LogicWidth};
 
 #[inline]
 pub(super) fn logic_and(a: LogicState, b: LogicState) -> LogicState {
@@ -180,5 +180,101 @@ pub(super) fn logic_not(v: LogicState) -> LogicState {
     LogicState {
         state: !v.state | !v.valid,
         valid: v.valid,
+    }
+}
+
+#[inline]
+pub(super) fn add(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState {
+            state: a_state + b_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn sub(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState {
+            state: a_state - b_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn mul(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState {
+            state: a_state * b_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn div(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE)
+        && (b_valid == LogicStorage::ALL_ONE)
+        && (b_state != LogicStorage::ALL_ZERO)
+    {
+        LogicState {
+            state: a_state / b_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn rem(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE)
+        && (b_valid == LogicStorage::ALL_ONE)
+        && (b_state != LogicStorage::ALL_ZERO)
+    {
+        LogicState {
+            state: a_state % b_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
     }
 }
