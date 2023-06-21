@@ -15,8 +15,35 @@ pub use logic::*;
 #[cfg(test)]
 mod test;
 
-use smallvec::{smallvec, SmallVec};
+use smallvec::smallvec;
 use std::sync::Mutex;
+
+const fn const_max(a: usize, b: usize) -> usize {
+    if a >= b {
+        a
+    } else {
+        b
+    }
+}
+
+trait InlineCount {
+    const INLINE_COUNT: usize;
+}
+
+impl<T> InlineCount for T {
+    const INLINE_COUNT: usize = const_max(
+        std::mem::size_of::<[usize; 2]>() / std::mem::size_of::<T>(),
+        1,
+    );
+}
+
+macro_rules! inline_vec {
+    ($t:ty) => {
+        smallvec::SmallVec<[$t; <$t as $crate::InlineCount>::INLINE_COUNT]>
+    };
+}
+
+use inline_vec;
 
 fn num_cpus() -> usize {
     use once_cell::sync::OnceCell;
@@ -202,8 +229,8 @@ type WireUpdateResult = Result<LogicState, ()>;
 
 #[derive(Debug)]
 struct Wire {
-    drivers: SmallVec<[usize; 2]>,
-    driving: SmallVec<[ComponentId; 4]>,
+    drivers: inline_vec!(usize),
+    driving: inline_vec!(ComponentId),
     base_drive: LogicState,
 }
 
