@@ -454,6 +454,167 @@ fn test_buffer() {
 }
 
 #[test]
+fn test_slice() {
+    struct TestData {
+        input: LogicState,
+        offset: LogicOffset,
+        output: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(([$($i:tt),+], $offset:literal) -> [$($o:tt),+]),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        input: bits!($($i),+),
+                        offset: unsafe { LogicOffset::new_unchecked($offset) },
+                        output: bits!($($o),+),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA: &[TestData] = test_data!(
+        ([Z, Z], 0) -> [Z],
+        ([X, Z], 0) -> [Z],
+        ([0, Z], 0) -> [Z],
+        ([1, Z], 0) -> [Z],
+
+        ([Z, X], 0) -> [X],
+        ([X, X], 0) -> [X],
+        ([0, X], 0) -> [X],
+        ([1, X], 0) -> [X],
+
+        ([Z, 0], 0) -> [0],
+        ([X, 0], 0) -> [0],
+        ([0, 0], 0) -> [0],
+        ([1, 0], 0) -> [0],
+
+        ([Z, 1], 0) -> [1],
+        ([X, 1], 0) -> [1],
+        ([0, 1], 0) -> [1],
+        ([1, 1], 0) -> [1],
+
+        ([Z, Z], 1) -> [Z],
+        ([X, Z], 1) -> [X],
+        ([0, Z], 1) -> [0],
+        ([1, Z], 1) -> [1],
+
+        ([Z, X], 1) -> [Z],
+        ([X, X], 1) -> [X],
+        ([0, X], 1) -> [0],
+        ([1, X], 1) -> [1],
+
+        ([Z, 0], 1) -> [Z],
+        ([X, 0], 1) -> [X],
+        ([0, 0], 1) -> [0],
+        ([1, 0], 1) -> [1],
+
+        ([Z, 1], 1) -> [Z],
+        ([X, 1], 1) -> [X],
+        ([0, 1], 1) -> [0],
+        ([1, 1], 1) -> [1],
+    );
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        let mut builder = SimulatorBuilder::default();
+
+        let input = builder.add_wire(unsafe { LogicWidth::new_unchecked(2) });
+        let output = builder.add_wire(LogicWidth::MIN);
+        let _gate = builder.add_slice(input, test_data.offset, output).unwrap();
+
+        let mut sim = builder.build();
+
+        sim.set_wire_base_drive(input, test_data.input);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+
+        assert!(
+            output_state.eq_width(&test_data.output, LogicWidth::MIN),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(LogicWidth::MIN),
+            output_state.display_string(LogicWidth::MIN),
+        );
+    }
+}
+
+#[test]
+fn test_merge() {
+    macro_rules! test_data {
+        ($(([$($a:tt),+], [$($b:tt),+]) -> [$($o:tt),+]),* $(,)?) => {
+            &[
+                $(
+                    BinaryGateTestData {
+                        input_a: bits!($($a),+),
+                        input_b: bits!($($b),+),
+                        output: bits!($($o),+),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA: &[BinaryGateTestData] = test_data!(
+        ([Z], [Z]) -> [Z, Z],
+        ([Z], [X]) -> [X, Z],
+        ([Z], [0]) -> [0, Z],
+        ([Z], [1]) -> [1, Z],
+
+        ([X], [Z]) -> [Z, X],
+        ([X], [X]) -> [X, X],
+        ([X], [0]) -> [0, X],
+        ([X], [1]) -> [1, X],
+
+        ([0], [Z]) -> [Z, 0],
+        ([0], [X]) -> [X, 0],
+        ([0], [0]) -> [0, 0],
+        ([0], [1]) -> [1, 0],
+
+        ([1], [Z]) -> [Z, 1],
+        ([1], [X]) -> [X, 1],
+        ([1], [0]) -> [0, 1],
+        ([1], [1]) -> [1, 1],
+    );
+
+    let mut builder = SimulatorBuilder::default();
+
+    const WIDTH: LogicWidth = unsafe { LogicWidth::new_unchecked(2) };
+    let input_a = builder.add_wire(LogicWidth::MIN);
+    let input_b = builder.add_wire(LogicWidth::MIN);
+    let output = builder.add_wire(WIDTH);
+    let _gate = builder.add_merge(input_a, input_b, output).unwrap();
+
+    let mut sim = builder.build();
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        sim.set_wire_base_drive(input_a, test_data.input_a);
+        sim.set_wire_base_drive(input_b, test_data.input_b);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+
+        assert!(
+            output_state.eq_width(&test_data.output, WIDTH),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(WIDTH),
+            output_state.display_string(WIDTH),
+        );
+    }
+}
+
+#[test]
 fn test_add() {
     const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
         (HIGH_Z, HIGH_Z) -> UNDEFINED,

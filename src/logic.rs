@@ -348,6 +348,38 @@ impl LogicState {
         }
     }
 
+    /// Creates a new logic state from the given bits (most significant bit first)
+    pub const fn from_bits(bits: &[LogicBitState]) -> Self {
+        assert!(bits.len() <= (MAX_LOGIC_WIDTH as usize));
+
+        let mut state = 0;
+        let mut valid = 0;
+
+        // TODO: write this as a for loop once they become stable in const fns
+        let mut i = 0;
+        while i < bits.len() {
+            state <<= 1;
+            valid <<= 1;
+
+            let (bit_state, bit_valid) = match bits[i] {
+                LogicBitState::HighZ => (0, 0),
+                LogicBitState::Undefined => (1, 0),
+                LogicBitState::Logic0 => (0, 1),
+                LogicBitState::Logic1 => (1, 1),
+            };
+
+            state |= bit_state;
+            valid |= bit_valid;
+
+            i += 1;
+        }
+
+        Self {
+            state: LogicStorage(state),
+            valid: LogicStorage(valid),
+        }
+    }
+
     /// Gets the logic state of a single bit
     pub fn get_bit_state(&self, bit_index: LogicOffset) -> LogicBitState {
         let state_bit = self.state.get_bit(bit_index);
@@ -453,6 +485,32 @@ impl LogicState {
         }
     }
 }
+
+/// Constructs a logic state from a list of bits (most significant bit first)
+///
+/// Example:
+/// ```
+/// # use gsim::{bits, LogicState, LogicWidth};
+/// # fn foo() -> LogicState {
+/// bits!(1, 0, X, Z) // Turns into state `10XZ`
+/// # }
+/// # assert_eq!(foo().display_string(LogicWidth::new(4).unwrap()), "10XZ");
+/// ```
+#[macro_export]
+macro_rules! bits {
+    (@BIT Z) => { $crate::LogicBitState::HighZ };
+    (@BIT z) => { $crate::LogicBitState::HighZ };
+    (@BIT X) => { $crate::LogicBitState::Undefined };
+    (@BIT x) => { $crate::LogicBitState::Undefined };
+    (@BIT 0) => { $crate::LogicBitState::Logic0 };
+    (@BIT 1) => { $crate::LogicBitState::Logic1 };
+    ($($bit:tt),*) => {{
+        const STATE: $crate::LogicState = $crate::LogicState::from_bits(&[$($crate::bits!(@BIT $bit)),*]);
+        STATE
+    }}
+}
+
+pub use bits;
 
 #[derive(Debug)]
 #[repr(transparent)]
