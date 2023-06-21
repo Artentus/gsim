@@ -1,5 +1,14 @@
 use crate::*;
 
+macro_rules! logic_state {
+    ($state:ident) => {
+        LogicState::$state
+    };
+    ($value:expr) => {
+        LogicState::from_int($value)
+    };
+}
+
 struct BinaryGateTestData {
     input_a: LogicState,
     input_b: LogicState,
@@ -45,13 +54,13 @@ fn test_binary_gate<F>(
 }
 
 macro_rules! binary_gate_test_data {
-    ($(($a:ident, $b:ident) -> $o:ident),* $(,)?) => {
+    ($(($a:tt, $b:tt) -> $o:tt),* $(,)?) => {
         &[
             $(
                 BinaryGateTestData {
-                    input_a: LogicState::$a,
-                    input_b: LogicState::$b,
-                    output: LogicState::$o,
+                    input_a: logic_state!($a),
+                    input_b: logic_state!($b),
+                    output: logic_state!($o),
                 },
             )*
         ]
@@ -100,12 +109,12 @@ fn test_unary_gate<F>(
 }
 
 macro_rules! unary_gate_test_data {
-    ($($i:ident -> $o:ident),* $(,)?) => {
+    ($($i:tt -> $o:tt),* $(,)?) => {
         &[
             $(
                 UnaryGateTestData {
-                    input: LogicState::$i,
-                    output: LogicState::$o,
+                    input: logic_state!($i),
+                    output: logic_state!($o),
                 },
             )*
         ]
@@ -156,12 +165,12 @@ where
 }
 
 macro_rules! wide_gate_test_data {
-    ($(($($i:ident),+) -> $o:ident),* $(,)?) => {
+    ($(($($i:tt),+) -> $o:tt),* $(,)?) => {
         &[
             $(
                 WideGateTestData {
-                    inputs: &[$(LogicState::$i),+],
-                    output: LogicState::$o,
+                    inputs: &[$(logic_state!($i)),+],
+                    output: logic_state!($o),
                 },
             )*
         ]
@@ -442,6 +451,134 @@ fn test_buffer() {
             );
         }
     }
+}
+
+#[test]
+fn test_add() {
+    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0, 0) -> 0,
+        (0, 1) -> 1,
+        (1, 0) -> 1,
+        (1, 1) -> 2,
+        (0, {u32::MAX}) -> {u32::MAX},
+        ({u32::MAX}, 0) -> {u32::MAX},
+        (1, {u32::MAX}) -> 0,
+        ({u32::MAX}, 1) -> 0,
+        ({u32::MAX}, {u32::MAX}) -> {u32::MAX - 1},
+    );
+
+    test_binary_gate(SimulatorBuilder::add_add, LogicWidth::MAX, TEST_DATA, 2);
+}
+
+#[test]
+fn test_sub() {
+    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0, 0) -> 0,
+        (0, 1) -> {u32::MAX},
+        (1, 0) -> 1,
+        (1, 1) -> 0,
+        (0, {u32::MAX}) -> 1,
+        ({u32::MAX}, 0) -> {u32::MAX},
+        ({u32::MAX}, {u32::MAX}) -> 0,
+    );
+
+    test_binary_gate(SimulatorBuilder::add_sub, LogicWidth::MAX, TEST_DATA, 2);
+}
+
+#[test]
+fn test_mul() {
+    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0, 0) -> 0,
+        (0, 1) -> 0,
+        (1, 0) -> 0,
+        (1, 1) -> 1,
+        (0, {u32::MAX}) -> 0,
+        ({u32::MAX}, 0) -> 0,
+        (1, {u32::MAX}) -> {u32::MAX},
+        ({u32::MAX}, 1) -> {u32::MAX},
+        ({u32::MAX}, {u32::MAX}) -> 1,
+    );
+
+    test_binary_gate(SimulatorBuilder::add_mul, LogicWidth::MAX, TEST_DATA, 2);
+}
+
+#[test]
+fn test_div() {
+    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0, 0) -> UNDEFINED,
+        (0, 1) -> 0,
+        (1, 0) -> UNDEFINED,
+        (1, 1) -> 1,
+        (0, {u32::MAX}) -> 0,
+        ({u32::MAX}, 0) -> UNDEFINED,
+        (1, {u32::MAX}) -> 0,
+        ({u32::MAX}, 1) -> {u32::MAX},
+        ({u32::MAX}, {u32::MAX}) -> 1,
+    );
+
+    test_binary_gate(SimulatorBuilder::add_div, LogicWidth::MAX, TEST_DATA, 2);
+}
+
+#[test]
+fn test_rem() {
+    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0, 0) -> UNDEFINED,
+        (0, 1) -> 0,
+        (1, 0) -> UNDEFINED,
+        (1, 1) -> 0,
+        (0, {u32::MAX}) -> 0,
+        ({u32::MAX}, 0) -> UNDEFINED,
+        (1, {u32::MAX}) -> 1,
+        ({u32::MAX}, 1) -> 0,
+        ({u32::MAX}, {u32::MAX}) -> 0,
+    );
+
+    test_binary_gate(SimulatorBuilder::add_rem, LogicWidth::MAX, TEST_DATA, 2);
 }
 
 #[test]
@@ -982,40 +1119,17 @@ fn test_register() {
     }
 
     macro_rules! test_data {
-        (@INNER ($in:ident, $e:literal, $c:literal) -> $out:ident) => {
-            TestData {
-                data_in: LogicState::$in,
-                enable: $e,
-                clock: $c,
-                data_out: LogicState::$out,
-            }
-        };
-        (@INNER ($in:literal, $e:literal, $c:literal) -> $out:ident) => {
-            TestData {
-                data_in: LogicState::from_int($in),
-                enable: $e,
-                clock: $c,
-                data_out: LogicState::$out,
-            }
-        };
-        (@INNER ($in:ident, $e:literal, $c:literal) -> $out:literal) => {
-            TestData {
-                data_in: LogicState::$in,
-                enable: $e,
-                clock: $c,
-                data_out: LogicState::from_int($out),
-            }
-        };
-        (@INNER ($in:literal, $e:literal, $c:literal) -> $out:literal) => {
-            TestData {
-                data_in: LogicState::from_int($in),
-                enable: $e,
-                clock: $c,
-                data_out: LogicState::from_int($out),
-            }
-        };
         ($(($in:tt, $e:literal, $c:literal) -> $out:tt),* $(,)?) => {
-            &[$(test_data!(@INNER ($in, $e, $c) -> $out),)*]
+            &[
+                $(
+                    TestData {
+                        data_in: logic_state!($in),
+                        enable: $e,
+                        clock: $c,
+                        data_out: logic_state!($out),
+                    },
+                )*
+            ]
         };
     }
 
