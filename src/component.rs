@@ -1,5 +1,5 @@
 use crate::*;
-use smallvec::{smallvec, SmallVec};
+use smallvec::smallvec;
 
 #[repr(transparent)]
 struct SyncCell<T> {
@@ -128,7 +128,7 @@ impl SmallComponent {
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         output_state: &LogicStateCell,
-    ) -> SmallVec<[WireId; 4]> {
+    ) -> inline_vec!(WireId) {
         macro_rules! impl_gate {
             ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
                 let state_a = unsafe { wire_states.get_unchecked($input_a).get() };
@@ -146,42 +146,42 @@ impl SmallComponent {
             }};
         }
 
-        let (output, new_output_state) = match self {
-            &SmallComponent::AndGate {
+        let (output, new_output_state) = match *self {
+            SmallComponent::AndGate {
                 input_a,
                 input_b,
                 output,
             } => impl_gate!(input_a, input_b, output => logic_and),
-            &SmallComponent::OrGate {
+            SmallComponent::OrGate {
                 input_a,
                 input_b,
                 output,
             } => impl_gate!(input_a, input_b, output => logic_or),
-            &SmallComponent::XorGate {
+            SmallComponent::XorGate {
                 input_a,
                 input_b,
                 output,
             } => impl_gate!(input_a, input_b, output => logic_xor),
-            &SmallComponent::NandGate {
+            SmallComponent::NandGate {
                 input_a,
                 input_b,
                 output,
             } => impl_gate!(input_a, input_b, output => logic_nand),
-            &SmallComponent::NorGate {
+            SmallComponent::NorGate {
                 input_a,
                 input_b,
                 output,
             } => impl_gate!(input_a, input_b, output => logic_nor),
-            &SmallComponent::XnorGate {
+            SmallComponent::XnorGate {
                 input_a,
                 input_b,
                 output,
             } => impl_gate!(input_a, input_b, output => logic_xnor),
-            &SmallComponent::NotGate { input, output } => {
+            SmallComponent::NotGate { input, output } => {
                 let state = unsafe { wire_states.get_unchecked(input).get() };
                 (output, state.logic_not())
             }
-            &SmallComponent::Buffer {
+            SmallComponent::Buffer {
                 input,
                 enable,
                 output,
@@ -197,7 +197,7 @@ impl SmallComponent {
 
                 (output, output_state)
             }
-            &SmallComponent::Slice {
+            SmallComponent::Slice {
                 input,
                 offset,
                 output,
@@ -212,7 +212,7 @@ impl SmallComponent {
                     },
                 )
             }
-            &SmallComponent::Merge {
+            SmallComponent::Merge {
                 input_a,
                 input_b,
                 output,
@@ -232,27 +232,27 @@ impl SmallComponent {
                     },
                 )
             }
-            &SmallComponent::Add {
+            SmallComponent::Add {
                 input_a,
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => add),
-            &SmallComponent::Sub {
+            SmallComponent::Sub {
                 input_a,
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => sub),
-            &SmallComponent::Mul {
+            SmallComponent::Mul {
                 input_a,
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => mul),
-            &SmallComponent::Div {
+            SmallComponent::Div {
                 input_a,
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => div),
-            &SmallComponent::Rem {
+            SmallComponent::Rem {
                 input_a,
                 input_b,
                 output,
@@ -274,6 +274,7 @@ impl SmallComponent {
 }
 
 /// Contains mutable data of a component
+#[derive(Debug)]
 pub enum ComponentData<'a> {
     /// The component does not store any data
     None,
@@ -284,7 +285,7 @@ pub enum ComponentData<'a> {
 pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
     fn output_count(&self) -> usize;
 
-    fn get_data<'a>(&'a mut self) -> ComponentData<'a> {
+    fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::None
     }
 
@@ -439,7 +440,7 @@ impl LargeComponent for Register {
         1
     }
 
-    fn get_data<'a>(&'a mut self) -> ComponentData<'a> {
+    fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::RegisterValue(self.data.get_mut())
     }
 
@@ -524,7 +525,7 @@ impl Component {
     }
 
     #[inline]
-    pub(crate) fn get_data<'a>(&'a mut self) -> ComponentData<'a> {
+    pub(crate) fn get_data(&mut self) -> ComponentData<'_> {
         match &mut self.kind {
             ComponentKind::Small(_) => ComponentData::None,
             ComponentKind::Large(component) => component.get_data(),

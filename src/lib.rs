@@ -1,6 +1,7 @@
 //! High speed digital logic simulation
 
 #![deny(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 #[macro_use]
 extern crate static_assertions;
@@ -49,7 +50,7 @@ fn num_cpus() -> usize {
     use once_cell::sync::OnceCell;
 
     static NUM_CPUS: OnceCell<usize> = OnceCell::new();
-    *NUM_CPUS.get_or_init(|| num_cpus::get())
+    *NUM_CPUS.get_or_init(num_cpus::get)
 }
 
 const fn div_ceil(lhs: usize, rhs: usize) -> usize {
@@ -124,17 +125,17 @@ macro_rules! def_id_type {
                 }
 
                 #[inline]
-                pub fn ids<'a>(&'a self) -> IdIter<'a> {
+                pub fn ids(&self) -> IdIter<'_> {
                     IdIter::new(self.list.len() as u32)
                 }
 
                 #[inline]
-                pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, T> {
+                pub fn iter(&self) -> std::slice::Iter<'_, T> {
                     self.list.iter()
                 }
 
                 #[inline]
-                pub fn iter_mut<'a>(&'a mut self) -> std::slice::IterMut<'a, T> {
+                pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
                     self.list.iter_mut()
                 }
             }
@@ -310,6 +311,7 @@ pub struct SimulationErrors {
 }
 
 /// The result of a single simulation step
+#[derive(Debug, Clone)]
 pub enum SimulationStepResult {
     /// The simulation did not change during this update
     Unchanged,
@@ -320,6 +322,7 @@ pub enum SimulationStepResult {
 }
 
 /// The result of running a simulation
+#[derive(Debug, Clone)]
 pub enum SimulationRunResult {
     /// The simulation settled
     Ok,
@@ -350,6 +353,7 @@ type WireWidthList = wire_id::IdList<LogicWidth>;
 type WireStateList = wire_id::IdList<LogicStateCell>;
 
 /// A digital circuit simulator
+#[allow(missing_debug_implementations)]
 pub struct Simulator {
     wires: WireList,
     wire_widths: WireWidthList,
@@ -401,7 +405,7 @@ impl Simulator {
     }
 
     /// Gets a components data
-    pub fn get_component_data<'a>(&'a mut self, component: ComponentId) -> ComponentData<'a> {
+    pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
         self.components
             .get_mut(component)
             .expect("invalid component ID")
@@ -653,6 +657,7 @@ macro_rules! def_add_wide_gate {
 }
 
 /// Builds a simulator
+#[allow(missing_debug_implementations)]
 #[repr(transparent)]
 pub struct SimulatorBuilder {
     sim: Simulator,
@@ -700,7 +705,7 @@ impl SimulatorBuilder {
 
     /// Gets a components data
     #[inline]
-    pub fn get_component_data<'a>(&'a mut self, component: ComponentId) -> ComponentData<'a> {
+    pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
         self.sim.get_component_data(component)
     }
 
