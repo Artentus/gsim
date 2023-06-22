@@ -45,7 +45,7 @@ fn test_binary_gate<F>(
         let output_state = sim.get_wire_state(output);
 
         assert!(
-            output_state.eq_width(&test_data.output, width),
+            output_state.eq(test_data.output, width),
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.output.display_string(width),
             output_state.display_string(width),
@@ -100,7 +100,7 @@ fn test_unary_gate<F>(
         let output_state = sim.get_wire_state(output);
 
         assert!(
-            output_state.eq_width(&test_data.output, width),
+            output_state.eq(test_data.output, width),
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.output.display_string(width),
             output_state.display_string(width),
@@ -156,7 +156,7 @@ where
         let output_state = sim.get_wire_state(output);
 
         assert!(
-            output_state.eq_width(&test_data.output, width),
+            output_state.eq(test_data.output, width),
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.output.display_string(width),
             output_state.display_string(width),
@@ -444,7 +444,7 @@ fn test_buffer() {
             let output_state = sim.get_wire_state(output);
 
             assert!(
-                output_state.eq_width(&test_data.output, width),
+                output_state.eq(test_data.output, width),
                 "[TEST {i}]  expected: {}  actual: {}",
                 test_data.output.display_string(width),
                 output_state.display_string(width),
@@ -537,7 +537,7 @@ fn test_slice() {
         let output_state = sim.get_wire_state(output);
 
         assert!(
-            output_state.eq_width(&test_data.output, LogicWidth::MIN),
+            output_state.eq(test_data.output, LogicWidth::MIN),
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.output.display_string(LogicWidth::MIN),
             output_state.display_string(LogicWidth::MIN),
@@ -606,7 +606,7 @@ fn test_merge() {
         let output_state = sim.get_wire_state(output);
 
         assert!(
-            output_state.eq_width(&test_data.output, WIDTH),
+            output_state.eq(test_data.output, WIDTH),
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.output.display_string(WIDTH),
             output_state.display_string(WIDTH),
@@ -1340,7 +1340,7 @@ fn test_register() {
         let output_state = sim.get_wire_state(data_out);
 
         assert!(
-            output_state.eq_width(&test_data.data_out, LogicWidth::MAX),
+            output_state.eq(test_data.data_out, LogicWidth::MAX),
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.data_out.display_string(LogicWidth::MAX),
             output_state.display_string(LogicWidth::MAX),
@@ -1352,7 +1352,7 @@ fn test_register() {
         };
 
         assert!(
-            register_data.eq_width(&output_state, LogicWidth::MAX),
+            register_data.eq(output_state, LogicWidth::MAX),
             "[TEST {i}] register data differs from output",
         );
     }

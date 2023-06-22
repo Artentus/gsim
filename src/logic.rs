@@ -292,7 +292,7 @@ impl LogicBitState {
 }
 
 /// Stores the logic state of up to `MAX_LOGIC_WIDTH` bits
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct LogicState {
     //  state | valid | meaning
@@ -399,7 +399,7 @@ impl LogicState {
     }
 
     /// Tests this state for equality with another state while only considering the first `width` bits
-    pub fn eq_width(&self, rhs: &Self, width: LogicWidth) -> bool {
+    pub fn eq(self, rhs: Self, width: LogicWidth) -> bool {
         let mask = LogicStorage::mask(width);
         ((self.state & mask) == (rhs.state & mask)) && ((self.valid & mask) == (rhs.valid & mask))
     }
@@ -534,7 +534,7 @@ impl LogicStateCell {
     #[inline]
     pub(crate) unsafe fn set_unsafe(&self, value: LogicState) -> bool {
         let ptr = self.inner.get();
-        if value != *ptr {
+        if (value.state != (*ptr).state) || (value.valid != (*ptr).valid) {
             *ptr = value;
             true
         } else {
