@@ -1042,6 +1042,24 @@ impl SimulatorBuilder {
         Rem
     );
 
+    def_add_binary_gate!(
+        /// Adds a `Left Shift` component to the simulation
+        add_left_shift,
+        LeftShift
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `Logical Right Shift` component to the simulation
+        add_logical_right_shift,
+        LogicalRightShift
+    );
+
+    def_add_binary_gate!(
+        /// Adds an `Arithmetic Right Shift` component to the simulation
+        add_arithmetic_right_shift,
+        ArithmeticRightShift
+    );
+
     /// Creates the simulator
     #[inline]
     pub fn build(self) -> Simulator {

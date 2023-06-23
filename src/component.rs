@@ -120,6 +120,21 @@ pub(crate) enum SmallComponent {
         input_b: WireId,
         output: WireId,
     },
+    LeftShift {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    LogicalRightShift {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    ArithmeticRightShift {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
 }
 
 impl SmallComponent {
@@ -257,6 +272,21 @@ impl SmallComponent {
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => rem),
+            SmallComponent::LeftShift {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => shl),
+            SmallComponent::LogicalRightShift {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => lshr),
+            SmallComponent::ArithmeticRightShift {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => ashr),
         };
 
         let changed = unsafe {

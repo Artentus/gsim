@@ -1,4 +1,4 @@
-use super::{LogicState, LogicStorage, LogicWidth};
+use super::{LogicOffset, LogicSizeInteger, LogicState, LogicStorage, LogicWidth, MAX_LOGIC_WIDTH};
 
 #[inline]
 pub(super) fn logic_and(a: LogicState, b: LogicState) -> LogicState {
@@ -272,6 +272,104 @@ pub(super) fn rem(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState
     {
         LogicState {
             state: a_state % b_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn shl(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        let result_state = if b_state.0 >= (width.get() as LogicSizeInteger) {
+            LogicStorage::ALL_ZERO
+        } else {
+            let shift_amount = unsafe {
+                // SAFETY: we just checked that `b_state` is within the required range.
+                LogicOffset::new_unchecked(b_state.0 as u8)
+            };
+
+            a_state << shift_amount
+        };
+
+        LogicState {
+            state: result_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn lshr(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        let result_state = if b_state.0 >= (width.get() as LogicSizeInteger) {
+            LogicStorage::ALL_ZERO
+        } else {
+            let shift_amount = unsafe {
+                // SAFETY: we just checked that `b_state` is within the required range.
+                LogicOffset::new_unchecked(b_state.0 as u8)
+            };
+
+            a_state >> shift_amount
+        };
+
+        LogicState {
+            state: result_state,
+            valid: LogicStorage::ALL_ONE,
+        }
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn ashr(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        let result_state = if b_state.0 >= (width.get() as LogicSizeInteger) {
+            LogicStorage::ALL_ZERO
+        } else {
+            let shift_amount = unsafe {
+                // SAFETY: we just checked that `b_state` is within the required range.
+                LogicOffset::new_unchecked(b_state.0 as u8)
+            };
+
+            let logical_shift = a_state >> shift_amount;
+
+            let post_shift_width = width.get() - shift_amount.get();
+            let arithmetic_shift_amount = unsafe {
+                // SAFETY:
+                //   shift_amount < width <= MAX_LOGIC_WIDTH
+                //   => 0 < post_shift_width <= MAX_LOGIC_WIDTH
+                //      => 0 <= arithmetic_shift_amount < MAX_LOGIC_WIDTH
+                LogicOffset::new_unchecked(MAX_LOGIC_WIDTH - post_shift_width)
+            };
+
+            (logical_shift << arithmetic_shift_amount).ashr(arithmetic_shift_amount)
+        };
+
+        LogicState {
+            state: result_state,
             valid: LogicStorage::ALL_ONE,
         }
     } else {

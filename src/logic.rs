@@ -224,24 +224,28 @@ impl ShrAssign<LogicOffset> for LogicStorage {
     }
 }
 
-const MAX_LOGIC_WIDTH: u8 = {
+impl LogicStorage {
+    pub(crate) fn ashr(self, rhs: LogicOffset) -> Self {
+        Self(((self.0 as i32) >> rhs.get()) as LogicSizeInteger)
+    }
+}
+
+/// The maximum width of a logic state.
+pub const MAX_LOGIC_WIDTH: u8 = {
     const MAX_LOGIC_WIDTH: usize = bit_size_of!(LogicStorage);
     const_assert!(MAX_LOGIC_WIDTH <= (u8::MAX as usize));
     MAX_LOGIC_WIDTH as u8
 };
 
-/// The width in bits of a logic state, in the range 1 to 64 inclusive
+/// The width in bits of a logic state, in the range 1 to `MAX_LOGIC_WIDTH` inclusive
 pub type LogicWidth = bounded_integer::BoundedU8<1, MAX_LOGIC_WIDTH>;
 assert_eq_size!(LogicWidth, u8);
 assert_eq_align!(LogicWidth, u8);
 
-const MAX_LOGIC_OFFSET: u8 = {
-    const MAX_LOGIC_OFFSET: usize = bit_size_of!(LogicStorage) - 1;
-    const_assert!(MAX_LOGIC_OFFSET < (u8::MAX as usize));
-    MAX_LOGIC_OFFSET as u8
-};
+/// The maximum bit offset in a logic state (`== MAX_LOGIC_WIDTH - 1`).
+pub const MAX_LOGIC_OFFSET: u8 = MAX_LOGIC_WIDTH - 1;
 
-/// A bit offset in a logic state, in the range 0 to 63 inclusive
+/// A bit offset in a logic state, in the range 0 to `MAX_LOGIC_OFFSET` inclusive
 pub type LogicOffset = bounded_integer::BoundedU8<0, MAX_LOGIC_OFFSET>;
 assert_eq_size!(LogicOffset, u8);
 assert_eq_align!(LogicOffset, u8);
@@ -474,6 +478,24 @@ impl LogicState {
     #[inline]
     pub fn rem(self, rhs: Self, width: LogicWidth) -> Self {
         rem(self, rhs, width)
+    }
+
+    /// Shifts this state by `rhs` bits to the left
+    #[inline]
+    pub fn shl(self, rhs: Self, width: LogicWidth) -> Self {
+        shl(self, rhs, width)
+    }
+
+    /// Logically shifts this state by `rhs` bits to the right
+    #[inline]
+    pub fn lshr(self, rhs: Self, width: LogicWidth) -> Self {
+        lshr(self, rhs, width)
+    }
+
+    /// Arithmetically shifts this state by `rhs` bits to the right
+    #[inline]
+    pub fn ashr(self, rhs: Self, width: LogicWidth) -> Self {
+        ashr(self, rhs, width)
     }
 
     /// Turns all HIGH Z bits into UNDEFINED bits
