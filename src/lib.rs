@@ -279,6 +279,16 @@ impl Wire {
         }
     }
 
+    fn add_driving(&mut self, component: ComponentId) {
+        // This is a linear search which may appear slow, but the list is usually very small so the overhead
+        // of a hashset is not actually worth it.
+        // In particular, the lookup only occurs while building the graph, whereas during simulation, when speed
+        // is important, reading a vector is much faster than reading a hashset.
+        if !self.driving.contains(&component) {
+            self.driving.push(component);
+        }
+    }
+
     fn update(&self, width: LogicWidth, component_outputs: &[LogicStateCell]) -> WireUpdateResult {
         #[inline]
         fn combine(a: LogicState, b: LogicState, mask: LogicStorage) -> WireUpdateResult {
@@ -628,11 +638,9 @@ macro_rules! def_add_binary_gate {
             let (output_offset, id) = self.add_small_component(gate);
 
             let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
-            input_wire_a.driving.push(id);
-            if input_b != input_a {
-                let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
-                input_wire_b.driving.push(id);
-            }
+            input_wire_a.add_driving(id);
+            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
+            input_wire_b.add_driving(id);
             let output_wire = self.sim.wires.get_mut(output).unwrap();
             output_wire.drivers.push(output_offset);
 
@@ -651,7 +659,7 @@ macro_rules! def_add_unary_gate {
             let (output_offset, id) = self.add_small_component(gate);
 
             let input_wire = self.sim.wires.get_mut(input).unwrap();
-            input_wire.driving.push(id);
+            input_wire.add_driving(id);
             let output_wire = self.sim.wires.get_mut(output).unwrap();
             output_wire.drivers.push(output_offset);
 
@@ -680,9 +688,7 @@ macro_rules! def_add_wide_gate {
 
             for &input in inputs {
                 let wire = self.sim.wires.get_mut(input).unwrap();
-                if !wire.driving.contains(&id) {
-                    wire.driving.push(id);
-                }
+                wire.add_driving(id);
             }
             let output_wire = self.sim.wires.get_mut(output).unwrap();
             output_wire.drivers.push(output_offset);
@@ -856,11 +862,9 @@ impl SimulatorBuilder {
         let (output_offset, id) = self.add_small_component(buffer);
 
         let input_wire = self.sim.wires.get_mut(input).unwrap();
-        input_wire.driving.push(id);
-        if enable != input {
-            let enable_wire = self.sim.wires.get_mut(enable).unwrap();
-            enable_wire.driving.push(id);
-        }
+        input_wire.add_driving(id);
+        let enable_wire = self.sim.wires.get_mut(enable).unwrap();
+        enable_wire.add_driving(id);
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
 
@@ -893,7 +897,7 @@ impl SimulatorBuilder {
         let (output_offset, id) = self.add_small_component(slice);
 
         let input_wire = self.sim.wires.get_mut(input).unwrap();
-        input_wire.driving.push(id);
+        input_wire.add_driving(id);
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
 
@@ -923,11 +927,9 @@ impl SimulatorBuilder {
         let (output_offset, id) = self.add_small_component(merge);
 
         let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
-        input_wire_a.driving.push(id);
-        if input_b != input_a {
-            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
-            input_wire_b.driving.push(id);
-        }
+        input_wire_a.add_driving(id);
+        let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
+        input_wire_b.add_driving(id);
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
 
@@ -999,18 +1001,11 @@ impl SimulatorBuilder {
         let (output_offset, id) = self.add_large_component(adder);
 
         let input_a_wire = self.sim.wires.get_mut(input_a).unwrap();
-        input_a_wire.driving.push(id);
-
-        if input_b != input_a {
-            let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
-            input_b_wire.driving.push(id);
-        }
-
-        if (carry_in != input_a) && (carry_in != input_b) {
-            let carry_in_wire = self.sim.wires.get_mut(carry_in).unwrap();
-            carry_in_wire.driving.push(id);
-        }
-
+        input_a_wire.add_driving(id);
+        let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
+        input_b_wire.add_driving(id);
+        let carry_in_wire = self.sim.wires.get_mut(carry_in).unwrap();
+        carry_in_wire.add_driving(id);
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
         let carry_out_wire = self.sim.wires.get_mut(carry_out).unwrap();
@@ -1033,13 +1028,9 @@ impl SimulatorBuilder {
         let (output_offset, id) = self.add_large_component(multiplier);
 
         let input_a_wire = self.sim.wires.get_mut(input_a).unwrap();
-        input_a_wire.driving.push(id);
-
-        if input_b != input_a {
-            let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
-            input_b_wire.driving.push(id);
-        }
-
+        input_a_wire.add_driving(id);
+        let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
+        input_b_wire.add_driving(id);
         let output_low_wire = self.sim.wires.get_mut(output_low).unwrap();
         output_low_wire.drivers.push(output_offset);
         let output_high_wire = self.sim.wires.get_mut(output_high).unwrap();
@@ -1072,18 +1063,11 @@ impl SimulatorBuilder {
         let (output_offset, id) = self.add_large_component(register);
 
         let data_in_wire = self.sim.wires.get_mut(data_in).unwrap();
-        data_in_wire.driving.push(id);
-
+        data_in_wire.add_driving(id);
         let enable_wire = self.sim.wires.get_mut(enable).unwrap();
-        if !enable_wire.driving.contains(&id) {
-            enable_wire.driving.push(id);
-        }
-
+        enable_wire.add_driving(id);
         let clock_wire = self.sim.wires.get_mut(clock).unwrap();
-        if !clock_wire.driving.contains(&id) {
-            clock_wire.driving.push(id);
-        }
-
+        clock_wire.add_driving(id);
         let data_out_wire = self.sim.wires.get_mut(data_out).unwrap();
         data_out_wire.drivers.push(output_offset);
 
