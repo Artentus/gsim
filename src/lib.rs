@@ -457,12 +457,31 @@ impl Simulator {
             .expect("invalid component ID")
             .get_data()
     }
+}
 
+/*
+
+Simulation algorithm:
+
+    The circuit graph is divided into two distinct subsets: wires and components.
+    Wires are only connected to components and components are only connected to wires,
+    meaning there are no edges in the graph that connect two nodes of the same subset.
+    We alternate between updating wires and components to make use of this property:
+    all wires as well as all components are updated in parallel since they have no
+    dependencies amongst themselves.
+    To avoid updating all nodes in each step, the previous step of the opposite subset
+    builds an update queue. If the next queue is empty, we are done.
+
+*/
+impl Simulator {
     fn update_wires(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
 
+        // Make sure the wire update queue contains no duplicates,
+        // otherwise all our safety guarantees do not hold.
         self.wire_update_queue.par_sort_unstable();
         self.wire_update_queue.dedup();
+
         self.component_update_queue.clear();
 
         let conflicts = Mutex::new(Vec::new());
@@ -489,6 +508,7 @@ impl Simulator {
                                 state.set_unsafe(new_state)
                             };
 
+                            // If the wire's state changed, insert all connected components into the next update queue.
                             if changed {
                                 local_queue.extend_from_slice(wire.driving.as_slice());
                             }
@@ -525,8 +545,11 @@ impl Simulator {
     fn update_components(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
 
+        // Make sure the component update queue contains no duplicates,
+        // otherwise all our safety guarantees do not hold.
         self.component_update_queue.par_sort_unstable();
         self.component_update_queue.dedup();
+
         self.wire_update_queue.clear();
 
         let wire_update_queue_iter = self
@@ -537,6 +560,7 @@ impl Simulator {
             .flat_map_iter(|component_id| {
                 let component = unsafe { self.components.get_unchecked(component_id) };
 
+                // `Component::update` returns all the wires that need to be inserted into the next update queue.
                 component.update(
                     &self.wire_widths,
                     &self.wire_states,
@@ -574,6 +598,9 @@ impl Simulator {
     ///
     /// Must be called before any calls to `step_sim`
     pub fn begin_sim(&mut self) -> SimulationStepResult {
+        // We have to perform the first update step on all nodes in the graph,
+        // so we insert all IDs into the queues.
+
         self.wire_update_queue.clear();
         self.wire_update_queue.extend(self.wires.ids());
         if let SimulationStepResult::Err(err) = self.update_wires() {
