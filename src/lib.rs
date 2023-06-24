@@ -81,9 +81,9 @@ macro_rules! inline_vec {
 use inline_vec;
 
 fn num_cpus() -> usize {
-    use once_cell::sync::OnceCell;
+    use std::sync::OnceLock;
 
-    static NUM_CPUS: OnceCell<usize> = OnceCell::new();
+    static NUM_CPUS: OnceLock<usize> = OnceLock::new();
     *NUM_CPUS.get_or_init(num_cpus::get)
 }
 
