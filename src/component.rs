@@ -442,6 +442,207 @@ wide_gate_inv!(WideNorGate, logic_or);
 wide_gate_inv!(WideXnorGate, logic_xor);
 
 #[derive(Debug)]
+pub(crate) struct Adder {
+    input_a: WireId,
+    input_b: WireId,
+    carry_in: WireId,
+    output: WireId,
+    carry_out: WireId,
+}
+
+impl Adder {
+    #[inline]
+    pub(crate) fn new(
+        input_a: WireId,
+        input_b: WireId,
+        carry_in: WireId,
+        output: WireId,
+        carry_out: WireId,
+    ) -> Self {
+        Self {
+            input_a,
+            input_b,
+            carry_in,
+            output,
+            carry_out,
+        }
+    }
+}
+
+impl LargeComponent for Adder {
+    fn output_count(&self) -> usize {
+        2
+    }
+
+    fn update(
+        &self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &[LogicStateCell],
+    ) -> inline_vec!(WireId) {
+        let width = unsafe { *wire_widths.get_unchecked(self.input_a) };
+        let a = unsafe { wire_states.get_unchecked(self.input_a).get() };
+        let b = unsafe { wire_states.get_unchecked(self.input_b).get() };
+        let c = unsafe { wire_states.get_unchecked(self.carry_in).get() };
+
+        let (new_output, new_carry_out) = 'compute: {
+            let c_in = match c.get_bit_state(LogicOffset::MIN) {
+                LogicBitState::HighZ | LogicBitState::Undefined => {
+                    break 'compute (LogicState::UNDEFINED, LogicState::UNDEFINED)
+                }
+                LogicBitState::Logic0 => false,
+                LogicBitState::Logic1 => true,
+            };
+
+            let mask = LogicStorage::mask(width);
+            let a_state = a.state & mask;
+            let b_state = b.state & mask;
+            let a_valid = a.valid | !mask;
+            let b_valid = b.valid | !mask;
+
+            if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+                let (sum, c_out) = a_state.carrying_add(b_state, c_in);
+
+                let c_out = if let Some(c_index) = LogicOffset::new(width.get()) {
+                    sum.get_bit(c_index)
+                } else {
+                    c_out
+                };
+
+                (
+                    LogicState {
+                        state: sum,
+                        valid: LogicStorage::ALL_ONE,
+                    },
+                    LogicState::from_bool(c_out),
+                )
+            } else {
+                (LogicState::UNDEFINED, LogicState::UNDEFINED)
+            }
+        };
+
+        let output_changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `outputs` is a slice uniquely associated with this component
+            outputs[0].set_unsafe(new_output)
+        };
+
+        let carry_out_changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `outputs` is a slice uniquely associated with this component
+            outputs[1].set_unsafe(new_carry_out)
+        };
+
+        match (output_changed, carry_out_changed) {
+            (true, true) => smallvec![self.output, self.carry_out],
+            (true, false) => smallvec![self.output],
+            (false, true) => smallvec![self.carry_out],
+            (false, false) => smallvec![],
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct Multiplier {
+    input_a: WireId,
+    input_b: WireId,
+    output_low: WireId,
+    output_high: WireId,
+}
+
+impl Multiplier {
+    #[inline]
+    pub(crate) fn new(
+        input_a: WireId,
+        input_b: WireId,
+        output_low: WireId,
+        output_high: WireId,
+    ) -> Self {
+        Self {
+            input_a,
+            input_b,
+            output_low,
+            output_high,
+        }
+    }
+}
+
+impl LargeComponent for Multiplier {
+    fn output_count(&self) -> usize {
+        2
+    }
+
+    fn update(
+        &self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &[LogicStateCell],
+    ) -> inline_vec!(WireId) {
+        let width = unsafe { *wire_widths.get_unchecked(self.input_a) };
+        let a = unsafe { wire_states.get_unchecked(self.input_a).get() };
+        let b = unsafe { wire_states.get_unchecked(self.input_b).get() };
+
+        let (new_low_state, new_high_state) = if (width.get() * 2) <= MAX_LOGIC_WIDTH {
+            let full_result = a.mul(b, width);
+
+            let shift_amount = unsafe {
+                // SAFETY: width is at most half of MAX_LOGIC_WIDTH, so it is always a valid offset.
+                LogicOffset::new_unchecked(width.get())
+            };
+
+            let high_result = LogicState {
+                state: full_result.state >> shift_amount,
+                valid: full_result.valid >> shift_amount,
+            };
+
+            (full_result, high_result)
+        } else {
+            let mask = LogicStorage::mask(width);
+            let a_state = a.state & mask;
+            let b_state = b.state & mask;
+            let a_valid = a.valid | !mask;
+            let b_valid = b.valid | !mask;
+
+            if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+                let (low_result, high_result) = a_state.widening_mul(b_state, width);
+
+                (
+                    LogicState {
+                        state: low_result,
+                        valid: LogicStorage::ALL_ONE,
+                    },
+                    LogicState {
+                        state: high_result,
+                        valid: LogicStorage::ALL_ONE,
+                    },
+                )
+            } else {
+                (LogicState::UNDEFINED, LogicState::UNDEFINED)
+            }
+        };
+
+        let low_changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `outputs` is a slice uniquely associated with this component
+            outputs[0].set_unsafe(new_low_state)
+        };
+
+        let high_changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `outputs` is a slice uniquely associated with this component
+            outputs[1].set_unsafe(new_high_state)
+        };
+
+        match (low_changed, high_changed) {
+            (true, true) => smallvec![self.output_low, self.output_high],
+            (true, false) => smallvec![self.output_low],
+            (false, true) => smallvec![self.output_high],
+            (false, false) => smallvec![],
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Register {
     data_in: WireId,
     data_out: WireId,

@@ -1454,6 +1454,376 @@ fn test_wide_xnor_gate() {
 }
 
 #[test]
+fn test_adder() {
+    struct TestData {
+        input_a: LogicState,
+        input_b: LogicState,
+        carry_in: LogicState,
+        output: LogicState,
+        carry_out: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(($a:tt, $b:tt, $ci:tt) -> ($o:tt, $co:tt)),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        input_a: logic_state!($a),
+                        input_b: logic_state!($b),
+                        carry_in: logic_state!($ci),
+                        output: logic_state!($o),
+                        carry_out: logic_state!($co),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA_1: &[TestData] = test_data!(
+        (HIGH_Z, HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0, 0) -> (UNDEFINED, UNDEFINED),
+
+        (UNDEFINED, HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0, 0) -> (UNDEFINED, UNDEFINED),
+
+        (0, HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (0, 0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, 0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, 0, 0) -> (0, 0),
+
+        (1, 0, 0) -> (1, 0),
+        (0, 1, 0) -> (1, 0),
+        (0, 0, 1) -> (1, 0),
+        (1, 1, 0) -> (2, 0),
+        (1, 0, 1) -> (2, 0),
+        (0, 1, 1) -> (2, 0),
+        (1, 1, 1) -> (3, 0),
+
+        (0xFFFFFFFF, 1, 0) -> (0, 1),
+        (1, 0xFFFFFFFF, 0) -> (0, 1),
+        (0xFFFFFFFF, 0, 1) -> (0, 1),
+        (0, 0xFFFFFFFF, 1) -> (0, 1),
+        (0xFFFFFFFF, 1, 1) -> (1, 1),
+        (1, 0xFFFFFFFF, 1) -> (1, 1),
+
+        (0xFFFFFFFF, 0xFFFFFFFF, 0) -> (0xFFFFFFFE, 1),
+        (0xFFFFFFFF, 0xFFFFFFFF, 0) -> (0xFFFFFFFE, 1),
+        (0xFFFFFFFF, 0xFFFFFFFF, 1) -> (0xFFFFFFFF, 1),
+        (0xFFFFFFFF, 0xFFFFFFFF, 1) -> (0xFFFFFFFF, 1),
+    );
+
+    let mut builder = SimulatorBuilder::default();
+
+    let input_a = builder.add_wire(LogicWidth::MAX);
+    let input_b = builder.add_wire(LogicWidth::MAX);
+    let carry_in = builder.add_wire(LogicWidth::MIN);
+    let output = builder.add_wire(LogicWidth::MAX);
+    let carry_out = builder.add_wire(LogicWidth::MIN);
+    let _adder = builder
+        .add_adder(input_a, input_b, carry_in, output, carry_out)
+        .unwrap();
+
+    let mut sim = builder.build();
+
+    for (i, test_data) in TEST_DATA_1.iter().enumerate() {
+        sim.set_wire_base_drive(input_a, test_data.input_a);
+        sim.set_wire_base_drive(input_b, test_data.input_b);
+        sim.set_wire_base_drive(carry_in, test_data.carry_in);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+        let carry_out_state = sim.get_wire_state(carry_out);
+
+        assert!(
+            output_state.eq(test_data.output, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(LogicWidth::MAX),
+            output_state.display_string(LogicWidth::MAX),
+        );
+
+        assert!(
+            carry_out_state.eq(test_data.carry_out, LogicWidth::MIN),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.carry_out.display_string(LogicWidth::MIN),
+            carry_out_state.display_string(LogicWidth::MIN),
+        );
+    }
+
+    const TEST_DATA_2: &[TestData] = test_data!(
+        (HIGH_Z, HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0, 0) -> (UNDEFINED, UNDEFINED),
+
+        (UNDEFINED, HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0, 0) -> (UNDEFINED, UNDEFINED),
+
+        (0, HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (0, 0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, 0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, 0, 0) -> (0, 0),
+
+        (1, 0, 0) -> (1, 0),
+        (0, 1, 0) -> (1, 0),
+        (0, 0, 1) -> (1, 0),
+        (1, 1, 0) -> (2, 0),
+        (1, 0, 1) -> (2, 0),
+        (0, 1, 1) -> (2, 0),
+        (1, 1, 1) -> (3, 0),
+
+        (0xFFFF, 1, 0) -> (0, 1),
+        (1, 0xFFFF, 0) -> (0, 1),
+        (0xFFFF, 0, 1) -> (0, 1),
+        (0, 0xFFFF, 1) -> (0, 1),
+        (0xFFFF, 1, 1) -> (1, 1),
+        (1, 0xFFFF, 1) -> (1, 1),
+
+        (0xFFFF, 0xFFFF, 0) -> (0xFFFE, 1),
+        (0xFFFF, 0xFFFF, 0) -> (0xFFFE, 1),
+        (0xFFFF, 0xFFFF, 1) -> (0xFFFF, 1),
+        (0xFFFF, 0xFFFF, 1) -> (0xFFFF, 1),
+    );
+
+    let mut builder = SimulatorBuilder::default();
+
+    const WIDTH: LogicWidth = unsafe { LogicWidth::new_unchecked(16) };
+    let input_a = builder.add_wire(WIDTH);
+    let input_b = builder.add_wire(WIDTH);
+    let carry_in = builder.add_wire(LogicWidth::MIN);
+    let output = builder.add_wire(WIDTH);
+    let carry_out = builder.add_wire(LogicWidth::MIN);
+    let _adder = builder
+        .add_adder(input_a, input_b, carry_in, output, carry_out)
+        .unwrap();
+
+    let mut sim = builder.build();
+
+    for (i, test_data) in TEST_DATA_2.iter().enumerate() {
+        sim.set_wire_base_drive(input_a, test_data.input_a);
+        sim.set_wire_base_drive(input_b, test_data.input_b);
+        sim.set_wire_base_drive(carry_in, test_data.carry_in);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+        let carry_out_state = sim.get_wire_state(carry_out);
+
+        assert!(
+            output_state.eq(test_data.output, WIDTH),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(WIDTH),
+            output_state.display_string(WIDTH),
+        );
+
+        assert!(
+            carry_out_state.eq(test_data.carry_out, LogicWidth::MIN),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.carry_out.display_string(LogicWidth::MIN),
+            carry_out_state.display_string(LogicWidth::MIN),
+        );
+    }
+}
+
+#[test]
+fn test_multiplier() {
+    struct TestData {
+        input_a: LogicState,
+        input_b: LogicState,
+        output_low: LogicState,
+        output_high: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(($a:tt, $b:tt) -> ($l:tt, $h:tt)),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        input_a: logic_state!($a),
+                        input_b: logic_state!($b),
+                        output_low: logic_state!($l),
+                        output_high: logic_state!($h),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA_1: &[TestData] = test_data!(
+        (HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, 0) -> (0, 0),
+
+        (1, 0) -> (0, 0),
+        (0, 1) -> (0, 0),
+        (1, 1) -> (1, 0),
+
+        (0xFFFFFFFF, 0) -> (0, 0),
+        (0, 0xFFFFFFFF) -> (0, 0),
+        (0xFFFFFFFF, 1) -> (0xFFFFFFFF, 0),
+        (1, 0xFFFFFFFF) -> (0xFFFFFFFF, 0),
+
+        (0xFFFFFFFF, 2) -> (0xFFFFFFFE, 1),
+        (0xFFFFFFFF, 0xFFFFFFFF) -> (1, 0xFFFFFFFE),
+    );
+
+    let mut builder = SimulatorBuilder::default();
+
+    let input_a = builder.add_wire(LogicWidth::MAX);
+    let input_b = builder.add_wire(LogicWidth::MAX);
+    let output_low = builder.add_wire(LogicWidth::MAX);
+    let output_high = builder.add_wire(LogicWidth::MAX);
+    let _adder = builder
+        .add_multiplier(input_a, input_b, output_low, output_high)
+        .unwrap();
+
+    let mut sim = builder.build();
+
+    for (i, test_data) in TEST_DATA_1.iter().enumerate() {
+        sim.set_wire_base_drive(input_a, test_data.input_a);
+        sim.set_wire_base_drive(input_b, test_data.input_b);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_low_state = sim.get_wire_state(output_low);
+        let output_high_state = sim.get_wire_state(output_high);
+
+        assert!(
+            output_low_state.eq(test_data.output_low, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output_low.display_string(LogicWidth::MAX),
+            output_low_state.display_string(LogicWidth::MAX),
+        );
+
+        assert!(
+            output_high_state.eq(test_data.output_high, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output_high.display_string(LogicWidth::MAX),
+            output_high_state.display_string(LogicWidth::MAX),
+        );
+    }
+
+    const TEST_DATA_2: &[TestData] = test_data!(
+        (HIGH_Z, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (HIGH_Z, 0) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (UNDEFINED, 0) -> (UNDEFINED, UNDEFINED),
+        (0, HIGH_Z) -> (UNDEFINED, UNDEFINED),
+        (0, UNDEFINED) -> (UNDEFINED, UNDEFINED),
+        (0, 0) -> (0, 0),
+
+        (1, 0) -> (0, 0),
+        (0, 1) -> (0, 0),
+        (1, 1) -> (1, 0),
+
+        (0xFFFF, 0) -> (0, 0),
+        (0, 0xFFFF) -> (0, 0),
+        (0xFFFF, 1) -> (0xFFFF, 0),
+        (1, 0xFFFF) -> (0xFFFF, 0),
+
+        (0xFFFF, 2) -> (0xFFFE, 1),
+        (0xFFFF, 0xFFFF) -> (1, 0xFFFE),
+    );
+
+    let mut builder = SimulatorBuilder::default();
+
+    const WIDTH: LogicWidth = unsafe { LogicWidth::new_unchecked(16) };
+    let input_a = builder.add_wire(WIDTH);
+    let input_b = builder.add_wire(WIDTH);
+    let output_low = builder.add_wire(WIDTH);
+    let output_high = builder.add_wire(WIDTH);
+    let _adder = builder
+        .add_multiplier(input_a, input_b, output_low, output_high)
+        .unwrap();
+
+    let mut sim = builder.build();
+
+    for (i, test_data) in TEST_DATA_2.iter().enumerate() {
+        sim.set_wire_base_drive(input_a, test_data.input_a);
+        sim.set_wire_base_drive(input_b, test_data.input_b);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_low_state = sim.get_wire_state(output_low);
+        let output_high_state = sim.get_wire_state(output_high);
+
+        assert!(
+            output_low_state.eq(test_data.output_low, WIDTH),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output_low.display_string(WIDTH),
+            output_low_state.display_string(WIDTH),
+        );
+
+        assert!(
+            output_high_state.eq(test_data.output_high, WIDTH),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output_high.display_string(WIDTH),
+            output_high_state.display_string(WIDTH),
+        );
+    }
+}
+
+#[test]
 fn test_register() {
     let mut builder = SimulatorBuilder::default();
 

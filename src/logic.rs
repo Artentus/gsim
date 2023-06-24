@@ -21,6 +21,9 @@ macro_rules! bit_size_of {
 /// An integer type of the same bit width as LogicState.
 pub type LogicSizeInteger = u32;
 
+type SignedLogicSizeInteger = i32;
+type DoubleLogicSizeInteger = u64;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub(crate) struct LogicStorage(LogicSizeInteger);
@@ -41,7 +44,7 @@ impl LogicStorage {
     }
 
     #[inline]
-    fn get_bit(&self, bit_index: LogicOffset) -> bool {
+    pub(crate) fn get_bit(&self, bit_index: LogicOffset) -> bool {
         ((self.0 >> bit_index.get()) & 0x1) != 0
     }
 }
@@ -225,8 +228,25 @@ impl ShrAssign<LogicOffset> for LogicStorage {
 }
 
 impl LogicStorage {
+    #[inline]
     pub(crate) fn ashr(self, rhs: LogicOffset) -> Self {
-        Self(((self.0 as i32) >> rhs.get()) as LogicSizeInteger)
+        Self(((self.0 as SignedLogicSizeInteger) >> rhs.get()) as LogicSizeInteger)
+    }
+
+    #[inline]
+    pub(crate) fn carrying_add(self, rhs: Self, c_in: bool) -> (Self, bool) {
+        let (r1, c1) = self.0.overflowing_add(rhs.0);
+        let (r2, c2) = r1.overflowing_add(c_in as LogicSizeInteger);
+        (Self(r2), c1 | c2)
+    }
+
+    #[inline]
+    pub(crate) fn widening_mul(self, rhs: Self, width: LogicWidth) -> (Self, Self) {
+        let result = (self.0 as DoubleLogicSizeInteger) * (rhs.0 as DoubleLogicSizeInteger);
+        (
+            Self(result as LogicSizeInteger),
+            Self((result >> width.get()) as LogicSizeInteger),
+        )
     }
 }
 

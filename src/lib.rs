@@ -970,6 +970,84 @@ impl SimulatorBuilder {
         WideXnorGate
     );
 
+    /// Adds an `Adder` component to the simulation
+    pub fn add_adder(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        carry_in: WireId,
+        output: WireId,
+        carry_out: WireId,
+    ) -> AddComponentResult {
+        self.check_wire_widths_match(&[input_a, input_b, output])?;
+
+        let carry_in_wire_width = self.sim.wire_widths.get(carry_in).expect("invalid wire ID");
+        if *carry_in_wire_width != 1 {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let carry_out_wire_width = self
+            .sim
+            .wire_widths
+            .get(carry_out)
+            .expect("invalid wire ID");
+        if *carry_out_wire_width != 1 {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let adder = Adder::new(input_a, input_b, carry_in, output, carry_out);
+        let (output_offset, id) = self.add_large_component(adder);
+
+        let input_a_wire = self.sim.wires.get_mut(input_a).unwrap();
+        input_a_wire.driving.push(id);
+
+        if input_b != input_a {
+            let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
+            input_b_wire.driving.push(id);
+        }
+
+        if (carry_in != input_a) && (carry_in != input_b) {
+            let carry_in_wire = self.sim.wires.get_mut(carry_in).unwrap();
+            carry_in_wire.driving.push(id);
+        }
+
+        let output_wire = self.sim.wires.get_mut(output).unwrap();
+        output_wire.drivers.push(output_offset);
+        let carry_out_wire = self.sim.wires.get_mut(carry_out).unwrap();
+        carry_out_wire.drivers.push(output_offset + 1);
+
+        Ok(id)
+    }
+
+    /// Adds a `Multiplier` component to the simulation
+    pub fn add_multiplier(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output_low: WireId,
+        output_high: WireId,
+    ) -> AddComponentResult {
+        self.check_wire_widths_match(&[input_a, input_b, output_low, output_high])?;
+
+        let multiplier = Multiplier::new(input_a, input_b, output_low, output_high);
+        let (output_offset, id) = self.add_large_component(multiplier);
+
+        let input_a_wire = self.sim.wires.get_mut(input_a).unwrap();
+        input_a_wire.driving.push(id);
+
+        if input_b != input_a {
+            let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
+            input_b_wire.driving.push(id);
+        }
+
+        let output_low_wire = self.sim.wires.get_mut(output_low).unwrap();
+        output_low_wire.drivers.push(output_offset);
+        let output_high_wire = self.sim.wires.get_mut(output_high).unwrap();
+        output_high_wire.drivers.push(output_offset + 1);
+
+        Ok(id)
+    }
+
     /// Adds a `Register` component to the simulation
     pub fn add_register(
         &mut self,
