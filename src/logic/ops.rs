@@ -376,3 +376,103 @@ pub(super) fn ashr(a: LogicState, b: LogicState, width: LogicWidth) -> LogicStat
         LogicState::UNDEFINED
     }
 }
+
+// TODO:
+//   Maybe the horizontal operations can be implemented more efficiently using popcount.
+//   This needs further investigation as it is unclear how to handle the Z and X states.
+
+#[inline]
+pub(super) fn horizontal_logic_and(mut a: LogicState, mut width: LogicWidth) -> LogicState {
+    while width > 1 {
+        if (width.get() & 0x1) == 0 {
+            // Even width
+
+            width = unsafe {
+                // SAFETY: `width > 1` so `(width / 2) > 0`
+                LogicWidth::new_unchecked(width.get() / 2)
+            };
+
+            let shift_amount = unsafe {
+                // SAFETY: we divided width by 2 which is guaranteed to yield a valid `LogicOffset`.
+                LogicOffset::new_unchecked(width.get())
+            };
+
+            let b = LogicState {
+                state: a.state >> shift_amount,
+                valid: a.valid >> shift_amount,
+            };
+
+            a = logic_and(a, b);
+        } else {
+            // Odd width
+
+            width = unsafe {
+                // SAFETY: `width > 1` so `(width - 1) > 0`
+                LogicWidth::new_unchecked(width.get() - 1)
+            };
+
+            const SHIFT_AMOUNT: LogicOffset = unsafe { LogicOffset::new_unchecked(1) };
+            let b = LogicState {
+                state: a.state >> SHIFT_AMOUNT,
+                valid: a.valid >> SHIFT_AMOUNT,
+            };
+
+            a = logic_and(a, b);
+        }
+    }
+
+    a
+}
+
+#[inline]
+pub(super) fn horizontal_logic_or(mut a: LogicState, mut width: LogicWidth) -> LogicState {
+    while width > 1 {
+        if (width.get() & 0x1) == 0 {
+            // Even width
+
+            width = unsafe {
+                // SAFETY: `width > 1` so `(width / 2) > 0`
+                LogicWidth::new_unchecked(width.get() / 2)
+            };
+
+            let shift_amount = unsafe {
+                // SAFETY: we divided width by 2 which is guaranteed to yield a valid `LogicOffset`.
+                LogicOffset::new_unchecked(width.get())
+            };
+
+            let b = LogicState {
+                state: a.state >> shift_amount,
+                valid: a.valid >> shift_amount,
+            };
+
+            a = logic_or(a, b);
+        } else {
+            // Odd width
+
+            width = unsafe {
+                // SAFETY: `width > 1` so `(width - 1) > 0`
+                LogicWidth::new_unchecked(width.get() - 1)
+            };
+
+            const SHIFT_AMOUNT: LogicOffset = unsafe { LogicOffset::new_unchecked(1) };
+            let b = LogicState {
+                state: a.state >> SHIFT_AMOUNT,
+                valid: a.valid >> SHIFT_AMOUNT,
+            };
+
+            a = logic_or(a, b);
+        }
+    }
+
+    a
+}
+
+#[inline]
+pub(super) fn horizontal_logic_nand(a: LogicState, width: LogicWidth) -> LogicState {
+    logic_not(horizontal_logic_and(a, width))
+}
+
+#[inline]
+pub(super) fn horizontal_logic_nor(a: LogicState, width: LogicWidth) -> LogicState {
+    logic_not(horizontal_logic_or(a, width))
+}

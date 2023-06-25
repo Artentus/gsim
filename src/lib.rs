@@ -725,6 +725,28 @@ macro_rules! def_add_wide_gate {
     };
 }
 
+macro_rules! def_add_horizontal_gate {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+            let output_wire_width = self.sim.wire_widths.get(output).expect("invalid wire ID");
+            if *output_wire_width != 1 {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+
+            let gate = SmallComponent::$gate { input, output };
+            let (output_offset, id) = self.add_small_component(gate);
+
+            let input_wire = self.sim.wires.get_mut(input).unwrap();
+            input_wire.add_driving(id);
+            let output_wire = self.sim.wires.get_mut(output).unwrap();
+            output_wire.drivers.push(output_offset);
+
+            Ok(id)
+        }
+    };
+}
+
 /// Builds a simulator
 ///
 /// See crate level documentation for a usage example
@@ -1147,6 +1169,30 @@ impl SimulatorBuilder {
         /// Adds an `Arithmetic Right Shift` component to the simulation
         add_arithmetic_right_shift,
         ArithmeticRightShift
+    );
+
+    def_add_horizontal_gate!(
+        /// Adds a `Horizontal AND Gate` component to the simulation
+        add_horizontal_and_gate,
+        HorizontalAnd
+    );
+
+    def_add_horizontal_gate!(
+        /// Adds a `Horizontal OR Gate` component to the simulation
+        add_horizontal_or_gate,
+        HorizontalOr
+    );
+
+    def_add_horizontal_gate!(
+        /// Adds a `Horizontal NAND Gate` component to the simulation
+        add_horizontal_nand_gate,
+        HorizontalNand
+    );
+
+    def_add_horizontal_gate!(
+        /// Adds a `Horizontal NOR Gate` component to the simulation
+        add_horizontal_nor_gate,
+        HorizontalNor
     );
 
     /// Creates the simulator

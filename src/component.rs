@@ -135,6 +135,22 @@ pub(crate) enum SmallComponent {
         input_b: WireId,
         output: WireId,
     },
+    HorizontalAnd {
+        input: WireId,
+        output: WireId,
+    },
+    HorizontalOr {
+        input: WireId,
+        output: WireId,
+    },
+    HorizontalNand {
+        input: WireId,
+        output: WireId,
+    },
+    HorizontalNor {
+        input: WireId,
+        output: WireId,
+    },
 }
 
 impl SmallComponent {
@@ -158,6 +174,14 @@ impl SmallComponent {
                 let state_a = unsafe { wire_states.get_unchecked($input_a).get() };
                 let state_b = unsafe { wire_states.get_unchecked($input_b).get() };
                 ($output, state_a.$op(state_b, wire_width))
+            }};
+        }
+
+        macro_rules! impl_horizontal_gate {
+            ($input:ident, $output:ident => $op:ident) => {{
+                let width = unsafe { *wire_widths.get_unchecked($input) };
+                let state = unsafe { wire_states.get_unchecked($input).get() };
+                ($output, state.$op(width))
             }};
         }
 
@@ -287,6 +311,18 @@ impl SmallComponent {
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => ashr),
+            SmallComponent::HorizontalAnd { input, output } => {
+                impl_horizontal_gate!(input, output => horizontal_logic_and)
+            }
+            SmallComponent::HorizontalOr { input, output } => {
+                impl_horizontal_gate!(input, output => horizontal_logic_or)
+            }
+            SmallComponent::HorizontalNand { input, output } => {
+                impl_horizontal_gate!(input, output => horizontal_logic_nand)
+            }
+            SmallComponent::HorizontalNor { input, output } => {
+                impl_horizontal_gate!(input, output => horizontal_logic_nor)
+            }
         };
 
         let changed = unsafe {

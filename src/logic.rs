@@ -503,6 +503,26 @@ impl LogicState {
         ashr(self, rhs, width)
     }
 
+    /// Computes logical AND between all bits of this state
+    pub fn horizontal_logic_and(self, width: LogicWidth) -> Self {
+        horizontal_logic_and(self, width)
+    }
+
+    /// Computes logical OR between all bits of this state
+    pub fn horizontal_logic_or(self, width: LogicWidth) -> Self {
+        horizontal_logic_or(self, width)
+    }
+
+    /// Computes logical NAND between all bits of this state
+    pub fn horizontal_logic_nand(self, width: LogicWidth) -> Self {
+        horizontal_logic_nand(self, width)
+    }
+
+    /// Computes logical NOR between all bits of this state
+    pub fn horizontal_logic_nor(self, width: LogicWidth) -> Self {
+        horizontal_logic_nor(self, width)
+    }
+
     /// Turns all HIGH Z bits into UNDEFINED bits
     #[inline]
     pub fn high_z_to_undefined(self) -> Self {
