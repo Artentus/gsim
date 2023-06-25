@@ -429,91 +429,76 @@ impl LogicState {
     }
 
     /// Computes logical AND between this state and `rhs`
-    #[inline]
     pub fn logic_and(self, rhs: Self) -> Self {
         logic_and(self, rhs)
     }
 
     /// Computes logical OR between this state and `rhs`
-    #[inline]
     pub fn logic_or(self, rhs: Self) -> Self {
         logic_or(self, rhs)
     }
 
     /// Computes logical XOR between this state and `rhs`
-    #[inline]
     pub fn logic_xor(self, rhs: Self) -> Self {
         logic_xor(self, rhs)
     }
 
     /// Computes logical NAND between this state and `rhs`
-    #[inline]
     pub fn logic_nand(self, rhs: Self) -> Self {
         logic_nand(self, rhs)
     }
 
     /// Computes logical NOR between this state and `rhs`
-    #[inline]
     pub fn logic_nor(self, rhs: Self) -> Self {
         logic_nor(self, rhs)
     }
 
     /// Computes logical XNOR between this state and `rhs`
-    #[inline]
     pub fn logic_xnor(self, rhs: Self) -> Self {
         logic_xnor(self, rhs)
     }
 
     /// Computes logical NOT of this state
-    #[inline]
     pub fn logic_not(self) -> Self {
         logic_not(self)
     }
 
     /// Computes the sum of this state and `rhs`
-    #[inline]
     pub fn add(self, rhs: Self, width: LogicWidth) -> Self {
         add(self, rhs, width)
     }
 
     /// Computes the difference between this state and `rhs`
-    #[inline]
     pub fn sub(self, rhs: Self, width: LogicWidth) -> Self {
         sub(self, rhs, width)
     }
 
     /// Computes the product of this state and `rhs`
-    #[inline]
     pub fn mul(self, rhs: Self, width: LogicWidth) -> Self {
         mul(self, rhs, width)
     }
 
     /// Computes the quotient of this state and `rhs`
-    #[inline]
     pub fn div(self, rhs: Self, width: LogicWidth) -> Self {
         div(self, rhs, width)
     }
 
     /// Computes the remainder of the quotient of this state and `rhs`
-    #[inline]
     pub fn rem(self, rhs: Self, width: LogicWidth) -> Self {
         rem(self, rhs, width)
     }
 
     /// Shifts this state by `rhs` bits to the left
-    #[inline]
     pub fn shl(self, rhs: Self, width: LogicWidth) -> Self {
         shl(self, rhs, width)
     }
 
     /// Logically shifts this state by `rhs` bits to the right
-    #[inline]
     pub fn lshr(self, rhs: Self, width: LogicWidth) -> Self {
         lshr(self, rhs, width)
     }
 
     /// Arithmetically shifts this state by `rhs` bits to the right
-    #[inline]
     pub fn ashr(self, rhs: Self, width: LogicWidth) -> Self {
         ashr(self, rhs, width)
     }
