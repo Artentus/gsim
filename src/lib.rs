@@ -1195,6 +1195,57 @@ impl SimulatorBuilder {
         HorizontalNor
     );
 
+    /// Adds a `RAM` component to the simulation
+    pub fn add_ram(
+        &mut self,
+        write_addr: WireId,
+        data_in: WireId,
+        read_addr: WireId,
+        data_out: WireId,
+        write: WireId,
+        clock: WireId,
+    ) -> AddComponentResult {
+        self.check_wire_widths_match(&[write_addr, read_addr])?;
+        self.check_wire_widths_match(&[data_in, data_out])?;
+
+        let write_wire_width = self.sim.wire_widths.get(write).expect("invalid wire ID");
+        if *write_wire_width != 1 {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let clock_wire_width = self.sim.wire_widths.get(clock).expect("invalid wire ID");
+        if *clock_wire_width != 1 {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let addr_width = *self
+            .sim
+            .wire_widths
+            .get(write_addr)
+            .expect("invalid wire ID");
+        let data_width = *self.sim.wire_widths.get(data_in).expect("invalid wire ID");
+
+        let ram = Ram::new(
+            write_addr, data_in, read_addr, data_out, write, clock, addr_width, data_width,
+        );
+        let (output_offset, id) = self.add_large_component(ram);
+
+        let write_addr_wire = self.sim.wires.get_mut(write_addr).unwrap();
+        write_addr_wire.add_driving(id);
+        let read_addr_wire = self.sim.wires.get_mut(read_addr).unwrap();
+        read_addr_wire.add_driving(id);
+        let data_in_wire = self.sim.wires.get_mut(data_in).unwrap();
+        data_in_wire.add_driving(id);
+        let write_wire = self.sim.wires.get_mut(write).unwrap();
+        write_wire.add_driving(id);
+        let clock_wire = self.sim.wires.get_mut(clock).unwrap();
+        clock_wire.add_driving(id);
+        let data_out_wire = self.sim.wires.get_mut(data_out).unwrap();
+        data_out_wire.drivers.push(output_offset);
+
+        Ok(id)
+    }
+
     /// Creates the simulator
     #[inline]
     pub fn build(self) -> Simulator {

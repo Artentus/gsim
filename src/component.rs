@@ -339,6 +339,35 @@ impl SmallComponent {
     }
 }
 
+#[repr(transparent)]
+pub struct MemoryBlock<'a> {
+    mem: &'a mut Memory,
+}
+
+impl<'a> MemoryBlock<'a> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.mem.len()
+    }
+
+    #[inline]
+    pub fn read(&self, addr: usize) -> LogicState {
+        self.mem.read(addr)
+    }
+
+    #[inline]
+    pub fn write(&mut self, addr: usize, value: LogicState) {
+        self.mem.write(addr, value);
+    }
+}
+
+impl<'a> std::fmt::Debug for MemoryBlock<'a> {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self.mem, f)
+    }
+}
+
 /// Contains mutable data of a component
 #[derive(Debug)]
 pub enum ComponentData<'a> {
@@ -346,6 +375,8 @@ pub enum ComponentData<'a> {
     None,
     /// The component stores a single register value
     RegisterValue(&'a mut LogicState),
+    /// The component stores a memory block
+    MemoryBlock(MemoryBlock<'a>),
 }
 
 pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
@@ -750,6 +781,334 @@ impl LargeComponent for Register {
 
         self.prev_clock.set(new_clock);
         self.data.set(new_data);
+
+        if changed {
+            smallvec![self.data_out]
+        } else {
+            smallvec![]
+        }
+    }
+}
+
+// This has to contain raw pointers because using vectors would require a mutex.
+enum Memory {
+    U8(*mut [u8; 2], usize),
+    U16(*mut [u16; 2], usize),
+    U32(*mut [u32; 2], usize),
+}
+
+impl Memory {
+    #[allow(clippy::unnecessary_cast)]
+    fn new(width: LogicWidth, len: usize) -> Self {
+        const VALUE: (LogicSizeInteger, LogicSizeInteger) = LogicState::UNDEFINED.to_state_valid();
+        const STATE: LogicSizeInteger = VALUE.0;
+        const VALID: LogicSizeInteger = VALUE.1;
+
+        if width <= 8 {
+            let mut mem = vec![[STATE as u8, VALID as u8]; len];
+            debug_assert_eq!(mem.len(), mem.capacity());
+
+            let ptr = mem.as_mut_ptr();
+            std::mem::forget(mem);
+
+            Self::U8(ptr, len)
+        } else if width <= 16 {
+            let mut mem = vec![[STATE as u16, VALID as u16]; len];
+            debug_assert_eq!(mem.len(), mem.capacity());
+
+            let ptr = mem.as_mut_ptr();
+            std::mem::forget(mem);
+
+            Self::U16(ptr, len)
+        } else {
+            let mut mem = vec![[STATE as u32, VALID as u32]; len];
+            debug_assert_eq!(mem.len(), mem.capacity());
+
+            let ptr = mem.as_mut_ptr();
+            std::mem::forget(mem);
+
+            Self::U32(ptr, len)
+        }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        match *self {
+            Self::U8(_, len) | Self::U16(_, len) | Self::U32(_, len) => len,
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn read(&self, addr: usize) -> LogicState {
+        unsafe {
+            // SAFETY: we have a shared reference and are only reading
+
+            let (state, valid) = match *self {
+                Self::U8(ptr, len) => {
+                    assert!(addr < len);
+                    let [state, valid] = ptr.add(addr).read();
+                    (state as LogicSizeInteger, valid as LogicSizeInteger)
+                }
+                Self::U16(ptr, len) => {
+                    assert!(addr < len);
+                    let [state, valid] = ptr.add(addr).read();
+                    (state as LogicSizeInteger, valid as LogicSizeInteger)
+                }
+                Self::U32(ptr, len) => {
+                    assert!(addr < len);
+                    let [state, valid] = ptr.add(addr).read();
+                    (state as LogicSizeInteger, valid as LogicSizeInteger)
+                }
+            };
+
+            LogicState::from_state_valid(state, valid)
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn write(&mut self, addr: usize, value: LogicState) {
+        unsafe {
+            // SAFETY: we have a mutable reference
+
+            let (state, valid) = value.to_state_valid();
+
+            match *self {
+                Self::U8(ptr, len) => {
+                    assert!(addr < len);
+                    ptr.add(addr).write([state as u8, valid as u8])
+                }
+                Self::U16(ptr, len) => {
+                    assert!(addr < len);
+                    ptr.add(addr).write([state as u16, valid as u16])
+                }
+                Self::U32(ptr, len) => {
+                    assert!(addr < len);
+                    ptr.add(addr).write([state as u32, valid as u32])
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn clear(&mut self) {
+        unsafe {
+            // SAFETY:
+            //   - we have a mutable reference
+            //   - the pointer was created from a vector so constructing a slice from it is ok
+
+            const VALUE: (LogicSizeInteger, LogicSizeInteger) =
+                LogicState::UNDEFINED.to_state_valid();
+            const STATE: LogicSizeInteger = VALUE.0;
+            const VALID: LogicSizeInteger = VALUE.1;
+
+            match *self {
+                Self::U8(ptr, len) => {
+                    let mem = std::slice::from_raw_parts_mut(ptr, len);
+                    mem.fill([STATE as u8, VALID as u8]);
+                }
+                Self::U16(ptr, len) => {
+                    let mem = std::slice::from_raw_parts_mut(ptr, len);
+                    mem.fill([STATE as u16, VALID as u16]);
+                }
+                Self::U32(ptr, len) => {
+                    let mem = std::slice::from_raw_parts_mut(ptr, len);
+                    mem.fill([STATE as u32, VALID as u32]);
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    unsafe fn write_unsafe(&self, addr: usize, value: LogicState) {
+        let (state, valid) = value.to_state_valid();
+
+        match *self {
+            Self::U8(ptr, len) => {
+                assert!(addr < len);
+                ptr.add(addr).write([state as u8, valid as u8])
+            }
+            Self::U16(ptr, len) => {
+                assert!(addr < len);
+                ptr.add(addr).write([state as u16, valid as u16])
+            }
+            Self::U32(ptr, len) => {
+                assert!(addr < len);
+                ptr.add(addr).write([state as u32, valid as u32])
+            }
+        }
+    }
+}
+
+impl Drop for Memory {
+    fn drop(&mut self) {
+        unsafe {
+            // SAFETY: the pointer was created from a vector so constructing a vector from it is ok
+            match *self {
+                Self::U8(ptr, len) => {
+                    let mem = Vec::from_raw_parts(ptr, len, len);
+                    std::mem::drop(mem)
+                }
+                Self::U16(ptr, len) => {
+                    let mem = Vec::from_raw_parts(ptr, len, len);
+                    std::mem::drop(mem)
+                }
+                Self::U32(ptr, len) => {
+                    let mem = Vec::from_raw_parts(ptr, len, len);
+                    std::mem::drop(mem)
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Debug for Memory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        unsafe {
+            // SAFETY:
+            //   - we have a shared reference and are only reading
+            //   - the pointer was created from a vector so constructing a slice from it is ok
+
+            match *self {
+                Self::U8(ptr, len) => {
+                    let mem = std::slice::from_raw_parts(ptr, len);
+                    std::fmt::Debug::fmt(mem, f)
+                }
+                Self::U16(ptr, len) => {
+                    let mem = std::slice::from_raw_parts(ptr, len);
+                    std::fmt::Debug::fmt(mem, f)
+                }
+                Self::U32(ptr, len) => {
+                    let mem = std::slice::from_raw_parts(ptr, len);
+                    std::fmt::Debug::fmt(mem, f)
+                }
+            }
+        }
+    }
+}
+
+unsafe impl Send for Memory {}
+
+// SAFETY:
+//   This is not safe in general, but through guarantees of the simulator
+//   all structs in this module are only accesses by one thread at a time.
+unsafe impl Sync for Memory {}
+
+#[derive(Debug)]
+pub(crate) struct Ram {
+    write_addr: WireId,
+    data_in: WireId,
+    read_addr: WireId,
+    data_out: WireId,
+    write: WireId,
+    clock: WireId,
+    prev_clock: SyncCell<Option<bool>>,
+    mem: Memory,
+}
+
+impl Ram {
+    #[allow(clippy::too_many_arguments)]
+    #[inline]
+    pub(crate) fn new(
+        write_addr: WireId,
+        data_in: WireId,
+        read_addr: WireId,
+        data_out: WireId,
+        write: WireId,
+        clock: WireId,
+        addr_width: LogicWidth,
+        data_width: LogicWidth,
+    ) -> Self {
+        Self {
+            write_addr,
+            data_in,
+            read_addr,
+            data_out,
+            write,
+            clock,
+            prev_clock: SyncCell::new(None),
+            mem: Memory::new(data_width, 1usize << addr_width.get()),
+        }
+    }
+}
+
+impl LargeComponent for Ram {
+    fn output_count(&self) -> usize {
+        1
+    }
+
+    fn get_data(&mut self) -> ComponentData<'_> {
+        ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
+    }
+
+    fn reset(&mut self) {
+        *self.prev_clock.get_mut() = None;
+        self.mem.clear();
+    }
+
+    fn update(
+        &self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &[LogicStateCell],
+    ) -> inline_vec!(WireId) {
+        let addr_width = unsafe { *wire_widths.get_unchecked(self.write_addr) };
+        let write_addr_state = unsafe { wire_states.get_unchecked(self.write_addr).get() };
+        let read_addr_state = unsafe { wire_states.get_unchecked(self.read_addr).get() };
+        let data_in_state = unsafe { wire_states.get_unchecked(self.data_in).get() };
+        let write_state = unsafe { wire_states.get_unchecked(self.write).get() };
+        let clock_state = unsafe { wire_states.get_unchecked(self.clock).get() };
+
+        let addr_mask = LogicStorage::mask(addr_width);
+
+        let new_clock = match clock_state.get_bit_state(LogicOffset::MIN) {
+            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock.get(),
+            LogicBitState::Logic0 => Some(false),
+            LogicBitState::Logic1 => Some(true),
+        };
+
+        if let (Some(false), Some(true)) = (self.prev_clock.get(), new_clock) {
+            let write_addr = write_addr_state.state & addr_mask;
+            let write_addr_valid = write_addr_state.valid | !addr_mask;
+
+            if write_addr_valid == LogicStorage::ALL_ONE {
+                unsafe {
+                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+                    //         so we have explusive access to the memory
+
+                    match write_state.get_bit_state(LogicOffset::MIN) {
+                        LogicBitState::HighZ | LogicBitState::Undefined => self
+                            .mem
+                            .write_unsafe(write_addr.get() as usize, LogicState::UNDEFINED),
+                        LogicBitState::Logic0 => {}
+                        LogicBitState::Logic1 => self.mem.write_unsafe(
+                            write_addr.get() as usize,
+                            data_in_state.high_z_to_undefined(),
+                        ),
+                    }
+                }
+            } else {
+                // NOTE:
+                //   There is nothing sensible we can do here.
+                //   In a real circuit a random address would be overwritten.
+            }
+        };
+
+        let read_addr = read_addr_state.state & addr_mask;
+        let read_addr_valid = read_addr_state.valid | !addr_mask;
+
+        let new_data = if read_addr_valid == LogicStorage::ALL_ONE {
+            self.mem.read(read_addr.get() as usize)
+        } else {
+            LogicState::UNDEFINED
+        };
+
+        let changed = unsafe {
+            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+            //         and `outputs` is a slice uniquely associated with this component
+            outputs[0].set_unsafe(new_data)
+        };
+
+        self.prev_clock.set(new_clock);
 
         if changed {
             smallvec![self.data_out]

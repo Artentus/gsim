@@ -47,6 +47,11 @@ impl LogicStorage {
     pub(crate) fn get_bit(&self, bit_index: LogicOffset) -> bool {
         ((self.0 >> bit_index.get()) & 0x1) != 0
     }
+
+    #[inline]
+    pub(crate) fn get(&self) -> LogicSizeInteger {
+        self.0
+    }
 }
 
 impl BitAnd for LogicStorage {
@@ -409,6 +414,19 @@ impl LogicState {
         let state_bit = self.state.get_bit(bit_index);
         let valid_bit = self.valid.get_bit(bit_index);
         LogicBitState::from_bits(state_bit, valid_bit)
+    }
+
+    #[inline]
+    pub(crate) const fn from_state_valid(state: LogicSizeInteger, valid: LogicSizeInteger) -> Self {
+        Self {
+            state: LogicStorage(state),
+            valid: LogicStorage(valid),
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn to_state_valid(self) -> (LogicSizeInteger, LogicSizeInteger) {
+        (self.state.0, self.valid.0)
     }
 
     /// Creates a string representing the first `width` bits of this state

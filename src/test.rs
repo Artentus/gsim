@@ -2218,3 +2218,132 @@ fn test_horizontal_nor_gate() {
         2,
     );
 }
+
+#[test]
+fn test_ram() {
+    let mut builder = SimulatorBuilder::default();
+
+    const ADDR_WIDTH: LogicWidth = unsafe { LogicWidth::new_unchecked(2) };
+    let write_addr = builder.add_wire(ADDR_WIDTH);
+    let data_in = builder.add_wire(LogicWidth::MAX);
+    let read_addr = builder.add_wire(ADDR_WIDTH);
+    let data_out = builder.add_wire(LogicWidth::MAX);
+    let write = builder.add_wire(LogicWidth::MIN);
+    let clock = builder.add_wire(LogicWidth::MIN);
+    let ram = builder
+        .add_ram(write_addr, data_in, read_addr, data_out, write, clock)
+        .unwrap();
+
+    let mut sim = builder.build();
+
+    struct TestData {
+        write_addr: LogicSizeInteger,
+        data_in: LogicState,
+        read_addr: LogicSizeInteger,
+        write: bool,
+        clock: bool,
+        data_out: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(($aw:literal, $in:tt, $ar:literal, $w:literal, $c:literal) -> $out:tt),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        write_addr: $aw,
+                        data_in: logic_state!($in),
+                        read_addr: $ar,
+                        write: $w,
+                        clock: $c,
+                        data_out: logic_state!($out),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA: &[TestData] = test_data![
+        (0, HIGH_Z, 0, false, false) -> UNDEFINED,
+        (0, HIGH_Z, 0, false, true) -> UNDEFINED,
+        (0, HIGH_Z, 0, true, false) -> UNDEFINED,
+        (0, HIGH_Z, 0, true, true) -> UNDEFINED,
+
+        (0, 0, 0, false, false) -> UNDEFINED,
+        (0, 0, 0, false, true) -> UNDEFINED,
+        (0, 0, 0, true, false) -> UNDEFINED,
+        (0, 0, 0, true, true) -> 0,
+
+        (0, 1, 0, false, false) -> 0,
+        (0, 1, 0, false, true) -> 0,
+        (0, 1, 0, true, false) -> 0,
+        (0, 1, 0, true, true) -> 1,
+
+        (0, HIGH_Z, 0, false, false) -> 1,
+        (0, HIGH_Z, 0, false, true) -> 1,
+        (0, HIGH_Z, 0, true, false) -> 1,
+        (0, HIGH_Z, 0, true, true) -> UNDEFINED,
+
+        (0, 0, 0, false, true) -> UNDEFINED,
+        (0, 0, 0, true, true) -> UNDEFINED,
+        (0, 0, 0, true, false) -> UNDEFINED,
+        (0, 0, 0, true, true) -> 0,
+
+        (0, 0, 0, true, false) -> 0,
+        (0, UNDEFINED, 0, true, true) -> UNDEFINED,
+        (0, UNDEFINED, 0, true, false) -> UNDEFINED,
+        (0, 0xAA55, 0, true, true) -> 0xAA55,
+
+        (0, 0, 1, false, false) -> UNDEFINED,
+        (0, 0, 2, false, false) -> UNDEFINED,
+        (0, 0, 3, false, false) -> UNDEFINED,
+
+        (0, 0, 0, true, true) -> 0,
+        (0, 0, 0, true, false) -> 0,
+        (1, 1, 1, true, true) -> 1,
+        (1, 1, 1, true, false) -> 1,
+        (2, 2, 2, true, true) -> 2,
+        (2, 2, 2, true, false) -> 2,
+        (3, 3, 3, true, true) -> 3,
+        (3, 3, 3, true, false) -> 3,
+
+        (0, 0, 0, false, false) -> 0,
+        (0, 0, 1, false, false) -> 1,
+        (0, 0, 2, false, false) -> 2,
+        (0, 0, 3, false, false) -> 3,
+    ];
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        sim.set_wire_base_drive(write_addr, LogicState::from_int(test_data.write_addr));
+        sim.set_wire_base_drive(data_in, test_data.data_in);
+        sim.set_wire_base_drive(read_addr, LogicState::from_int(test_data.read_addr));
+        sim.set_wire_base_drive(write, LogicState::from_bool(test_data.write));
+        sim.set_wire_base_drive(clock, LogicState::from_bool(test_data.clock));
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(data_out);
+
+        assert!(
+            output_state.eq(test_data.data_out, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.data_out.display_string(LogicWidth::MAX),
+            output_state.display_string(LogicWidth::MAX),
+        );
+
+        let mem_data = sim.get_component_data(ram);
+        let ComponentData::MemoryBlock(mem_data) = mem_data else {
+            panic!("[TEST {i}] invalid component data");
+        };
+
+        assert!(
+            mem_data
+                .read(test_data.read_addr as usize)
+                .eq(output_state, LogicWidth::MAX),
+            "[TEST {i}] memory data differs from output",
+        );
+    }
+}
