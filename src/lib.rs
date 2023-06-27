@@ -561,11 +561,15 @@ impl Simulator {
                 let component = unsafe { self.components.get_unchecked(component_id) };
 
                 // `Component::update` returns all the wires that need to be inserted into the next update queue.
-                component.update(
-                    &self.wire_widths,
-                    &self.wire_states,
-                    &self.component_outputs,
-                )
+                unsafe {
+                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
+                    //         so the reference we have is exclusive.
+                    component.update(
+                        &self.wire_widths,
+                        &self.wire_states,
+                        &self.component_outputs,
+                    )
+                }
             });
 
         self.wire_update_queue.par_extend(wire_update_queue_iter);

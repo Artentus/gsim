@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use crate::*;
 use smallvec::smallvec;
 
@@ -154,7 +156,7 @@ pub(crate) enum SmallComponent {
 }
 
 impl SmallComponent {
-    fn update(
+    unsafe fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
@@ -388,7 +390,7 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
 
     fn reset(&mut self) {}
 
-    fn update(
+    unsafe fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
@@ -419,7 +421,7 @@ macro_rules! wide_gate {
                 1
             }
 
-            fn update(
+            unsafe fn update(
                 &self,
                 _wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
@@ -471,7 +473,7 @@ macro_rules! wide_gate_inv {
                 1
             }
 
-            fn update(
+            unsafe fn update(
                 &self,
                 _wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
@@ -541,7 +543,7 @@ impl LargeComponent for Adder {
         2
     }
 
-    fn update(
+    unsafe fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
@@ -639,7 +641,7 @@ impl LargeComponent for Multiplier {
         2
     }
 
-    fn update(
+    unsafe fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
@@ -747,7 +749,7 @@ impl LargeComponent for Register {
         *self.data.get_mut() = LogicState::UNDEFINED;
     }
 
-    fn update(
+    unsafe fn update(
         &self,
         _wire_widths: &WireWidthList,
         wire_states: &WireStateList,
@@ -925,15 +927,15 @@ impl Memory {
         match *self {
             Self::U8(ptr, len) => {
                 assert!(addr < len);
-                ptr.add(addr).write([state as u8, valid as u8])
+                unsafe { ptr.add(addr).write([state as u8, valid as u8]) }
             }
             Self::U16(ptr, len) => {
                 assert!(addr < len);
-                ptr.add(addr).write([state as u16, valid as u16])
+                unsafe { ptr.add(addr).write([state as u16, valid as u16]) }
             }
             Self::U32(ptr, len) => {
                 assert!(addr < len);
-                ptr.add(addr).write([state as u32, valid as u32])
+                unsafe { ptr.add(addr).write([state as u32, valid as u32]) }
             }
         }
     }
@@ -1045,7 +1047,7 @@ impl LargeComponent for Ram {
         self.mem.clear();
     }
 
-    fn update(
+    unsafe fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
@@ -1167,20 +1169,20 @@ impl Component {
     }
 
     #[inline]
-    pub(crate) fn update(
+    pub(crate) unsafe fn update(
         &self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
         outputs: &[LogicStateCell],
     ) -> inline_vec!(WireId) {
         match &self.kind {
-            ComponentKind::Small(component) => {
+            ComponentKind::Small(component) => unsafe {
                 component.update(wire_widths, wire_states, &outputs[self.output_offset])
-            }
+            },
             ComponentKind::Large(component) => {
                 let output_range =
                     self.output_offset..(self.output_offset + component.output_count());
-                component.update(wire_widths, wire_states, &outputs[output_range])
+                unsafe { component.update(wire_widths, wire_states, &outputs[output_range]) }
             }
         }
     }
