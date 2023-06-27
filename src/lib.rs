@@ -12,7 +12,7 @@
 //! let input_b = builder.add_wire(wire_width);
 //! let output = builder.add_wire(wire_width);
 //! // The gate ID is not usefull to us because we don't intend on reading its data
-//! let _gate = builder.add_and_gate(input_a, input_b, output).unwrap();
+//! let _gate = builder.add_and_gate(&[input_a, input_b], output).unwrap();
 //!
 //! // Create the simulation
 //! let mut sim = builder.build();
@@ -696,22 +696,32 @@ macro_rules! def_add_unary_gate {
 }
 
 macro_rules! def_add_wide_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+    ($(#[$attr:meta])* $name:ident, $gate:ident, $wide_gate:ident) => {
         $(#[$attr])*
         pub fn $name(
             &mut self,
             inputs: &[WireId],
             output: WireId,
         ) -> AddComponentResult {
-            if inputs.len() < 3 {
+            if inputs.len() < 2 {
                 return Err(AddComponentError::TooFewInputs);
             }
 
             self.check_wire_widths_match(inputs)?;
             self.check_wire_widths_match(&[inputs[0], output])?;
 
-            let gate = $gate::new(inputs, output);
-            let (output_offset, id) = self.add_large_component(gate);
+            let (output_offset, id) = if inputs.len() == 2 {
+                // Small gate optimization
+                let gate = SmallComponent::$gate {
+                    input_a: inputs[0],
+                    input_b: inputs[1],
+                    output,
+                };
+                self.add_small_component(gate)
+            } else {
+                let gate = $wide_gate::new(inputs, output);
+                self.add_large_component(gate)
+            };
 
             for &input in inputs {
                 let wire = self.sim.wires.get_mut(input).unwrap();
@@ -847,40 +857,46 @@ impl SimulatorBuilder {
         }
     }
 
-    def_add_binary_gate!(
+    def_add_wide_gate!(
         /// Adds an `AND Gate` component to the simulation
         add_and_gate,
-        AndGate
+        AndGate,
+        WideAndGate
     );
 
-    def_add_binary_gate!(
+    def_add_wide_gate!(
         /// Adds an `OR Gate` component to the simulation
         add_or_gate,
-        OrGate
+        OrGate,
+        WideOrGate
     );
 
-    def_add_binary_gate!(
+    def_add_wide_gate!(
         /// Adds an `XOR Gate` component to the simulation
         add_xor_gate,
-        XorGate
+        XorGate,
+        WideXorGate
     );
 
-    def_add_binary_gate!(
+    def_add_wide_gate!(
         /// Adds a `NAND Gate` component to the simulation
         add_nand_gate,
-        NandGate
+        NandGate,
+        WideNandGate
     );
 
-    def_add_binary_gate!(
+    def_add_wide_gate!(
         /// Adds a `NOR Gate` component to the simulation
         add_nor_gate,
-        NorGate
+        NorGate,
+        WideNorGate
     );
 
-    def_add_binary_gate!(
+    def_add_wide_gate!(
         /// Adds an `XNOR Gate` component to the simulation
         add_xnor_gate,
-        XnorGate
+        XnorGate,
+        WideXnorGate
     );
 
     def_add_unary_gate!(
@@ -984,42 +1000,6 @@ impl SimulatorBuilder {
 
         Ok(id)
     }
-
-    def_add_wide_gate!(
-        /// Adds an `AND Gate` component to the simulation
-        add_wide_and_gate,
-        WideAndGate
-    );
-
-    def_add_wide_gate!(
-        /// Adds an `OR Gate` component to the simulation
-        add_wide_or_gate,
-        WideOrGate
-    );
-
-    def_add_wide_gate!(
-        /// Adds an `XOR Gate` component to the simulation
-        add_wide_xor_gate,
-        WideXorGate
-    );
-
-    def_add_wide_gate!(
-        /// Adds a `NAND Gate` component to the simulation
-        add_wide_nand_gate,
-        WideNandGate
-    );
-
-    def_add_wide_gate!(
-        /// Adds a `NOR Gate` component to the simulation
-        add_wide_nor_gate,
-        WideNorGate
-    );
-
-    def_add_wide_gate!(
-        /// Adds an `XNOR Gate` component to the simulation
-        add_wide_xnor_gate,
-        WideXnorGate
-    );
 
     /// Adds an `Adder` component to the simulation
     pub fn add_adder(

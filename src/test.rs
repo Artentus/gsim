@@ -215,7 +215,7 @@ macro_rules! wide_gate_test_data {
 
 #[test]
 fn test_and_gate() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
         (HIGH_Z, HIGH_Z) -> UNDEFINED,
         (HIGH_Z, UNDEFINED) -> UNDEFINED,
         (UNDEFINED, HIGH_Z) -> UNDEFINED,
@@ -234,13 +234,13 @@ fn test_and_gate() {
         (LOGIC_1, LOGIC_1) -> LOGIC_1,
     );
 
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_and_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_and_gate,
         LogicWidth::MAX,
         TEST_DATA,
@@ -250,7 +250,7 @@ fn test_and_gate() {
 
 #[test]
 fn test_or_gate() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
         (HIGH_Z, HIGH_Z)       -> UNDEFINED,
         (HIGH_Z, UNDEFINED)    -> UNDEFINED,
         (UNDEFINED, HIGH_Z)    -> UNDEFINED,
@@ -269,13 +269,13 @@ fn test_or_gate() {
         (LOGIC_1, LOGIC_1)     -> LOGIC_1,
     );
 
-    test_binary_gate(SimulatorBuilder::add_or_gate, LogicWidth::MIN, TEST_DATA, 2);
-    test_binary_gate(SimulatorBuilder::add_or_gate, LogicWidth::MAX, TEST_DATA, 2);
+    test_wide_gate(SimulatorBuilder::add_or_gate, LogicWidth::MIN, TEST_DATA, 2);
+    test_wide_gate(SimulatorBuilder::add_or_gate, LogicWidth::MAX, TEST_DATA, 2);
 }
 
 #[test]
 fn test_xor_gate() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
         (HIGH_Z, HIGH_Z)       -> UNDEFINED,
         (HIGH_Z, UNDEFINED)    -> UNDEFINED,
         (UNDEFINED, HIGH_Z)    -> UNDEFINED,
@@ -294,13 +294,13 @@ fn test_xor_gate() {
         (LOGIC_1, LOGIC_1)     -> LOGIC_0,
     );
 
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_xor_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_xor_gate,
         LogicWidth::MAX,
         TEST_DATA,
@@ -310,7 +310,7 @@ fn test_xor_gate() {
 
 #[test]
 fn test_nand_gate() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
         (HIGH_Z, HIGH_Z) -> UNDEFINED,
         (HIGH_Z, UNDEFINED) -> UNDEFINED,
         (UNDEFINED, HIGH_Z) -> UNDEFINED,
@@ -329,13 +329,13 @@ fn test_nand_gate() {
         (LOGIC_1, LOGIC_1) -> LOGIC_0,
     );
 
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_nand_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_nand_gate,
         LogicWidth::MAX,
         TEST_DATA,
@@ -345,7 +345,7 @@ fn test_nand_gate() {
 
 #[test]
 fn test_nor_gate() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
         (HIGH_Z, HIGH_Z) -> UNDEFINED,
         (HIGH_Z, UNDEFINED) -> UNDEFINED,
         (UNDEFINED, HIGH_Z) -> UNDEFINED,
@@ -364,13 +364,13 @@ fn test_nor_gate() {
         (LOGIC_1, LOGIC_1) -> LOGIC_0,
     );
 
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_nor_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_nor_gate,
         LogicWidth::MAX,
         TEST_DATA,
@@ -380,7 +380,7 @@ fn test_nor_gate() {
 
 #[test]
 fn test_xnor_gate() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
+    const TEST_DATA: &[WideGateTestData] = wide_gate_test_data!(
         (HIGH_Z, HIGH_Z) -> UNDEFINED,
         (HIGH_Z, UNDEFINED) -> UNDEFINED,
         (UNDEFINED, HIGH_Z) -> UNDEFINED,
@@ -399,13 +399,13 @@ fn test_xnor_gate() {
         (LOGIC_1, LOGIC_1) -> LOGIC_1,
     );
 
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_xnor_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
-    test_binary_gate(
+    test_wide_gate(
         SimulatorBuilder::add_xnor_gate,
         LogicWidth::MAX,
         TEST_DATA,
@@ -1046,13 +1046,13 @@ fn test_wide_and_gate() {
     );
 
     test_wide_gate(
-        SimulatorBuilder::add_wide_and_gate,
+        SimulatorBuilder::add_and_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
     test_wide_gate(
-        SimulatorBuilder::add_wide_and_gate,
+        SimulatorBuilder::add_and_gate,
         LogicWidth::MAX,
         TEST_DATA,
         2,
@@ -1131,18 +1131,8 @@ fn test_wide_or_gate() {
         (LOGIC_1  , LOGIC_1  , LOGIC_1) -> LOGIC_1,
     );
 
-    test_wide_gate(
-        SimulatorBuilder::add_wide_or_gate,
-        LogicWidth::MIN,
-        TEST_DATA,
-        2,
-    );
-    test_wide_gate(
-        SimulatorBuilder::add_wide_or_gate,
-        LogicWidth::MAX,
-        TEST_DATA,
-        2,
-    );
+    test_wide_gate(SimulatorBuilder::add_or_gate, LogicWidth::MIN, TEST_DATA, 2);
+    test_wide_gate(SimulatorBuilder::add_or_gate, LogicWidth::MAX, TEST_DATA, 2);
 }
 
 #[test]
@@ -1218,13 +1208,13 @@ fn test_wide_xor_gate() {
     );
 
     test_wide_gate(
-        SimulatorBuilder::add_wide_xor_gate,
+        SimulatorBuilder::add_xor_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
     test_wide_gate(
-        SimulatorBuilder::add_wide_xor_gate,
+        SimulatorBuilder::add_xor_gate,
         LogicWidth::MAX,
         TEST_DATA,
         2,
@@ -1304,13 +1294,13 @@ fn test_wide_nand_gate() {
     );
 
     test_wide_gate(
-        SimulatorBuilder::add_wide_nand_gate,
+        SimulatorBuilder::add_nand_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
     test_wide_gate(
-        SimulatorBuilder::add_wide_nand_gate,
+        SimulatorBuilder::add_nand_gate,
         LogicWidth::MAX,
         TEST_DATA,
         2,
@@ -1390,13 +1380,13 @@ fn test_wide_nor_gate() {
     );
 
     test_wide_gate(
-        SimulatorBuilder::add_wide_nor_gate,
+        SimulatorBuilder::add_nor_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
     test_wide_gate(
-        SimulatorBuilder::add_wide_nor_gate,
+        SimulatorBuilder::add_nor_gate,
         LogicWidth::MAX,
         TEST_DATA,
         2,
@@ -1476,13 +1466,13 @@ fn test_wide_xnor_gate() {
     );
 
     test_wide_gate(
-        SimulatorBuilder::add_wide_xnor_gate,
+        SimulatorBuilder::add_xnor_gate,
         LogicWidth::MIN,
         TEST_DATA,
         2,
     );
     test_wide_gate(
-        SimulatorBuilder::add_wide_xnor_gate,
+        SimulatorBuilder::add_xnor_gate,
         LogicWidth::MAX,
         TEST_DATA,
         2,
