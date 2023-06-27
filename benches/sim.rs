@@ -30,32 +30,32 @@ fn generate_sim() -> Simulator {
             0 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
                 let input_b = *wires.choose(&mut rng).unwrap();
-                let _id = builder.add_and_gate(input_a, input_b, output).unwrap();
+                let _id = builder.add_and_gate(&[input_a, input_b], output).unwrap();
             }
             1 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
                 let input_b = *wires.choose(&mut rng).unwrap();
-                let _id = builder.add_or_gate(input_a, input_b, output).unwrap();
+                let _id = builder.add_or_gate(&[input_a, input_b], output).unwrap();
             }
             2 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
                 let input_b = *wires.choose(&mut rng).unwrap();
-                let _id = builder.add_xor_gate(input_a, input_b, output).unwrap();
+                let _id = builder.add_xor_gate(&[input_a, input_b], output).unwrap();
             }
             3 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
                 let input_b = *wires.choose(&mut rng).unwrap();
-                let _id = builder.add_nand_gate(input_a, input_b, output).unwrap();
+                let _id = builder.add_nand_gate(&[input_a, input_b], output).unwrap();
             }
             4 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
                 let input_b = *wires.choose(&mut rng).unwrap();
-                let _id = builder.add_nor_gate(input_a, input_b, output).unwrap();
+                let _id = builder.add_nor_gate(&[input_a, input_b], output).unwrap();
             }
             5 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
                 let input_b = *wires.choose(&mut rng).unwrap();
-                let _id = builder.add_xnor_gate(input_a, input_b, output).unwrap();
+                let _id = builder.add_xnor_gate(&[input_a, input_b], output).unwrap();
             }
             6 => {
                 let input = *wires.choose(&mut rng).unwrap();
