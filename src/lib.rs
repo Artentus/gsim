@@ -105,17 +105,28 @@ macro_rules! def_id_type {
         #[allow(dead_code)]
         mod $ns {
             use std::marker::PhantomData;
-            use std::num::NonZeroU32;
             use sync_unsafe_cell::SyncUnsafeCell;
+            use std::ops::Range;
+
+            const INVALID_ID: u32 = u32::MAX;
 
             $(#[$attr])*
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
             #[repr(transparent)]
-            pub struct $id_name(NonZeroU32);
+            pub struct $id_name(u32);
             assert_eq_size!($id_name, u32);
             assert_eq_align!($id_name, u32);
-            assert_eq_size!(Option<$id_name>, u32);
-            assert_eq_align!(Option<$id_name>, u32);
+
+            impl $id_name {
+                /// An invalid ID
+                pub const INVALID: Self = Self(INVALID_ID);
+
+                /// Checks whether this ID is invalid
+                #[inline]
+                pub const fn is_invalid(self) -> bool {
+                    self.0 == INVALID_ID
+                }
+            }
 
             #[repr(transparent)]
             pub(crate) struct IdList<T> {
@@ -130,18 +141,15 @@ macro_rules! def_id_type {
 
                 #[inline]
                 pub fn insert(&mut self, item: T) -> $id_name {
+                    assert!(self.list.len() < (INVALID_ID as usize), "too many items");
+                    let id = $id_name(self.list.len() as u32);
                     self.list.push(SyncUnsafeCell::new(item));
-                    assert!(self.list.len() <= (u32::MAX as usize));
-
-                    unsafe {
-                        // SAFETY: the list contains at least one item now so its length is > 0
-                        $id_name(NonZeroU32::new_unchecked(self.list.len() as u32))
-                    }
+                    id
                 }
 
                 #[inline]
                 pub fn get(&self, id: $id_name) -> Option<&T> {
-                    self.list.get((id.0.get() as usize) - 1).map(|cell| unsafe {
+                    self.list.get(id.0 as usize).map(|cell| unsafe {
                         // SAFETY: since we have a shared reference to `self`, no mutable references exist
                         &*cell.get()
                     })
@@ -149,12 +157,12 @@ macro_rules! def_id_type {
 
                 #[inline]
                 pub fn get_mut(&mut self, id: $id_name) -> Option<&mut T> {
-                    self.list.get_mut((id.0.get() as usize) - 1).map(SyncUnsafeCell::get_mut)
+                    self.list.get_mut(id.0 as usize).map(SyncUnsafeCell::get_mut)
                 }
 
                 /// SAFETY: caller must ensure there are no other references to the item with this ID
                 pub unsafe fn get_unsafe(&self, id: $id_name) -> Option<&mut T> {
-                    self.list.get((id.0.get() as usize) - 1).map(|cell| unsafe { &mut *cell.get() })
+                    self.list.get(id.0 as usize).map(|cell| unsafe { &mut *cell.get() })
                 }
 
                 #[inline]
@@ -194,8 +202,7 @@ macro_rules! def_id_type {
 
             #[derive(Clone)]
             pub(crate) struct IdIter<'a> {
-                index: u32,
-                len: u32,
+                range: Range<u32>,
                 _a: PhantomData<&'a ()>,
             }
 
@@ -203,8 +210,7 @@ macro_rules! def_id_type {
                 #[inline]
                 fn new(len: u32) -> Self {
                     Self {
-                        index: 0,
-                        len,
+                        range: 0..len,
                         _a: PhantomData,
                     }
                 }
@@ -215,35 +221,24 @@ macro_rules! def_id_type {
 
                 #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
-                    if self.index < self.len {
-                        self.index += 1;
-
-                        Some($id_name(unsafe {
-                            // SAFETY:
-                            //   We just incremented self.index so it cannot be 0.
-                            NonZeroU32::new_unchecked(self.index)
-                        }))
-                    } else {
-                        None
-                    }
+                    self.range.next().map($id_name)
                 }
 
                 #[inline]
                 fn size_hint(&self) -> (usize, Option<usize>) {
-                    let len = self.len();
-                    (len, Some(len))
+                    Iterator::size_hint(&self.range)
                 }
 
                 #[inline]
                 fn count(self) -> usize {
-                    self.len()
+                    Iterator::count(self.range)
                 }
             }
 
             impl<'a> ExactSizeIterator for IdIter<'a> {
                 #[inline]
                 fn len(&self) -> usize {
-                    (self.len - self.index) as usize
+                    ExactSizeIterator::len(&self.range)
                 }
             }
         }
