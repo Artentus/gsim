@@ -1,50 +1,5 @@
-#![deny(unsafe_op_in_unsafe_fn)]
-
 use crate::*;
 use smallvec::smallvec;
-
-#[repr(transparent)]
-struct SyncCell<T> {
-    inner: std::cell::Cell<T>,
-}
-
-impl<T> SyncCell<T> {
-    #[inline]
-    fn new(value: T) -> Self {
-        Self {
-            inner: std::cell::Cell::new(value),
-        }
-    }
-
-    #[inline]
-    fn get(&self) -> T
-    where
-        T: Copy,
-    {
-        self.inner.get()
-    }
-
-    #[inline]
-    fn get_mut(&mut self) -> &mut T {
-        self.inner.get_mut()
-    }
-
-    #[inline]
-    fn set(&self, value: T) {
-        self.inner.set(value)
-    }
-}
-
-impl<T: Copy + std::fmt::Debug> std::fmt::Debug for SyncCell<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.get(), f)
-    }
-}
-
-// SAFETY:
-//   This is not safe in general, but through guarantees of the simulator
-//   all structs in this module are only accesses by one thread at a time.
-unsafe impl<T> Sync for SyncCell<T> {}
 
 #[derive(Debug)]
 pub(crate) enum SmallComponent {
@@ -156,33 +111,33 @@ pub(crate) enum SmallComponent {
 }
 
 impl SmallComponent {
-    unsafe fn update(
-        &self,
+    fn update(
+        &mut self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        output_state: &LogicStateCell,
+        output_state: &mut LogicState,
     ) -> inline_vec!(WireId) {
         macro_rules! impl_gate {
             ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
-                let state_a = unsafe { wire_states.get_unchecked($input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked($input_b).get() };
+                let state_a = wire_states[$input_a];
+                let state_b = wire_states[$input_b];
                 ($output, state_a.$op(state_b))
             }};
         }
 
         macro_rules! impl_arithmetic {
             ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
-                let wire_width = unsafe { *wire_widths.get_unchecked($input_a) };
-                let state_a = unsafe { wire_states.get_unchecked($input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked($input_b).get() };
-                ($output, state_a.$op(state_b, wire_width))
+                let width = wire_widths[$input_a];
+                let state_a = wire_states[$input_a];
+                let state_b = wire_states[$input_b];
+                ($output, state_a.$op(state_b, width))
             }};
         }
 
         macro_rules! impl_horizontal_gate {
             ($input:ident, $output:ident => $op:ident) => {{
-                let width = unsafe { *wire_widths.get_unchecked($input) };
-                let state = unsafe { wire_states.get_unchecked($input).get() };
+                let width = wire_widths[$input];
+                let state = wire_states[$input];
                 ($output, state.$op(width))
             }};
         }
@@ -219,7 +174,7 @@ impl SmallComponent {
                 output,
             } => impl_gate!(input_a, input_b, output => logic_xnor),
             SmallComponent::NotGate { input, output } => {
-                let state = unsafe { wire_states.get_unchecked(input).get() };
+                let state = wire_states[input];
                 (output, state.logic_not())
             }
             SmallComponent::Buffer {
@@ -227,8 +182,8 @@ impl SmallComponent {
                 enable,
                 output,
             } => {
-                let state = unsafe { wire_states.get_unchecked(input).get() };
-                let state_enable = unsafe { wire_states.get_unchecked(enable).get() };
+                let state = wire_states[input];
+                let state_enable = wire_states[enable];
 
                 let output_state = match state_enable.get_bit_state(LogicOffset::MIN) {
                     LogicBitState::HighZ | LogicBitState::Undefined => LogicState::UNDEFINED,
@@ -243,7 +198,7 @@ impl SmallComponent {
                 offset,
                 output,
             } => {
-                let state = unsafe { wire_states.get_unchecked(input).get() };
+                let state = wire_states[input];
 
                 (
                     output,
@@ -258,9 +213,9 @@ impl SmallComponent {
                 input_b,
                 output,
             } => {
-                let wire_a_width = unsafe { *wire_widths.get_unchecked(input_a) };
-                let state_a = unsafe { wire_states.get_unchecked(input_a).get() };
-                let state_b = unsafe { wire_states.get_unchecked(input_b).get() };
+                let wire_a_width = wire_widths[input_a];
+                let state_a = wire_states[input_a];
+                let state_b = wire_states[input_b];
 
                 let mask = LogicStorage::mask(wire_a_width);
                 let offset = width_to_offset(wire_a_width).expect("invalid merge offset");
@@ -327,13 +282,9 @@ impl SmallComponent {
             }
         };
 
-        let changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `output_state` is a reference uniquely associated with this component
-            output_state.set_unsafe(new_output_state)
-        };
-
-        if changed {
+        let output_width = wire_widths[output];
+        if !new_output_state.eq(*output_state, output_width) {
+            *output_state = new_output_state;
             smallvec![output]
         } else {
             smallvec![]
@@ -390,11 +341,11 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
 
     fn reset(&mut self) {}
 
-    unsafe fn update(
-        &self,
+    fn update(
+        &mut self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
+        outputs: &mut [LogicState],
     ) -> inline_vec!(WireId);
 }
 
@@ -421,26 +372,22 @@ macro_rules! wide_gate {
                 1
             }
 
-            unsafe fn update(
-                &self,
-                _wire_widths: &WireWidthList,
+            fn update(
+                &mut self,
+                wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
-                outputs: &[LogicStateCell],
+                outputs: &mut [LogicState],
             ) -> inline_vec!(WireId) {
                 let new_output_state = self
                     .inputs
                     .iter()
-                    .map(|&input| unsafe { wire_states.get_unchecked(input).get() })
+                    .map(|&input| wire_states[input])
                     .reduce(|a, b| a.$op(b))
                     .unwrap_or(LogicState::UNDEFINED);
 
-                let changed = unsafe {
-                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-                    //         and `outputs` is a slice uniquely associated with this component
-                    outputs[0].set_unsafe(new_output_state)
-                };
-
-                if changed {
+                let output_width = wire_widths[self.output];
+                if !new_output_state.eq(outputs[0], output_width) {
+                    outputs[0] = new_output_state;
                     smallvec![self.output]
                 } else {
                     smallvec![]
@@ -473,27 +420,23 @@ macro_rules! wide_gate_inv {
                 1
             }
 
-            unsafe fn update(
-                &self,
-                _wire_widths: &WireWidthList,
+            fn update(
+                &mut self,
+                wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
-                outputs: &[LogicStateCell],
+                outputs: &mut [LogicState],
             ) -> inline_vec!(WireId) {
                 let new_output_state = self
                     .inputs
                     .iter()
-                    .map(|&input| unsafe { wire_states.get_unchecked(input).get() })
+                    .map(|&input| wire_states[input])
                     .reduce(|a, b| a.$op(b))
                     .unwrap_or(LogicState::UNDEFINED)
                     .logic_not();
 
-                let changed = unsafe {
-                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-                    //         and `outputs` is a slice uniquely associated with this component
-                    outputs[0].set_unsafe(new_output_state)
-                };
-
-                if changed {
+                let output_width = wire_widths[self.output];
+                if !new_output_state.eq(outputs[0], output_width) {
+                    outputs[0] = new_output_state;
                     smallvec![self.output]
                 } else {
                     smallvec![]
@@ -543,16 +486,16 @@ impl LargeComponent for Adder {
         2
     }
 
-    unsafe fn update(
-        &self,
+    fn update(
+        &mut self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
+        outputs: &mut [LogicState],
     ) -> inline_vec!(WireId) {
-        let width = unsafe { *wire_widths.get_unchecked(self.input_a) };
-        let a = unsafe { wire_states.get_unchecked(self.input_a).get() };
-        let b = unsafe { wire_states.get_unchecked(self.input_b).get() };
-        let c = unsafe { wire_states.get_unchecked(self.carry_in).get() };
+        let width = wire_widths[self.input_a];
+        let a = wire_states[self.input_a];
+        let b = wire_states[self.input_b];
+        let c = wire_states[self.carry_in];
 
         let (new_output, new_carry_out) = 'compute: {
             let c_in = match c.get_bit_state(LogicOffset::MIN) {
@@ -590,16 +533,18 @@ impl LargeComponent for Adder {
             }
         };
 
-        let output_changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `outputs` is a slice uniquely associated with this component
-            outputs[0].set_unsafe(new_output)
+        let output_changed = if !new_output.eq(outputs[0], width) {
+            outputs[0] = new_output;
+            true
+        } else {
+            false
         };
 
-        let carry_out_changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `outputs` is a slice uniquely associated with this component
-            outputs[1].set_unsafe(new_carry_out)
+        let carry_out_changed = if !new_carry_out.eq(outputs[1], width) {
+            outputs[1] = new_carry_out;
+            true
+        } else {
+            false
         };
 
         match (output_changed, carry_out_changed) {
@@ -641,15 +586,15 @@ impl LargeComponent for Multiplier {
         2
     }
 
-    unsafe fn update(
-        &self,
+    fn update(
+        &mut self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
+        outputs: &mut [LogicState],
     ) -> inline_vec!(WireId) {
-        let width = unsafe { *wire_widths.get_unchecked(self.input_a) };
-        let a = unsafe { wire_states.get_unchecked(self.input_a).get() };
-        let b = unsafe { wire_states.get_unchecked(self.input_b).get() };
+        let width = wire_widths[self.input_a];
+        let a = wire_states[self.input_a];
+        let b = wire_states[self.input_b];
 
         let (new_low_state, new_high_state) = if (width.get() * 2) <= MAX_LOGIC_WIDTH {
             let full_result = a.mul(b, width);
@@ -690,16 +635,18 @@ impl LargeComponent for Multiplier {
             }
         };
 
-        let low_changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `outputs` is a slice uniquely associated with this component
-            outputs[0].set_unsafe(new_low_state)
+        let low_changed = if !new_low_state.eq(outputs[0], width) {
+            outputs[0] = new_low_state;
+            true
+        } else {
+            false
         };
 
-        let high_changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `outputs` is a slice uniquely associated with this component
-            outputs[1].set_unsafe(new_high_state)
+        let high_changed = if !new_high_state.eq(outputs[1], width) {
+            outputs[1] = new_high_state;
+            true
+        } else {
+            false
         };
 
         match (low_changed, high_changed) {
@@ -717,8 +664,8 @@ pub(crate) struct Register {
     data_out: WireId,
     enable: WireId,
     clock: WireId,
-    prev_clock: SyncCell<Option<bool>>,
-    data: SyncCell<LogicState>,
+    prev_clock: Option<bool>,
+    data: LogicState,
 }
 
 impl Register {
@@ -729,8 +676,8 @@ impl Register {
             data_out,
             enable,
             clock,
-            prev_clock: SyncCell::new(None),
-            data: SyncCell::new(LogicState::UNDEFINED),
+            prev_clock: None,
+            data: LogicState::UNDEFINED,
         }
     }
 }
@@ -741,50 +688,46 @@ impl LargeComponent for Register {
     }
 
     fn get_data(&mut self) -> ComponentData<'_> {
-        ComponentData::RegisterValue(self.data.get_mut())
+        ComponentData::RegisterValue(&mut self.data)
     }
 
     fn reset(&mut self) {
-        *self.prev_clock.get_mut() = None;
-        *self.data.get_mut() = LogicState::UNDEFINED;
+        self.prev_clock = None;
+        self.data = LogicState::UNDEFINED;
     }
 
-    unsafe fn update(
-        &self,
-        _wire_widths: &WireWidthList,
+    fn update(
+        &mut self,
+        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
+        outputs: &mut [LogicState],
     ) -> inline_vec!(WireId) {
-        let data_in_state = unsafe { wire_states.get_unchecked(self.data_in).get() };
-        let enable_state = unsafe { wire_states.get_unchecked(self.enable).get() };
-        let clock_state = unsafe { wire_states.get_unchecked(self.clock).get() };
+        let data_in_state = wire_states[self.data_in];
+        let enable_state = wire_states[self.enable];
+        let clock_state = wire_states[self.clock];
 
         let new_clock = match clock_state.get_bit_state(LogicOffset::MIN) {
-            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock.get(),
+            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock,
             LogicBitState::Logic0 => Some(false),
             LogicBitState::Logic1 => Some(true),
         };
 
-        let new_data = if let (Some(false), Some(true)) = (self.prev_clock.get(), new_clock) {
+        let new_data = if let (Some(false), Some(true)) = (self.prev_clock, new_clock) {
             match enable_state.get_bit_state(LogicOffset::MIN) {
                 LogicBitState::HighZ | LogicBitState::Undefined => LogicState::UNDEFINED,
-                LogicBitState::Logic0 => self.data.get(),
+                LogicBitState::Logic0 => self.data,
                 LogicBitState::Logic1 => data_in_state.high_z_to_undefined(),
             }
         } else {
-            self.data.get()
+            self.data
         };
 
-        let changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `outputs` is a slice uniquely associated with this component
-            outputs[0].set_unsafe(new_data)
-        };
+        self.prev_clock = new_clock;
+        self.data = new_data;
 
-        self.prev_clock.set(new_clock);
-        self.data.set(new_data);
-
-        if changed {
+        let data_width = wire_widths[self.data_out];
+        if !new_data.eq(outputs[0], data_width) {
+            outputs[0] = new_data;
             smallvec![self.data_out]
         } else {
             smallvec![]
@@ -794,9 +737,9 @@ impl LargeComponent for Register {
 
 // This has to contain raw pointers because using vectors would require a mutex.
 enum Memory {
-    U8(*mut [u8; 2], usize),
-    U16(*mut [u16; 2], usize),
-    U32(*mut [u32; 2], usize),
+    U8(Box<[[u8; 2]]>),
+    U16(Box<[[u16; 2]]>),
+    U32(Box<[[u32; 2]]>),
 }
 
 impl Memory {
@@ -807,157 +750,78 @@ impl Memory {
         const VALID: LogicSizeInteger = VALUE.1;
 
         if width <= 8 {
-            let mut mem = vec![[STATE as u8, VALID as u8]; len];
-            debug_assert_eq!(mem.len(), mem.capacity());
-
-            let ptr = mem.as_mut_ptr();
-            std::mem::forget(mem);
-
-            Self::U8(ptr, len)
+            let mem = vec![[STATE as u8, VALID as u8]; len];
+            Self::U8(mem.into_boxed_slice())
         } else if width <= 16 {
-            let mut mem = vec![[STATE as u16, VALID as u16]; len];
-            debug_assert_eq!(mem.len(), mem.capacity());
-
-            let ptr = mem.as_mut_ptr();
-            std::mem::forget(mem);
-
-            Self::U16(ptr, len)
+            let mem = vec![[STATE as u16, VALID as u16]; len];
+            Self::U16(mem.into_boxed_slice())
         } else {
-            let mut mem = vec![[STATE as u32, VALID as u32]; len];
-            debug_assert_eq!(mem.len(), mem.capacity());
-
-            let ptr = mem.as_mut_ptr();
-            std::mem::forget(mem);
-
-            Self::U32(ptr, len)
+            let mem = vec![[STATE as u32, VALID as u32]; len];
+            Self::U32(mem.into_boxed_slice())
         }
     }
 
     #[inline]
     fn len(&self) -> usize {
-        match *self {
-            Self::U8(_, len) | Self::U16(_, len) | Self::U32(_, len) => len,
+        match self {
+            Self::U8(mem) => mem.len(),
+            Self::U16(mem) => mem.len(),
+            Self::U32(mem) => mem.len(),
         }
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn read(&self, addr: usize) -> LogicState {
-        unsafe {
-            // SAFETY: we have a shared reference and are only reading
+        let (state, valid) = match self {
+            Self::U8(mem) => {
+                let [state, valid] = mem[addr];
+                (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+            Self::U16(mem) => {
+                let [state, valid] = mem[addr];
+                (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+            Self::U32(mem) => {
+                let [state, valid] = mem[addr];
+                (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+        };
 
-            let (state, valid) = match *self {
-                Self::U8(ptr, len) => {
-                    assert!(addr < len);
-                    let [state, valid] = ptr.add(addr).read();
-                    (state as LogicSizeInteger, valid as LogicSizeInteger)
-                }
-                Self::U16(ptr, len) => {
-                    assert!(addr < len);
-                    let [state, valid] = ptr.add(addr).read();
-                    (state as LogicSizeInteger, valid as LogicSizeInteger)
-                }
-                Self::U32(ptr, len) => {
-                    assert!(addr < len);
-                    let [state, valid] = ptr.add(addr).read();
-                    (state as LogicSizeInteger, valid as LogicSizeInteger)
-                }
-            };
-
-            LogicState::from_state_valid(state, valid)
-        }
+        LogicState::from_state_valid(state, valid)
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn write(&mut self, addr: usize, value: LogicState) {
-        unsafe {
-            // SAFETY: we have a mutable reference
+        let (state, valid) = value.to_state_valid();
 
-            let (state, valid) = value.to_state_valid();
-
-            match *self {
-                Self::U8(ptr, len) => {
-                    assert!(addr < len);
-                    ptr.add(addr).write([state as u8, valid as u8])
-                }
-                Self::U16(ptr, len) => {
-                    assert!(addr < len);
-                    ptr.add(addr).write([state as u16, valid as u16])
-                }
-                Self::U32(ptr, len) => {
-                    assert!(addr < len);
-                    ptr.add(addr).write([state as u32, valid as u32])
-                }
+        match self {
+            Self::U8(mem) => {
+                mem[addr] = [state as u8, valid as u8];
+            }
+            Self::U16(mem) => {
+                mem[addr] = [state as u16, valid as u16];
+            }
+            Self::U32(mem) => {
+                mem[addr] = [state as u32, valid as u32];
             }
         }
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn clear(&mut self) {
-        unsafe {
-            // SAFETY:
-            //   - we have a mutable reference
-            //   - the pointer was created from a vector so constructing a slice from it is ok
+        const VALUE: (LogicSizeInteger, LogicSizeInteger) = LogicState::UNDEFINED.to_state_valid();
+        const STATE: LogicSizeInteger = VALUE.0;
+        const VALID: LogicSizeInteger = VALUE.1;
 
-            const VALUE: (LogicSizeInteger, LogicSizeInteger) =
-                LogicState::UNDEFINED.to_state_valid();
-            const STATE: LogicSizeInteger = VALUE.0;
-            const VALID: LogicSizeInteger = VALUE.1;
-
-            match *self {
-                Self::U8(ptr, len) => {
-                    let mem = std::slice::from_raw_parts_mut(ptr, len);
-                    mem.fill([STATE as u8, VALID as u8]);
-                }
-                Self::U16(ptr, len) => {
-                    let mem = std::slice::from_raw_parts_mut(ptr, len);
-                    mem.fill([STATE as u16, VALID as u16]);
-                }
-                Self::U32(ptr, len) => {
-                    let mem = std::slice::from_raw_parts_mut(ptr, len);
-                    mem.fill([STATE as u32, VALID as u32]);
-                }
+        match self {
+            Self::U8(mem) => {
+                mem.fill([STATE as u8, VALID as u8]);
             }
-        }
-    }
-
-    #[allow(clippy::unnecessary_cast)]
-    unsafe fn write_unsafe(&self, addr: usize, value: LogicState) {
-        let (state, valid) = value.to_state_valid();
-
-        match *self {
-            Self::U8(ptr, len) => {
-                assert!(addr < len);
-                unsafe { ptr.add(addr).write([state as u8, valid as u8]) }
+            Self::U16(mem) => {
+                mem.fill([STATE as u16, VALID as u16]);
             }
-            Self::U16(ptr, len) => {
-                assert!(addr < len);
-                unsafe { ptr.add(addr).write([state as u16, valid as u16]) }
-            }
-            Self::U32(ptr, len) => {
-                assert!(addr < len);
-                unsafe { ptr.add(addr).write([state as u32, valid as u32]) }
-            }
-        }
-    }
-}
-
-impl Drop for Memory {
-    fn drop(&mut self) {
-        unsafe {
-            // SAFETY: the pointer was created from a vector so constructing a vector from it is ok
-            match *self {
-                Self::U8(ptr, len) => {
-                    let mem = Vec::from_raw_parts(ptr, len, len);
-                    std::mem::drop(mem)
-                }
-                Self::U16(ptr, len) => {
-                    let mem = Vec::from_raw_parts(ptr, len, len);
-                    std::mem::drop(mem)
-                }
-                Self::U32(ptr, len) => {
-                    let mem = Vec::from_raw_parts(ptr, len, len);
-                    std::mem::drop(mem)
-                }
+            Self::U32(mem) => {
+                mem.fill([STATE as u32, VALID as u32]);
             }
         }
     }
@@ -965,35 +829,13 @@ impl Drop for Memory {
 
 impl std::fmt::Debug for Memory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        unsafe {
-            // SAFETY:
-            //   - we have a shared reference and are only reading
-            //   - the pointer was created from a vector so constructing a slice from it is ok
-
-            match *self {
-                Self::U8(ptr, len) => {
-                    let mem = std::slice::from_raw_parts(ptr, len);
-                    std::fmt::Debug::fmt(mem, f)
-                }
-                Self::U16(ptr, len) => {
-                    let mem = std::slice::from_raw_parts(ptr, len);
-                    std::fmt::Debug::fmt(mem, f)
-                }
-                Self::U32(ptr, len) => {
-                    let mem = std::slice::from_raw_parts(ptr, len);
-                    std::fmt::Debug::fmt(mem, f)
-                }
-            }
+        match self {
+            Self::U8(mem) => std::fmt::Debug::fmt(&**mem, f),
+            Self::U16(mem) => std::fmt::Debug::fmt(&**mem, f),
+            Self::U32(mem) => std::fmt::Debug::fmt(&**mem, f),
         }
     }
 }
-
-unsafe impl Send for Memory {}
-
-// SAFETY:
-//   This is not safe in general, but through guarantees of the simulator
-//   all structs in this module are only accesses by one thread at a time.
-unsafe impl Sync for Memory {}
 
 #[derive(Debug)]
 pub(crate) struct Ram {
@@ -1003,7 +845,7 @@ pub(crate) struct Ram {
     data_out: WireId,
     write: WireId,
     clock: WireId,
-    prev_clock: SyncCell<Option<bool>>,
+    prev_clock: Option<bool>,
     mem: Memory,
 }
 
@@ -1027,7 +869,7 @@ impl Ram {
             data_out,
             write,
             clock,
-            prev_clock: SyncCell::new(None),
+            prev_clock: None,
             mem: Memory::new(data_width, 1usize << addr_width.get()),
         }
     }
@@ -1043,50 +885,46 @@ impl LargeComponent for Ram {
     }
 
     fn reset(&mut self) {
-        *self.prev_clock.get_mut() = None;
+        self.prev_clock = None;
         self.mem.clear();
     }
 
-    unsafe fn update(
-        &self,
+    fn update(
+        &mut self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
+        outputs: &mut [LogicState],
     ) -> inline_vec!(WireId) {
-        let addr_width = unsafe { *wire_widths.get_unchecked(self.write_addr) };
-        let write_addr_state = unsafe { wire_states.get_unchecked(self.write_addr).get() };
-        let read_addr_state = unsafe { wire_states.get_unchecked(self.read_addr).get() };
-        let data_in_state = unsafe { wire_states.get_unchecked(self.data_in).get() };
-        let write_state = unsafe { wire_states.get_unchecked(self.write).get() };
-        let clock_state = unsafe { wire_states.get_unchecked(self.clock).get() };
+        let addr_width = wire_widths[self.write_addr];
+        let data_width = wire_widths[self.data_out];
+        let write_addr_state = wire_states[self.write_addr];
+        let read_addr_state = wire_states[self.read_addr];
+        let data_in_state = wire_states[self.data_in];
+        let write_state = wire_states[self.write];
+        let clock_state = wire_states[self.clock];
 
         let addr_mask = LogicStorage::mask(addr_width);
 
         let new_clock = match clock_state.get_bit_state(LogicOffset::MIN) {
-            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock.get(),
+            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock,
             LogicBitState::Logic0 => Some(false),
             LogicBitState::Logic1 => Some(true),
         };
 
-        if let (Some(false), Some(true)) = (self.prev_clock.get(), new_clock) {
+        if let (Some(false), Some(true)) = (self.prev_clock, new_clock) {
             let write_addr = write_addr_state.state & addr_mask;
             let write_addr_valid = write_addr_state.valid | !addr_mask;
 
             if write_addr_valid == LogicStorage::ALL_ONE {
-                unsafe {
-                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-                    //         so we have explusive access to the memory
-
-                    match write_state.get_bit_state(LogicOffset::MIN) {
-                        LogicBitState::HighZ | LogicBitState::Undefined => self
-                            .mem
-                            .write_unsafe(write_addr.get() as usize, LogicState::UNDEFINED),
-                        LogicBitState::Logic0 => {}
-                        LogicBitState::Logic1 => self.mem.write_unsafe(
-                            write_addr.get() as usize,
-                            data_in_state.high_z_to_undefined(),
-                        ),
-                    }
+                match write_state.get_bit_state(LogicOffset::MIN) {
+                    LogicBitState::HighZ | LogicBitState::Undefined => self
+                        .mem
+                        .write(write_addr.get() as usize, LogicState::UNDEFINED),
+                    LogicBitState::Logic0 => {}
+                    LogicBitState::Logic1 => self.mem.write(
+                        write_addr.get() as usize,
+                        data_in_state.high_z_to_undefined(),
+                    ),
                 }
             } else {
                 // NOTE:
@@ -1104,15 +942,10 @@ impl LargeComponent for Ram {
             LogicState::UNDEFINED
         };
 
-        let changed = unsafe {
-            // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-            //         and `outputs` is a slice uniquely associated with this component
-            outputs[0].set_unsafe(new_data)
-        };
+        self.prev_clock = new_clock;
 
-        self.prev_clock.set(new_clock);
-
-        if changed {
+        if !new_data.eq(outputs[0], data_width) {
+            outputs[0] = new_data;
             smallvec![self.data_out]
         } else {
             smallvec![]
@@ -1153,6 +986,19 @@ impl Component {
     }
 
     #[inline]
+    pub(crate) fn output_offset(&self) -> usize {
+        self.output_offset
+    }
+
+    #[inline]
+    pub(crate) fn output_count(&self) -> usize {
+        match &self.kind {
+            ComponentKind::Small(_) => 1,
+            ComponentKind::Large(component) => component.output_count(),
+        }
+    }
+
+    #[inline]
     pub(crate) fn get_data(&mut self) -> ComponentData<'_> {
         match &mut self.kind {
             ComponentKind::Small(_) => ComponentData::None,
@@ -1169,21 +1015,17 @@ impl Component {
     }
 
     #[inline]
-    pub(crate) unsafe fn update(
-        &self,
+    pub(crate) fn update(
+        &mut self,
         wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &[LogicStateCell],
+        outputs: &mut [LogicState],
     ) -> inline_vec!(WireId) {
-        match &self.kind {
-            ComponentKind::Small(component) => unsafe {
-                component.update(wire_widths, wire_states, &outputs[self.output_offset])
-            },
-            ComponentKind::Large(component) => {
-                let output_range =
-                    self.output_offset..(self.output_offset + component.output_count());
-                unsafe { component.update(wire_widths, wire_states, &outputs[output_range]) }
+        match &mut self.kind {
+            ComponentKind::Small(component) => {
+                component.update(wire_widths, wire_states, &mut outputs[0])
             }
+            ComponentKind::Large(component) => component.update(wire_widths, wire_states, outputs),
         }
     }
 }

@@ -19,6 +19,7 @@ static_assertions = "1.1"
 bounded-integer = { version = "0.5", features = ["types"] }
 smallvec = { version = "1.10", features = ["serde", "union", "const_generics"] }
 num_cpus = "1.15"
+sync-unsafe-cell = "0.1.1"
 
 [dev-dependencies]
 criterion = "0.4"

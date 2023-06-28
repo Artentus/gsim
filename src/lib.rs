@@ -36,6 +36,7 @@
 
 #![deny(missing_docs)]
 #![warn(missing_debug_implementations)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 #[macro_use]
 extern crate static_assertions;
@@ -105,6 +106,7 @@ macro_rules! def_id_type {
         mod $ns {
             use std::marker::PhantomData;
             use std::num::NonZeroU32;
+            use sync_unsafe_cell::SyncUnsafeCell;
 
             $(#[$attr])*
             #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -115,10 +117,9 @@ macro_rules! def_id_type {
             assert_eq_size!(Option<$id_name>, u32);
             assert_eq_align!(Option<$id_name>, u32);
 
-            #[derive(Debug)]
             #[repr(transparent)]
             pub(crate) struct IdList<T> {
-                list: Vec<T>,
+                list: Vec<SyncUnsafeCell<T>>,
             }
 
             impl<T> IdList<T> {
@@ -129,7 +130,7 @@ macro_rules! def_id_type {
 
                 #[inline]
                 pub fn insert(&mut self, item: T) -> $id_name {
-                    self.list.push(item);
+                    self.list.push(SyncUnsafeCell::new(item));
                     assert!(self.list.len() <= (u32::MAX as usize));
 
                     unsafe {
@@ -140,22 +141,20 @@ macro_rules! def_id_type {
 
                 #[inline]
                 pub fn get(&self, id: $id_name) -> Option<&T> {
-                    self.list.get((id.0.get() as usize) - 1)
+                    self.list.get((id.0.get() as usize) - 1).map(|cell| unsafe {
+                        // SAFETY: since we have a shared reference to `self`, no mutable references exist
+                        &*cell.get()
+                    })
                 }
 
                 #[inline]
                 pub fn get_mut(&mut self, id: $id_name) -> Option<&mut T> {
-                    self.list.get_mut((id.0.get() as usize) - 1)
+                    self.list.get_mut((id.0.get() as usize) - 1).map(SyncUnsafeCell::get_mut)
                 }
 
-                #[inline]
-                pub unsafe fn get_unchecked(&self, id: $id_name) -> &T {
-                    self.list.get_unchecked((id.0.get() as usize) - 1)
-                }
-
-                #[inline]
-                pub unsafe fn get_unchecked_mut(&mut self, id: $id_name) -> &mut T {
-                    self.list.get_unchecked_mut((id.0.get() as usize) - 1)
+                /// SAFETY: caller must ensure there are no other references to the item with this ID
+                pub unsafe fn get_unsafe(&self, id: $id_name) -> Option<&mut T> {
+                    self.list.get((id.0.get() as usize) - 1).map(|cell| unsafe { &mut *cell.get() })
                 }
 
                 #[inline]
@@ -164,13 +163,16 @@ macro_rules! def_id_type {
                 }
 
                 #[inline]
-                pub fn iter(&self) -> std::slice::Iter<'_, T> {
-                    self.list.iter()
+                pub fn iter(&self) -> impl Iterator<Item = &T> {
+                    self.list.iter().map(|cell| unsafe {
+                        // SAFETY: since we have a shared reference to `self`, no mutable references exist
+                        &*cell.get()
+                    })
                 }
 
                 #[inline]
-                pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
-                    self.list.iter_mut()
+                pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
+                    self.list.iter_mut().map(SyncUnsafeCell::get_mut)
                 }
             }
 
@@ -179,14 +181,14 @@ macro_rules! def_id_type {
 
                 #[inline]
                 fn index(&self, id: $id_name) -> &Self::Output {
-                    &self.list[(id.0.get() as usize) - 1]
+                    self.get(id).unwrap()
                 }
             }
 
             impl<T> std::ops::IndexMut<$id_name> for IdList<T> {
                 #[inline]
                 fn index_mut(&mut self, id: $id_name) -> &mut Self::Output {
-                    &mut self.list[(id.0.get() as usize) - 1]
+                    self.get_mut(id).unwrap()
                 }
             }
 
@@ -289,7 +291,7 @@ impl Wire {
         }
     }
 
-    fn update(&self, width: LogicWidth, component_outputs: &[LogicStateCell]) -> WireUpdateResult {
+    fn update(&self, width: LogicWidth, component_outputs: &[LogicState]) -> WireUpdateResult {
         #[inline]
         fn combine(a: LogicState, b: LogicState, mask: LogicStorage) -> WireUpdateResult {
             //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning | conflict
@@ -336,7 +338,7 @@ impl Wire {
         };
 
         for driver in self.drivers.iter().copied() {
-            let output = component_outputs[driver].get();
+            let output = component_outputs[driver];
             new_state = combine(new_state, output, mask)?;
         }
 
@@ -394,7 +396,7 @@ pub type AddComponentResult = Result<ComponentId, AddComponentError>;
 
 type WireList = wire_id::IdList<Wire>;
 type WireWidthList = wire_id::IdList<LogicWidth>;
-type WireStateList = wire_id::IdList<LogicStateCell>;
+type WireStateList = wire_id::IdList<LogicState>;
 
 /// A digital circuit simulator
 ///
@@ -406,7 +408,7 @@ pub struct Simulator {
     wire_states: WireStateList,
 
     components: component_id::IdList<Component>,
-    component_outputs: Vec<LogicStateCell>,
+    component_outputs: Vec<LogicState>,
 
     wire_update_queue: Vec<WireId>,
     component_update_queue: Vec<ComponentId>,
@@ -447,7 +449,7 @@ impl Simulator {
 
     /// Gets the current state of a wire
     pub fn get_wire_state(&self, wire: WireId) -> LogicState {
-        self.wire_states.get(wire).expect("invalid wire ID").get()
+        *self.wire_states.get(wire).expect("invalid wire ID")
     }
 
     /// Gets a components data
@@ -497,19 +499,19 @@ impl Simulator {
                 let mut local_queue = Vec::new();
 
                 for &wire_id in chunk {
-                    let wire = unsafe { self.wires.get_unchecked(wire_id) };
-                    let width = unsafe { *self.wire_widths.get_unchecked(wire_id) };
-                    let state = unsafe { self.wire_states.get_unchecked(wire_id) };
+                    let wire = &self.wires[wire_id];
+                    let width = self.wire_widths[wire_id];
+                    let state = unsafe {
+                        // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
+                        self.wire_states.get_unsafe(wire_id).unwrap()
+                    };
 
                     match wire.update(width, &self.component_outputs) {
                         Ok(new_state) => {
-                            let changed = unsafe {
-                                // SAFETY: sort_unstable + dedup ensure wire_id is unique between all iterations
-                                state.set_unsafe(new_state)
-                            };
+                            if !new_state.eq(*state, width) {
+                                *state = new_state;
 
-                            // If the wire's state changed, insert all connected components into the next update queue.
-                            if changed {
+                                // If the wire's state changed, insert all connected components into the next update queue.
                                 local_queue.extend_from_slice(wire.driving.as_slice());
                             }
                         }
@@ -552,24 +554,45 @@ impl Simulator {
 
         self.wire_update_queue.clear();
 
+        // Ugly hack to make a pointer `Sync`
+        #[derive(Clone, Copy)]
+        #[repr(transparent)]
+        struct SyncPtr<T> {
+            ptr: *mut T,
+        }
+        unsafe impl<T> Sync for SyncPtr<T> {}
+
+        let component_outputs = SyncPtr {
+            ptr: self.component_outputs.as_mut_ptr(),
+        };
+
         let wire_update_queue_iter = self
             .component_update_queue
             .par_iter()
             .with_min_len(100)
             .copied()
             .flat_map_iter(|component_id| {
-                let component = unsafe { self.components.get_unchecked(component_id) };
+                let component_outputs = component_outputs;
+
+                let component = unsafe {
+                    // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
+                    self.components.get_unsafe(component_id).unwrap()
+                };
+
+                let output_offset = component.output_offset();
+                let output_count = component.output_count();
+                let outputs = unsafe {
+                    // SAFETY:
+                    //   - `sort_unstable` + `dedup` ensure the ID is unique between all iterations
+                    //   - each ID has a unique range associated with it
+                    std::slice::from_raw_parts_mut(
+                        component_outputs.ptr.add(output_offset),
+                        output_count,
+                    )
+                };
 
                 // `Component::update` returns all the wires that need to be inserted into the next update queue.
-                unsafe {
-                    // SAFETY: sort_unstable + dedup ensure every iteration updates a unique component,
-                    //         so the reference we have is exclusive.
-                    component.update(
-                        &self.wire_widths,
-                        &self.wire_states,
-                        &self.component_outputs,
-                    )
-                }
+                component.update(&self.wire_widths, &self.wire_states, outputs)
             });
 
         self.wire_update_queue.par_extend(wire_update_queue_iter);
@@ -584,12 +607,10 @@ impl Simulator {
     /// Resets the simulation
     pub fn reset(&mut self) {
         for state in self.wire_states.iter_mut() {
-            let state = state.get_mut();
             *state = LogicState::HIGH_Z;
         }
 
         for output in self.component_outputs.iter_mut() {
-            let output = output.get_mut();
             *output = LogicState::HIGH_Z;
         }
 
@@ -783,10 +804,7 @@ impl SimulatorBuilder {
     pub fn add_wire(&mut self, width: LogicWidth) -> WireId {
         let wire_id = self.sim.wires.insert(Wire::new());
         let width_id = self.sim.wire_widths.insert(width);
-        let state_id = self
-            .sim
-            .wire_states
-            .insert(LogicStateCell::new(LogicState::HIGH_Z));
+        let state_id = self.sim.wire_states.insert(LogicState::HIGH_Z);
         debug_assert_eq!(wire_id, width_id);
         debug_assert_eq!(wire_id, state_id);
         wire_id
@@ -818,9 +836,7 @@ impl SimulatorBuilder {
 
     fn add_small_component(&mut self, component: SmallComponent) -> (usize, ComponentId) {
         let output_offset = self.sim.component_outputs.len();
-        self.sim
-            .component_outputs
-            .push(LogicStateCell::new(LogicState::HIGH_Z));
+        self.sim.component_outputs.push(LogicState::HIGH_Z);
 
         (
             output_offset,
@@ -836,9 +852,7 @@ impl SimulatorBuilder {
     ) -> (usize, ComponentId) {
         let output_offset = self.sim.component_outputs.len();
         for _ in 0..component.output_count() {
-            self.sim
-                .component_outputs
-                .push(LogicStateCell::new(LogicState::HIGH_Z));
+            self.sim.component_outputs.push(LogicState::HIGH_Z);
         }
 
         (

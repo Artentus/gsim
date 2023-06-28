@@ -3,7 +3,6 @@
 mod ops;
 use ops::*;
 
-use std::cell::UnsafeCell;
 use std::ops::*;
 
 macro_rules! size_of {
@@ -576,41 +575,3 @@ macro_rules! bits {
 }
 
 pub use bits;
-
-#[derive(Debug)]
-#[repr(transparent)]
-pub(crate) struct LogicStateCell {
-    inner: UnsafeCell<LogicState>,
-}
-
-impl LogicStateCell {
-    #[inline]
-    pub(crate) const fn new(value: LogicState) -> Self {
-        Self {
-            inner: UnsafeCell::new(value),
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get(&self) -> LogicState {
-        unsafe { *self.inner.get() }
-    }
-
-    #[inline]
-    pub(crate) unsafe fn set_unsafe(&self, value: LogicState) -> bool {
-        let ptr = self.inner.get();
-        if (value.state != (*ptr).state) || (value.valid != (*ptr).valid) {
-            *ptr = value;
-            true
-        } else {
-            false
-        }
-    }
-
-    #[inline]
-    pub(crate) fn get_mut(&mut self) -> &mut LogicState {
-        self.inner.get_mut()
-    }
-}
-
-unsafe impl Sync for LogicStateCell {}
