@@ -954,6 +954,70 @@ impl LargeComponent for Ram {
 }
 
 #[derive(Debug)]
+pub(crate) struct Rom {
+    addr: WireId,
+    data: WireId,
+    mem: Memory,
+}
+
+impl Rom {
+    #[inline]
+    pub(crate) fn new(
+        addr: WireId,
+        data: WireId,
+        addr_width: LogicWidth,
+        data_width: LogicWidth,
+    ) -> Self {
+        Self {
+            addr,
+            data,
+            mem: Memory::new(data_width, 1usize << addr_width.get()),
+        }
+    }
+}
+
+impl LargeComponent for Rom {
+    fn output_count(&self) -> usize {
+        1
+    }
+
+    fn get_data(&mut self) -> ComponentData<'_> {
+        ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
+    }
+
+    fn reset(&mut self) {}
+
+    fn update(
+        &mut self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &mut [LogicState],
+    ) -> inline_vec!(WireId) {
+        let addr_width = wire_widths[self.addr];
+        let data_width = wire_widths[self.data];
+        let addr_state = wire_states[self.addr];
+
+        let addr_mask = LogicStorage::mask(addr_width);
+
+        let addr = addr_state.state & addr_mask;
+        let addr_valid = addr_state.valid | !addr_mask;
+
+        let new_data = if addr_valid == LogicStorage::ALL_ONE {
+            self.mem.read(addr.get() as usize)
+        } else {
+            LogicState::UNDEFINED
+        };
+
+        if !new_data.eq(outputs[0], data_width) {
+            outputs[0] = new_data;
+            smallvec![self.data]
+        } else {
+            smallvec![]
+        }
+    }
+}
+
+#[derive(Debug)]
 enum ComponentKind {
     Small(SmallComponent),
     Large(Box<dyn LargeComponent>),

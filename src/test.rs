@@ -2337,3 +2337,54 @@ fn test_ram() {
         );
     }
 }
+
+#[test]
+fn test_rom() {
+    let mut builder = SimulatorBuilder::default();
+
+    const ADDR_WIDTH: LogicWidth = unsafe { LogicWidth::new_unchecked(2) };
+    let addr = builder.add_wire(ADDR_WIDTH);
+    let data = builder.add_wire(LogicWidth::MAX);
+    let rom = builder.add_rom(addr, data).unwrap();
+
+    let mem_data = builder.get_component_data(rom);
+    let ComponentData::MemoryBlock(mut mem_data) = mem_data else {
+        panic!("[TEST] invalid component data");
+    };
+
+    mem_data.write(0, LogicState::from_int(1));
+    mem_data.write(1, LogicState::from_int(2));
+    mem_data.write(2, LogicState::from_int(3));
+    mem_data.write(3, LogicState::from_int(4));
+
+    let mut sim = builder.build();
+
+    const TEST_DATA: &[UnaryGateTestData] = unary_gate_test_data![
+        HIGH_Z -> UNDEFINED,
+        UNDEFINED -> UNDEFINED,
+
+        0 -> 1,
+        1 -> 2,
+        2 -> 3,
+        3 -> 4,
+    ];
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        sim.set_wire_base_drive(addr, test_data.input);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(data);
+
+        assert!(
+            output_state.eq(test_data.output, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(LogicWidth::MAX),
+            output_state.display_string(LogicWidth::MAX),
+        );
+    }
+}

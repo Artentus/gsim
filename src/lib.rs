@@ -1239,6 +1239,22 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
+    /// Adds a `ROM` component to the simulation
+    pub fn add_rom(&mut self, addr: WireId, data: WireId) -> AddComponentResult {
+        let addr_width = *self.sim.wire_widths.get(addr).expect("invalid wire ID");
+        let data_width = *self.sim.wire_widths.get(data).expect("invalid wire ID");
+
+        let rom = Rom::new(addr, data, addr_width, data_width);
+        let (output_offset, id) = self.add_large_component(rom);
+
+        let read_addr_wire = self.sim.wires.get_mut(addr).unwrap();
+        read_addr_wire.add_driving(id);
+        let data_out_wire = self.sim.wires.get_mut(data).unwrap();
+        data_out_wire.drivers.push(output_offset);
+
+        Ok(id)
+    }
+
     /// Creates the simulator
     #[inline]
     pub fn build(self) -> Simulator {
