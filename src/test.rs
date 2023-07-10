@@ -584,12 +584,11 @@ fn test_slice() {
 #[test]
 fn test_merge() {
     macro_rules! test_data {
-        ($(([$($a:tt),+], [$($b:tt),+]) -> [$($o:tt),+]),* $(,)?) => {
+        ($(($([$($i:tt),+]),+) -> [$($o:tt),+]),* $(,)?) => {
             &[
                 $(
-                    BinaryGateTestData {
-                        input_a: bits!($($a),+),
-                        input_b: bits!($($b),+),
+                    WideGateTestData {
+                        inputs: &[$(bits!($($i),+)),+],
                         output: bits!($($o),+),
                     },
                 )*
@@ -597,7 +596,7 @@ fn test_merge() {
         };
     }
 
-    const TEST_DATA: &[BinaryGateTestData] = test_data!(
+    const TEST_DATA: &[WideGateTestData] = test_data!(
         ([Z], [Z]) -> [Z, Z],
         ([Z], [X]) -> [X, Z],
         ([Z], [0]) -> [0, Z],
@@ -619,19 +618,23 @@ fn test_merge() {
         ([1], [1]) -> [1, 1],
     );
 
-    let mut builder = SimulatorBuilder::default();
-
-    const WIDTH: LogicWidth = unsafe { LogicWidth::new_unchecked(2) };
-    let input_a = builder.add_wire(LogicWidth::MIN);
-    let input_b = builder.add_wire(LogicWidth::MIN);
-    let output = builder.add_wire(WIDTH);
-    let _gate = builder.add_merge(input_a, input_b, output).unwrap();
-
-    let mut sim = builder.build();
-
     for (i, test_data) in TEST_DATA.iter().enumerate() {
-        sim.set_wire_base_drive(input_a, test_data.input_a);
-        sim.set_wire_base_drive(input_b, test_data.input_b);
+        let mut builder = SimulatorBuilder::default();
+
+        let inputs: Vec<_> = test_data
+            .inputs
+            .iter()
+            .map(|&drive| {
+                let wire = builder.add_wire(LogicWidth::MIN);
+                builder.set_wire_base_drive(wire, drive);
+                wire
+            })
+            .collect();
+        let output_width = LogicWidth::new(test_data.inputs.len() as u8).unwrap();
+        let output = builder.add_wire(output_width);
+        let _gate = builder.add_merge(&inputs, output).unwrap();
+
+        let mut sim = builder.build();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -642,10 +645,10 @@ fn test_merge() {
         let output_state = sim.get_wire_state(output);
 
         assert!(
-            output_state.eq(test_data.output, WIDTH),
+            output_state.eq(test_data.output, output_width),
             "[TEST {i}]  expected: {}  actual: {}",
-            test_data.output.display_string(WIDTH),
-            output_state.display_string(WIDTH),
+            test_data.output.display_string(output_width),
+            output_state.display_string(output_width),
         );
     }
 }
