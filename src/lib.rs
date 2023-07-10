@@ -128,6 +128,13 @@ macro_rules! def_id_type {
                 }
             }
 
+            impl Default for $id_name {
+                #[inline]
+                fn default() -> Self {
+                    Self::INVALID
+                }
+            }
+
             #[repr(transparent)]
             pub(crate) struct IdList<T> {
                 list: Vec<SyncUnsafeCell<T>>,
