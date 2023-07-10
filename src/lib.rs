@@ -983,31 +983,42 @@ impl SimulatorBuilder {
     }
 
     /// Adds a `Merge` component to the simulation
-    pub fn add_merge(
-        &mut self,
-        input_a: WireId,
-        input_b: WireId,
-        output: WireId,
-    ) -> AddComponentResult {
-        let input_wire_a_width = *self.sim.wire_widths.get(input_a).expect("invalid wire ID");
-        let input_wire_b_width = *self.sim.wire_widths.get(input_b).expect("invalid wire ID");
+    pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
+        if inputs.len() < 2 {
+            return Err(AddComponentError::TooFewInputs);
+        }
+
+        let input_wire_widths: Vec<_> = inputs
+            .iter()
+            .map(|&input| *self.sim.wire_widths.get(input).expect("invalid wire ID"))
+            .collect();
         let output_wire_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
 
-        if (input_wire_a_width.get() + input_wire_b_width.get()) != output_wire_width.get() {
+        let total_input_width = input_wire_widths.iter().map(|width| width.get()).sum();
+        let Some(total_input_width) = LogicWidth::new(total_input_width) else {
+            return Err(AddComponentError::WireWidthIncompatible);
+        };
+        if total_input_width != output_wire_width {
             return Err(AddComponentError::WireWidthIncompatible);
         }
 
-        let merge = SmallComponent::Merge {
-            input_a,
-            input_b,
-            output,
+        let (output_offset, id) = if inputs.len() == 2 {
+            // Small gate optimization
+            let merge = SmallComponent::Merge {
+                input_a: inputs[0],
+                input_b: inputs[1],
+                output,
+            };
+            self.add_small_component(merge)
+        } else {
+            let merge = WideMerge::new(inputs, output);
+            self.add_large_component(merge)
         };
-        let (output_offset, id) = self.add_small_component(merge);
 
-        let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
-        input_wire_a.add_driving(id);
-        let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
-        input_wire_b.add_driving(id);
+        for &input in inputs {
+            let wire = self.sim.wires.get_mut(input).unwrap();
+            wire.add_driving(id);
+        }
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
 

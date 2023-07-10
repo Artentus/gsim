@@ -454,6 +454,58 @@ wide_gate_inv!(WideNorGate, logic_or);
 wide_gate_inv!(WideXnorGate, logic_xor);
 
 #[derive(Debug)]
+pub(crate) struct WideMerge {
+    inputs: inline_vec!(WireId),
+    output: WireId,
+}
+
+impl WideMerge {
+    #[inline]
+    pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
+        Self {
+            inputs: inputs.into(),
+            output,
+        }
+    }
+}
+
+impl LargeComponent for WideMerge {
+    fn output_count(&self) -> usize {
+        1
+    }
+
+    fn update(
+        &mut self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &mut [LogicState],
+    ) -> inline_vec!(WireId) {
+        let mut new_output_state = LogicState::HIGH_Z;
+        let mut offset = 0;
+        for input in self.inputs.iter().copied() {
+            let input_state = wire_states[input];
+            let input_width = wire_widths[input];
+
+            let input_mask = LogicStorage::mask(input_width);
+            let input_offset = LogicOffset::new(offset).expect("invalid merge offset");
+
+            new_output_state.state |= (input_state.state & input_mask) << input_offset;
+            new_output_state.valid |= (input_state.valid & input_mask) << input_offset;
+
+            offset += input_width.get();
+        }
+
+        let output_width = wire_widths[self.output];
+        if !new_output_state.eq(outputs[0], output_width) {
+            outputs[0] = new_output_state;
+            smallvec![self.output]
+        } else {
+            smallvec![]
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Adder {
     input_a: WireId,
     input_b: WireId,
