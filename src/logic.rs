@@ -303,6 +303,17 @@ impl LogicBitState {
         }
     }
 
+    #[inline]
+    fn parse(c: u8) -> Option<Self> {
+        match c {
+            b'Z' | b'z' => Some(Self::HighZ),
+            b'X' | b'x' => Some(Self::Undefined),
+            b'0' => Some(Self::Logic0),
+            b'1' => Some(Self::Logic1),
+            _ => None,
+        }
+    }
+
     /// A character representing this logic state
     /// - `HighZ`: `'Z'`
     /// - `Undefined`: `'X'`
@@ -406,6 +417,51 @@ impl LogicState {
             state: LogicStorage(state),
             valid: LogicStorage(valid),
         }
+    }
+
+    /// Constructs a logic state from a string of bits (most significant bit first)
+    ///
+    /// Example:
+    /// ```
+    /// use gsim::{LogicState, LogicWidth};
+    ///
+    /// let state = LogicState::parse("10XZ").unwrap();
+    /// assert_eq!(state.display_string(LogicWidth::new(4).unwrap()), "10XZ");
+    /// ```
+    pub fn parse(s: &str) -> Option<Self> {
+        if !s.is_ascii() {
+            return None;
+        }
+
+        // Now we know s.len() == s.chars().count()
+        if s.is_empty() || (s.len() > (MAX_LOGIC_WIDTH as usize)) {
+            return None;
+        }
+
+        let mut state = 0;
+        let mut valid = 0;
+
+        // We also know s.bytes() yields the same as s.chars()
+        for c in s.bytes() {
+            state <<= 1;
+            valid <<= 1;
+
+            let bit = LogicBitState::parse(c)?;
+            let (bit_state, bit_valid) = match bit {
+                LogicBitState::HighZ => (0, 0),
+                LogicBitState::Undefined => (1, 0),
+                LogicBitState::Logic0 => (0, 1),
+                LogicBitState::Logic1 => (1, 1),
+            };
+
+            state |= bit_state;
+            valid |= bit_valid;
+        }
+
+        Some(Self {
+            state: LogicStorage(state),
+            valid: LogicStorage(valid),
+        })
     }
 
     /// Gets the logic state of a single bit
