@@ -330,6 +330,40 @@ impl LogicBitState {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for LogicBitState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::*;
+
+        struct LogicBitStateVisitor;
+
+        impl Visitor<'_> for LogicBitStateVisitor {
+            type Value = LogicBitState;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("one of the chars ['Z', 'z', 'X', 'x', '0', '1']")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                if v.len() == 1 {
+                    LogicBitState::parse(v.as_bytes()[0])
+                } else {
+                    None
+                }
+                .ok_or_else(|| E::invalid_value(Unexpected::Str(v), &self))
+            }
+        }
+
+        deserializer.deserialize_str(LogicBitStateVisitor)
+    }
+}
+
 /// Stores the logic state of up to `MAX_LOGIC_WIDTH` bits
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
@@ -606,15 +640,43 @@ impl LogicState {
     }
 }
 
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for LogicState {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::*;
+
+        struct LogicStateVisitor;
+
+        impl Visitor<'_> for LogicStateVisitor {
+            type Value = LogicState;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string consisting of only the chars ['Z', 'z', 'X', 'x', '0', '1'] and length 1 to 32")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                LogicState::parse(v).ok_or_else(|| E::invalid_value(Unexpected::Str(v), &self))
+            }
+        }
+
+        deserializer.deserialize_str(LogicStateVisitor)
+    }
+}
+
 /// Constructs a logic state from a list of bits (most significant bit first)
 ///
 /// Example:
 /// ```
-/// # use gsim::{bits, LogicState, LogicWidth};
-/// # fn foo() -> LogicState {
-/// bits!(1, 0, X, Z) // Turns into state `10XZ`
-/// # }
-/// # assert_eq!(foo().display_string(LogicWidth::new(4).unwrap()), "10XZ");
+/// use gsim::{bits, LogicState, LogicWidth};
+///
+/// let state = bits!(1, 0, X, Z);
+/// assert_eq!(state.display_string(LogicWidth::new(4).unwrap()), "10XZ");
 /// ```
 #[macro_export]
 macro_rules! bits {

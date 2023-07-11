@@ -48,6 +48,8 @@ use component::*;
 mod logic;
 pub use logic::*;
 
+pub mod import;
+
 #[cfg(test)]
 mod test;
 
@@ -1271,6 +1273,15 @@ impl SimulatorBuilder {
         data_out_wire.drivers.push(output_offset);
 
         Ok(id)
+    }
+
+    /// Imports a module into this circuit
+    #[inline]
+    pub fn import_module<T: import::ModuleImporter>(
+        &mut self,
+        importer: &T,
+    ) -> Result<import::ModuleConnections, T::Error> {
+        importer.import_into(self)
     }
 
     /// Creates the simulator

@@ -1,6 +1,8 @@
+use crate::import::*;
 use crate::*;
 
 mod component;
+mod import;
 
 macro_rules! logic_state {
     ($state:ident) => {
@@ -36,6 +38,36 @@ fn test_binary_gate<F>(
 
     let mut sim = builder.build();
 
+    for (i, test_data) in test_data.iter().enumerate() {
+        sim.set_wire_base_drive(input_a, test_data.input_a);
+        sim.set_wire_base_drive(input_b, test_data.input_b);
+
+        match sim.run_sim(max_steps) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+
+        assert!(
+            output_state.eq(test_data.output, width),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(width),
+            output_state.display_string(width),
+        );
+    }
+}
+
+fn test_binary_module(
+    sim: &mut Simulator,
+    input_a: WireId,
+    input_b: WireId,
+    output: WireId,
+    width: LogicWidth,
+    test_data: &[BinaryGateTestData],
+    max_steps: u64,
+) {
     for (i, test_data) in test_data.iter().enumerate() {
         sim.set_wire_base_drive(input_a, test_data.input_a);
         sim.set_wire_base_drive(input_b, test_data.input_b);
