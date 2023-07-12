@@ -1,0 +1,14 @@
+[package]
+name = "gsim-cli"
+version = "0.1.0"
+edition = "2021"
+authors = ["Mathis Rech"]
+license = "MIT"
+description = "Command line interface for Gsim"
+rust-version = "1.70"
+
+[dependencies]
+gsim = { path = "..", features = ["yosys-import"] }
+clap = { version = "4.3.11", features = ["derive"] }
+reedline-repl-rs = "1.0.6"
+directories = "5.0.1"
