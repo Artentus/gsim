@@ -384,6 +384,7 @@ pub enum SimulationRunResult {
 
 /// Errors that can occur when adding a component to a simulator
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum AddComponentError {
     /// Two or more wires that were expected to did not have the same width
     WireWidthMismatch,
@@ -393,6 +394,8 @@ pub enum AddComponentError {
     OffsetOutOfRange,
     /// Too few inputs were specified
     TooFewInputs,
+    /// The number of inputs was not valid for the component
+    InvalidInputCount,
 }
 
 /// The result of adding a component to a simulator
@@ -1097,6 +1100,35 @@ impl SimulatorBuilder {
         output_low_wire.drivers.push(output_offset);
         let output_high_wire = self.sim.wires.get_mut(output_high).unwrap();
         output_high_wire.drivers.push(output_offset + 1);
+
+        Ok(id)
+    }
+
+    /// Adds a `Multiplexer` component to the simulation
+    pub fn add_multiplexer(
+        &mut self,
+        inputs: &[WireId],
+        select: WireId,
+        output: WireId,
+    ) -> AddComponentResult {
+        let select_wire_width = self.sim.wire_widths.get(select).expect("invalid wire ID");
+        let expected_input_count = 1u64 << select_wire_width.get();
+        if (inputs.len() as u64) != expected_input_count {
+            return Err(AddComponentError::InvalidInputCount);
+        }
+
+        self.check_wire_widths_match(inputs)?;
+        self.check_wire_widths_match(&[inputs[0], output])?;
+
+        let mux = Multiplexer::new(inputs, select, output);
+        let (output_offset, id) = self.add_large_component(mux);
+
+        for &input in inputs {
+            let wire = self.sim.wires.get_mut(input).unwrap();
+            wire.add_driving(id);
+        }
+        let output_wire = self.sim.wires.get_mut(output).unwrap();
+        output_wire.drivers.push(output_offset);
 
         Ok(id)
     }

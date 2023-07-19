@@ -711,6 +711,59 @@ impl LargeComponent for Multiplier {
 }
 
 #[derive(Debug)]
+pub(crate) struct Multiplexer {
+    inputs: inline_vec!(WireId),
+    select: WireId,
+    output: WireId,
+}
+
+impl Multiplexer {
+    #[inline]
+    pub(crate) fn new(inputs: &[WireId], select: WireId, output: WireId) -> Self {
+        Self {
+            inputs: inputs.into(),
+            select,
+            output,
+        }
+    }
+}
+
+impl LargeComponent for Multiplexer {
+    fn output_count(&self) -> usize {
+        1
+    }
+
+    fn update(
+        &mut self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &mut [LogicState],
+    ) -> inline_vec!(WireId) {
+        let select_state = wire_states[self.select];
+        let select_width = wire_widths[self.select];
+
+        let select_mask = LogicStorage::mask(select_width);
+        let select_valid = select_state.valid | !select_mask;
+
+        let new_output_state = if select_valid == LogicStorage::ALL_ONE {
+            let index = select_state.state & select_mask;
+            let input = self.inputs[index.get() as usize];
+            wire_states[input].high_z_to_undefined()
+        } else {
+            LogicState::UNDEFINED
+        };
+
+        let output_width = wire_widths[self.output];
+        if !new_output_state.eq(outputs[0], output_width) {
+            outputs[0] = new_output_state;
+            smallvec![self.output]
+        } else {
+            smallvec![]
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Register {
     data_in: WireId,
     data_out: WireId,

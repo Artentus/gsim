@@ -1640,6 +1640,94 @@ fn multiplier() {
 }
 
 #[test]
+fn multiplexer() {
+    struct TestData {
+        inputs: &'static [LogicState],
+        select: LogicState,
+        output: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(([$($i:tt),+ $(,)?], $s:tt) -> $o:tt),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        inputs: &[$(logic_state!($i)),+],
+                        select: logic_state!($s),
+                        output: logic_state!($o),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA_1: &[TestData] = test_data!(
+        ([HIGH_Z, HIGH_Z], HIGH_Z) -> UNDEFINED,
+        ([HIGH_Z, HIGH_Z], UNDEFINED) -> UNDEFINED,
+        ([HIGH_Z, UNDEFINED], HIGH_Z) -> UNDEFINED,
+        ([HIGH_Z, UNDEFINED], UNDEFINED) -> UNDEFINED,
+        ([UNDEFINED, HIGH_Z], HIGH_Z) -> UNDEFINED,
+        ([UNDEFINED, HIGH_Z], UNDEFINED) -> UNDEFINED,
+        ([UNDEFINED, UNDEFINED], HIGH_Z) -> UNDEFINED,
+        ([UNDEFINED, UNDEFINED], UNDEFINED) -> UNDEFINED,
+
+        ([HIGH_Z, HIGH_Z], 0) -> UNDEFINED,
+        ([HIGH_Z, HIGH_Z], 1) -> UNDEFINED,
+
+        ([HIGH_Z, UNDEFINED], 0) -> UNDEFINED,
+        ([HIGH_Z, UNDEFINED], 1) -> UNDEFINED,
+
+        ([UNDEFINED, HIGH_Z], 0) -> UNDEFINED,
+        ([UNDEFINED, HIGH_Z], 1) -> UNDEFINED,
+
+        ([UNDEFINED, UNDEFINED], 0) -> UNDEFINED,
+        ([UNDEFINED, UNDEFINED], 1) -> UNDEFINED,
+
+        ([0x55, 0xAA], 0) -> 0x55,
+        ([0x55, 0xAA], 1) -> 0xAA,
+
+        ([1, 2, 3, 4], 0) -> 1,
+        ([1, 2, 3, 4], 1) -> 2,
+        ([1, 2, 3, 4], 2) -> 3,
+        ([1, 2, 3, 4], 3) -> 4,
+    );
+
+    for (i, test_data) in TEST_DATA_1.iter().enumerate() {
+        let mut builder = SimulatorBuilder::default();
+
+        let inputs: Vec<_> = test_data
+            .inputs
+            .iter()
+            .map(|&drive| {
+                let wire = builder.add_wire(LogicWidth::MAX);
+                builder.set_wire_base_drive(wire, drive);
+                wire
+            })
+            .collect();
+        let select = builder.add_wire(LogicWidth::new(inputs.len().ilog2() as u8).unwrap());
+        builder.set_wire_base_drive(select, test_data.select);
+        let output = builder.add_wire(LogicWidth::MAX);
+        let _mux = builder.add_multiplexer(&inputs, select, output).unwrap();
+
+        let mut sim = builder.build();
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+
+        assert!(
+            output_state.eq(test_data.output, LogicWidth::MAX),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(LogicWidth::MAX),
+            output_state.display_string(LogicWidth::MAX),
+        );
+    }
+}
+
+#[test]
 fn register() {
     let mut builder = SimulatorBuilder::default();
 
