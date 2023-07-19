@@ -288,8 +288,8 @@ impl ModuleImporter for YosysModuleImporter {
         }
 
         for (cell_name, cell) in &self.module.cells {
-            let mut input_ports = Vec::new();
-            let mut output_ports = Vec::new();
+            let mut input_ports = IndexMap::new();
+            let mut output_ports = IndexMap::new();
             for (port_name, port_bits) in &cell.connections {
                 let Some(port_direction) = cell.port_directions.get(port_name) else {
                     return Err(YosysModuleImportError::MissingCellPortDirection { cell_name: cell_name.clone(), port_name: port_name.clone() });
@@ -299,12 +299,12 @@ impl ModuleImporter for YosysModuleImporter {
                     match port_direction {
                         PortDirection::Input => {
                             let wire = get_wire_for_bit(bit, builder, &mut net_map);
-                            input_ports.push(wire);
+                            input_ports.insert(port_name.clone(), wire);
                         }
                         PortDirection::Output => {
                             if let Signal::Net(id) = bit {
                                 let wire = get_wire_for_net_id(id, builder, &mut net_map);
-                                output_ports.push(wire);
+                                output_ports.insert(port_name.clone(), wire);
                             }
                         }
                         PortDirection::InOut => {
@@ -328,7 +328,7 @@ impl ModuleImporter for YosysModuleImporter {
 
                     match port_direction {
                         PortDirection::Input => {
-                            input_ports.push(port_wire);
+                            input_ports.insert(port_name.clone(), port_wire);
 
                             let wires: Vec<_> = port_bits
                                 .iter()
@@ -339,7 +339,7 @@ impl ModuleImporter for YosysModuleImporter {
                             builder.add_merge(&wires, port_wire).unwrap();
                         }
                         PortDirection::Output => {
-                            output_ports.push(port_wire);
+                            output_ports.insert(port_name.clone(), port_wire);
 
                             for (i, bit) in port_bits.iter().copied().enumerate() {
                                 if let Signal::Net(id) = bit {
@@ -401,6 +401,8 @@ impl ModuleImporter for YosysModuleImporter {
                         });
                     }
 
+                    let input_ports: Vec<_> = input_ports.values().copied().collect();
+
                     builder
                         .$add_gate(&input_ports, output_ports[0])
                         .map_err(|_| YosysModuleImportError::InvalidCellPorts {
@@ -431,7 +433,7 @@ impl ModuleImporter for YosysModuleImporter {
                 }};
             }
 
-            // https://blog.eowyn.net/yosys/CHAPTER_CellLib.html
+            // https://yosyshq.readthedocs.io/projects/yosys/en/latest/CHAPTER_CellLib.html
             match cell.cell_type.as_str() {
                 "$not" => unary_gate_cell!(add_not_gate),
                 "$reduce_and" => unary_gate_cell!(add_horizontal_and_gate),
@@ -448,6 +450,111 @@ impl ModuleImporter for YosysModuleImporter {
                 "$mul" => binary_op_cell!(add_mul),
                 "$div" => binary_op_cell!(add_div),
                 "$mod" => binary_op_cell!(add_rem),
+                "$mux" => {
+                    if input_ports.len() != 3 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    if output_ports.len() != 1 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    let input_a = *input_ports.get("A").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let input_b = *input_ports.get("B").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let select = *input_ports.get("S").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    builder
+                        .add_multiplexer(&[input_a, input_b], select, output_ports[0])
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        })?;
+                }
+                "$dff" => {
+                    if input_ports.len() != 2 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    if output_ports.len() != 1 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    let data_in = *input_ports.get("D").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let clock = *input_ports.get("CLK").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    builder
+                        .add_register(data_in, output_ports[0], const_1, clock)
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        })?;
+                }
+                "$dffe" => {
+                    if input_ports.len() != 3 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    if output_ports.len() != 1 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    let data_in = *input_ports.get("D").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let clock = *input_ports.get("CLK").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let enable = *input_ports.get("EN").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    builder
+                        .add_register(data_in, output_ports[0], enable, clock)
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        })?;
+                }
                 cell_type => {
                     return Err(YosysModuleImportError::UnknownCellType {
                         cell_name: cell_name.clone(),

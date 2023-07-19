@@ -9,7 +9,7 @@ fn test_yosys_import(
 ) -> (ModuleConnections, Simulator) {
     let importer = YosysModuleImporter::from_json_str(json).unwrap();
     let mut builder = SimulatorBuilder::default();
-    let connections = dbg!(builder.import_module(&importer).unwrap());
+    let connections = builder.import_module(&importer).unwrap();
 
     for &(port_name, port_width) in expected_inputs {
         let wire = *connections
@@ -75,4 +75,134 @@ fn simple_and_gate() {
         TEST_DATA,
         10,
     );
+}
+
+#[test]
+fn program_counter() {
+    const JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/import_tests/yosys/program_counter.json"
+    ));
+
+    let width = LogicWidth::new(32).unwrap();
+    let (connections, mut sim) = test_yosys_import(
+        JSON,
+        &[
+            ("data_in", width),
+            ("inc", width),
+            ("load", LogicWidth::MIN),
+            ("enable", LogicWidth::MIN),
+            ("reset", LogicWidth::MIN),
+            ("clk", LogicWidth::MIN),
+        ],
+        &[("pc_next", width), ("pc_value", width)],
+    );
+
+    struct TestData {
+        data_in: LogicSizeInteger,
+        inc: LogicSizeInteger,
+        load: bool,
+        enable: bool,
+        reset: bool,
+        clk: bool,
+        pc_next: LogicState,
+        pc_value: LogicState,
+    }
+
+    macro_rules! test_data {
+        (@BIT +) => { true };
+        (@BIT -) => { false };
+        ($(($d:literal, $i:literal, LD $ld:tt, EN $en:tt, RST $rst:tt, CLK $clk:tt) -> ($n:tt, $v:tt)),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        data_in: $d,
+                        inc: $i,
+                        load: test_data!(@BIT $ld),
+                        enable: test_data!(@BIT $en),
+                        reset: test_data!(@BIT $rst),
+                        clk: test_data!(@BIT $clk),
+                        pc_next: logic_state!($n),
+                        pc_value: logic_state!($v),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA: &[TestData] = test_data!(
+        (0, 0, LD-, EN-, RST-, CLK-) -> (UNDEFINED, UNDEFINED),
+        (0, 0, LD-, EN-, RST+, CLK-) -> (0, UNDEFINED),
+        (0, 0, LD-, EN-, RST+, CLK+) -> (0, 0),
+        (0, 0, LD-, EN-, RST-, CLK-) -> (0, 0),
+
+        (0, 1, LD-, EN-, RST-, CLK-) -> (0, 0),
+        (0, 1, LD-, EN+, RST-, CLK-) -> (1, 0),
+        (0, 1, LD-, EN+, RST-, CLK+) -> (2, 1),
+        (0, 1, LD-, EN-, RST-, CLK-) -> (1, 1),
+
+        (4, 0, LD-, EN-, RST-, CLK-) -> (1, 1),
+        (4, 0, LD+, EN-, RST-, CLK-) -> (1, 1),
+        (4, 0, LD+, EN-, RST-, CLK+) -> (1, 1),
+        (4, 0, LD-, EN-, RST-, CLK-) -> (1, 1),
+        (4, 2, LD+, EN+, RST-, CLK-) -> (4, 1),
+        (4, 2, LD+, EN+, RST-, CLK+) -> (4, 4),
+        (4, 2, LD-, EN+, RST-, CLK-) -> (6, 4),
+        (4, 2, LD-, EN-, RST-, CLK-) -> (4, 4),
+
+        (0, 1, LD-, EN+, RST-, CLK-) -> (5, 4),
+        (0, 1, LD-, EN+, RST+, CLK-) -> (0, 4),
+        (0, 1, LD-, EN+, RST+, CLK+) -> (0, 0),
+        (0, 1, LD-, EN+, RST-, CLK-) -> (1, 0),
+    );
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        sim.set_wire_base_drive(
+            connections.inputs["data_in"],
+            LogicState::from_int(test_data.data_in),
+        );
+        sim.set_wire_base_drive(
+            connections.inputs["inc"],
+            LogicState::from_int(test_data.inc),
+        );
+        sim.set_wire_base_drive(
+            connections.inputs["load"],
+            LogicState::from_bool(test_data.load),
+        );
+        sim.set_wire_base_drive(
+            connections.inputs["enable"],
+            LogicState::from_bool(test_data.enable),
+        );
+        sim.set_wire_base_drive(
+            connections.inputs["reset"],
+            LogicState::from_bool(test_data.reset),
+        );
+        sim.set_wire_base_drive(
+            connections.inputs["clk"],
+            LogicState::from_bool(test_data.clk),
+        );
+
+        match sim.run_sim(50) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let pc_next = sim.get_wire_state(connections.outputs["pc_next"]);
+        let pc_value = sim.get_wire_state(connections.outputs["pc_value"]);
+
+        assert!(
+            pc_next.eq(test_data.pc_next, width),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.pc_next.display_string(width),
+            pc_next.display_string(width),
+        );
+
+        assert!(
+            pc_value.eq(test_data.pc_value, width),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.pc_value.display_string(width),
+            pc_value.display_string(width),
+        );
+    }
 }
