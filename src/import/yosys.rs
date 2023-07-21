@@ -438,6 +438,7 @@ impl ModuleImporter for YosysModuleImporter {
                 "$not" => unary_gate_cell!(add_not_gate),
                 "$reduce_and" => unary_gate_cell!(add_horizontal_and_gate),
                 "$reduce_or" | "$reduce_bool" => unary_gate_cell!(add_horizontal_or_gate),
+                "$logic_not" => unary_gate_cell!(add_horizontal_nor_gate),
                 "$and" => binary_gate_cell!(add_and_gate),
                 "$or" => binary_gate_cell!(add_or_gate),
                 "$xor" => binary_gate_cell!(add_xor_gate),
