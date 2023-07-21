@@ -180,6 +180,9 @@ impl ModuleImporter for YosysModuleImporter {
         &self,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<ModuleConnections, Self::Error> {
+        // FIXME: support signed cell ports
+        // FIXME: merge nets to generate a more efficient graph
+
         let const_high_z = builder.add_wire(LogicWidth::MIN);
         builder.set_wire_base_drive(const_high_z, LogicState::HIGH_Z);
 
@@ -451,6 +454,12 @@ impl ModuleImporter for YosysModuleImporter {
                 "$mul" => binary_op_cell!(add_mul),
                 "$div" => binary_op_cell!(add_div),
                 "$mod" => binary_op_cell!(add_rem),
+                "$eq" => binary_op_cell!(add_compare_equal),
+                "$ne" => binary_op_cell!(add_compare_not_equal),
+                "$lt" => binary_op_cell!(add_compare_less_than),
+                "$gt" => binary_op_cell!(add_compare_greater_than),
+                "$le" => binary_op_cell!(add_compare_less_than_or_equal),
+                "$ge" => binary_op_cell!(add_compare_greater_than_or_equal),
                 "$mux" => {
                     if input_ports.len() != 3 {
                         return Err(YosysModuleImportError::InvalidCellPorts {

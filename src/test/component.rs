@@ -2088,6 +2088,35 @@ fn horizontal_nor_gate() {
 }
 
 #[test]
+fn comparator() {
+    test_comparator(SimulatorBuilder::add_compare_equal, |a, b| a == b);
+    test_comparator(SimulatorBuilder::add_compare_not_equal, |a, b| a != b);
+
+    test_comparator(SimulatorBuilder::add_compare_less_than, |a, b| a < b);
+    test_comparator(SimulatorBuilder::add_compare_greater_than, |a, b| a > b);
+    test_comparator(SimulatorBuilder::add_compare_less_than_or_equal, |a, b| {
+        a <= b
+    });
+    test_comparator(
+        SimulatorBuilder::add_compare_greater_than_or_equal,
+        |a, b| a >= b,
+    );
+
+    test_signed_comparator(SimulatorBuilder::add_compare_less_than_signed, |a, b| a < b);
+    test_signed_comparator(SimulatorBuilder::add_compare_greater_than_signed, |a, b| {
+        a > b
+    });
+    test_signed_comparator(
+        SimulatorBuilder::add_compare_less_than_or_equal_signed,
+        |a, b| a <= b,
+    );
+    test_signed_comparator(
+        SimulatorBuilder::add_compare_greater_than_or_equal_signed,
+        |a, b| a >= b,
+    );
+}
+
+#[test]
 fn ram() {
     let mut builder = SimulatorBuilder::default();
 

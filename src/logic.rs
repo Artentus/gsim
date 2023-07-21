@@ -23,7 +23,7 @@ pub type LogicSizeInteger = u32;
 type SignedLogicSizeInteger = i32;
 type DoubleLogicSizeInteger = u64;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub(crate) struct LogicStorage(LogicSizeInteger);
 assert_eq_size!(LogicStorage, LogicSizeInteger);
@@ -628,6 +628,56 @@ impl LogicState {
     /// Computes logical NOR between all bits of this state
     pub fn horizontal_logic_nor(self, width: LogicWidth) -> Self {
         horizontal_logic_nor(self, width)
+    }
+
+    /// Compares this state and `rhs` for equality
+    pub fn equal(self, rhs: Self, width: LogicWidth) -> Self {
+        equal(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for inequality
+    pub fn not_equal(self, rhs: Self, width: LogicWidth) -> Self {
+        not_equal(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'less than' relation
+    pub fn less_than(self, rhs: Self, width: LogicWidth) -> Self {
+        less_than(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'greater than' relation
+    pub fn greater_than(self, rhs: Self, width: LogicWidth) -> Self {
+        greater_than(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'less than or equal' relation
+    pub fn less_than_or_equal(self, rhs: Self, width: LogicWidth) -> Self {
+        less_than_or_equal(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'greater than or equal' relation
+    pub fn greater_than_or_equal(self, rhs: Self, width: LogicWidth) -> Self {
+        greater_than_or_equal(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'less than' relation, interpreting the bits as signed
+    pub fn less_than_signed(self, rhs: Self, width: LogicWidth) -> Self {
+        less_than_signed(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'greater than' relation, interpreting the bits as signed
+    pub fn greater_than_signed(self, rhs: Self, width: LogicWidth) -> Self {
+        greater_than_signed(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'less than or equal' relation, interpreting the bits as signed
+    pub fn less_than_or_equal_signed(self, rhs: Self, width: LogicWidth) -> Self {
+        less_than_or_equal_signed(self, rhs, width)
+    }
+
+    /// Compares this state and `rhs` for a 'greater than or equal' relation, interpreting the bits as signed
+    pub fn greater_than_or_equal_signed(self, rhs: Self, width: LogicWidth) -> Self {
+        greater_than_or_equal_signed(self, rhs, width)
     }
 
     /// Turns all HIGH Z bits into UNDEFINED bits

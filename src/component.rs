@@ -108,6 +108,56 @@ pub(crate) enum SmallComponent {
         input: WireId,
         output: WireId,
     },
+    CompareEqual {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareNotEqual {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareLessThan {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareGreaterThan {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareLessThanOrEqual {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareGreaterThanOrEqual {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareLessThanSigned {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareGreaterThanSigned {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareLessThanOrEqualSigned {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
+    CompareGreaterThanOrEqualSigned {
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    },
 }
 
 impl SmallComponent {
@@ -280,6 +330,56 @@ impl SmallComponent {
             SmallComponent::HorizontalNor { input, output } => {
                 impl_horizontal_gate!(input, output => horizontal_logic_nor)
             }
+            SmallComponent::CompareEqual {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => equal),
+            SmallComponent::CompareNotEqual {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => not_equal),
+            SmallComponent::CompareLessThan {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => less_than),
+            SmallComponent::CompareGreaterThan {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => greater_than),
+            SmallComponent::CompareLessThanOrEqual {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => less_than_or_equal),
+            SmallComponent::CompareGreaterThanOrEqual {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => greater_than_or_equal),
+            SmallComponent::CompareLessThanSigned {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => less_than_signed),
+            SmallComponent::CompareGreaterThanSigned {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => greater_than_signed),
+            SmallComponent::CompareLessThanOrEqualSigned {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => less_than_or_equal_signed),
+            SmallComponent::CompareGreaterThanOrEqualSigned {
+                input_a,
+                input_b,
+                output,
+            } => impl_arithmetic!(input_a, input_b, output => greater_than_or_equal_signed),
         };
 
         let output_width = wire_widths[output];

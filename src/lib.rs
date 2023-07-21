@@ -789,6 +789,41 @@ macro_rules! def_add_horizontal_gate {
     };
 }
 
+macro_rules! def_add_comparator {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(
+            &mut self,
+            input_a: WireId,
+            input_b: WireId,
+            output: WireId,
+        ) -> AddComponentResult {
+            self.check_wire_widths_match(&[input_a, input_b])?;
+
+            let output_wire_width = self.sim.wire_widths.get(output).expect("invalid wire ID");
+            if *output_wire_width != 1 {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+
+            let gate = SmallComponent::$gate {
+                input_a,
+                input_b,
+                output,
+            };
+            let (output_offset, id) = self.add_small_component(gate);
+
+            let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
+            input_wire_a.add_driving(id);
+            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
+            input_wire_b.add_driving(id);
+            let output_wire = self.sim.wires.get_mut(output).unwrap();
+            output_wire.drivers.push(output_offset);
+
+            Ok(id)
+        }
+    };
+}
+
 /// Builds a simulator
 ///
 /// See crate level documentation for a usage example
@@ -1238,6 +1273,66 @@ impl SimulatorBuilder {
         /// Adds a `Horizontal NOR Gate` component to the simulation
         add_horizontal_nor_gate,
         HorizontalNor
+    );
+
+    def_add_comparator!(
+        /// Adds an equality comparator component to the simulation
+        add_compare_equal,
+        CompareEqual
+    );
+
+    def_add_comparator!(
+        /// Adds an inequality comparator component to the simulation
+        add_compare_not_equal,
+        CompareNotEqual
+    );
+
+    def_add_comparator!(
+        /// Adds a 'less than' comparator component to the simulation
+        add_compare_less_than,
+        CompareLessThan
+    );
+
+    def_add_comparator!(
+        /// Adds a 'greater than' comparator component to the simulation
+        add_compare_greater_than,
+        CompareGreaterThan
+    );
+
+    def_add_comparator!(
+        /// Adds a 'less than or equal' comparator component to the simulation
+        add_compare_less_than_or_equal,
+        CompareLessThanOrEqual
+    );
+
+    def_add_comparator!(
+        /// Adds a 'greater than or equal' comparator component to the simulation
+        add_compare_greater_than_or_equal,
+        CompareGreaterThanOrEqual
+    );
+
+    def_add_comparator!(
+        /// Adds a 'signed less than' comparator component to the simulation
+        add_compare_less_than_signed,
+        CompareLessThanSigned
+    );
+
+    def_add_comparator!(
+        /// Adds a 'signed greater than' comparator component to the simulation
+        add_compare_greater_than_signed,
+        CompareGreaterThanSigned
+    );
+
+    def_add_comparator!(
+        /// Adds a 'signed less than or equal' comparator component to the simulation
+        add_compare_less_than_or_equal_signed,
+        CompareLessThanOrEqualSigned
+    );
+
+    def_add_comparator!(
+        /// Adds a 'signed greater than or equal' comparator component to the simulation
+        add_compare_greater_than_or_equal_signed,
+        CompareGreaterThanOrEqualSigned
     );
 
     /// Adds a `RAM` component to the simulation

@@ -1,5 +1,6 @@
 use super::super::*;
 use crate::import::yosys::*;
+use crate::import::*;
 
 #[cfg(test)]
 fn test_yosys_import(

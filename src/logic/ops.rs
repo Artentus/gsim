@@ -1,4 +1,7 @@
-use super::{LogicOffset, LogicSizeInteger, LogicState, LogicStorage, LogicWidth, MAX_LOGIC_WIDTH};
+use super::{
+    LogicOffset, LogicSizeInteger, LogicState, LogicStorage, LogicWidth, SignedLogicSizeInteger,
+    MAX_LOGIC_WIDTH,
+};
 
 #[inline]
 pub(super) fn logic_and(a: LogicState, b: LogicState) -> LogicState {
@@ -475,4 +478,182 @@ pub(super) fn horizontal_logic_nand(a: LogicState, width: LogicWidth) -> LogicSt
 #[inline]
 pub(super) fn horizontal_logic_nor(a: LogicState, width: LogicWidth) -> LogicState {
     logic_not(horizontal_logic_or(a, width))
+}
+
+#[inline]
+pub(super) fn equal(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state == b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn not_equal(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state != b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn less_than(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state < b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn greater_than(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state > b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn less_than_or_equal(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state <= b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn greater_than_or_equal(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state >= b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn less_than_signed(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let shift_amount = unsafe {
+        // SAFETY: 32 - <1..=32> = <0..=31>
+        LogicOffset::new_unchecked(MAX_LOGIC_WIDTH - width.get())
+    };
+
+    let a_state = ((a.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let b_state = ((b.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state < b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn greater_than_signed(a: LogicState, b: LogicState, width: LogicWidth) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let shift_amount = unsafe {
+        // SAFETY: 32 - <1..=32> = <0..=31>
+        LogicOffset::new_unchecked(MAX_LOGIC_WIDTH - width.get())
+    };
+
+    let a_state = ((a.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let b_state = ((b.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state > b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn less_than_or_equal_signed(
+    a: LogicState,
+    b: LogicState,
+    width: LogicWidth,
+) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let shift_amount = unsafe {
+        // SAFETY: 32 - <1..=32> = <0..=31>
+        LogicOffset::new_unchecked(MAX_LOGIC_WIDTH - width.get())
+    };
+
+    let a_state = ((a.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let b_state = ((b.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state <= b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
+}
+
+#[inline]
+pub(super) fn greater_than_or_equal_signed(
+    a: LogicState,
+    b: LogicState,
+    width: LogicWidth,
+) -> LogicState {
+    let mask = LogicStorage::mask(width);
+    let shift_amount = unsafe {
+        // SAFETY: 32 - <1..=32> = <0..=31>
+        LogicOffset::new_unchecked(MAX_LOGIC_WIDTH - width.get())
+    };
+
+    let a_state = ((a.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let b_state = ((b.state & mask) << shift_amount).get() as SignedLogicSizeInteger;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+
+    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+        LogicState::from_bool(a_state >= b_state)
+    } else {
+        LogicState::UNDEFINED
+    }
 }
