@@ -864,6 +864,59 @@ impl LargeComponent for Multiplexer {
 }
 
 #[derive(Debug)]
+pub(crate) struct PriorityDecoder {
+    inputs: inline_vec!(WireId),
+    output: WireId,
+}
+
+impl PriorityDecoder {
+    #[inline]
+    pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
+        Self {
+            inputs: inputs.into(),
+            output,
+        }
+    }
+}
+
+impl LargeComponent for PriorityDecoder {
+    fn output_count(&self) -> usize {
+        1
+    }
+
+    fn update(
+        &mut self,
+        wire_widths: &WireWidthList,
+        wire_states: &WireStateList,
+        outputs: &mut [LogicState],
+    ) -> inline_vec!(WireId) {
+        let mut new_output_state = LogicState::LOGIC_0;
+
+        for (i, input) in self.inputs.iter().copied().enumerate() {
+            match wire_states[input].get_bit_state(LogicOffset::MIN) {
+                LogicBitState::HighZ | LogicBitState::Undefined => {
+                    new_output_state = LogicState::UNDEFINED;
+                    break;
+                }
+                LogicBitState::Logic1 => {
+                    new_output_state = LogicState::from_int((i + 1) as LogicSizeInteger);
+                    break;
+                }
+                LogicBitState::Logic0 => continue,
+            }
+        }
+
+        let output_width = wire_widths[self.output];
+        if !new_output_state.eq(outputs[0], output_width) {
+            outputs[0] = new_output_state;
+            smallvec![self.output]
+        } else {
+            smallvec![]
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct Register {
     data_in: WireId,
     data_out: WireId,

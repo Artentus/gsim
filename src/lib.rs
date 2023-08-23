@@ -1162,6 +1162,40 @@ impl SimulatorBuilder {
             let wire = self.sim.wires.get_mut(input).unwrap();
             wire.add_driving(id);
         }
+        let select_wire = self.sim.wires.get_mut(select).unwrap();
+        select_wire.add_driving(id);
+        let output_wire = self.sim.wires.get_mut(output).unwrap();
+        output_wire.drivers.push(output_offset);
+
+        Ok(id)
+    }
+
+    /// Adds a `Priority Decoder` component to the simulation
+    pub fn add_priority_decoder(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> AddComponentResult {
+        for &input in inputs {
+            let input_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
+            if input_width != LogicWidth::MIN {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+        }
+
+        let output_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
+        let expected_width = usize::BITS - inputs.len().leading_zeros();
+        if (output_width.get() as u32) != expected_width {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let decoder = PriorityDecoder::new(inputs, output);
+        let (output_offset, id) = self.add_large_component(decoder);
+
+        for &input in inputs {
+            let wire = self.sim.wires.get_mut(input).unwrap();
+            wire.add_driving(id);
+        }
         let output_wire = self.sim.wires.get_mut(output).unwrap();
         output_wire.drivers.push(output_offset);
 
