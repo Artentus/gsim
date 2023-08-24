@@ -1,0 +1,41 @@
+{
+  "modules": {
+    "ProcMux": {
+      "ports": {
+        "data_in": {
+          "direction": "input",
+          "bits": [ 2, 3, 4 ]
+        },
+        "select_0": {
+          "direction": "input",
+          "bits": [ 5 ]
+        },
+        "select_1": {
+          "direction": "input",
+          "bits": [ 6 ]
+        },
+        "data_out": {
+          "direction": "output",
+          "bits": [ 7 ]
+        }
+      },
+      "cells": {
+        "$procmux$3": {
+          "type": "$pmux",
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "S": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 4 ],
+            "B": [ 3, 2 ],
+            "S": [ 6, 5 ],
+            "Y": [ 7 ]
+          }
+        }
+      }
+    }
+  }
+}

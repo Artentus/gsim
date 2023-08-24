@@ -497,6 +497,87 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: cell_name.clone(),
                         })?;
                 }
+                "$pmux" => {
+                    if input_ports.len() != 3 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    if output_ports.len() != 1 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        });
+                    }
+
+                    let input_a = *input_ports.get("A").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let input_b = *input_ports.get("B").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let select = *input_ports.get("S").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        }
+                    })?;
+
+                    let input_count = builder.get_wire_width(select).get();
+                    let input_width = builder.get_wire_width(input_a);
+
+                    let mut decoder_inputs = Vec::with_capacity(input_count as usize);
+                    let mut mux_inputs = Vec::with_capacity((input_count as usize) + 1);
+                    mux_inputs.push(input_a);
+
+                    for i in 0..input_count {
+                        let select_bi = builder.add_wire(LogicWidth::MIN);
+                        decoder_inputs.push(select_bi);
+                        builder
+                            .add_slice(select, LogicOffset::new(i).unwrap(), select_bi)
+                            .unwrap();
+
+                        let offset = LogicOffset::new(i * input_width.get()).ok_or_else(|| {
+                            YosysModuleImportError::InvalidCellPorts {
+                                cell_name: cell_name.clone(),
+                            }
+                        })?;
+
+                        let input_bi = builder.add_wire(input_width);
+                        builder.add_slice(input_b, offset, input_bi).map_err(|_| {
+                            YosysModuleImportError::InvalidCellPorts {
+                                cell_name: cell_name.clone(),
+                            }
+                        })?;
+
+                        mux_inputs.push(input_bi);
+                    }
+
+                    while !mux_inputs.len().is_power_of_two() {
+                        mux_inputs.push(input_a);
+                    }
+
+                    let mux_select_width =
+                        LogicWidth::new((usize::BITS - decoder_inputs.len().leading_zeros()) as u8)
+                            .unwrap();
+                    let mux_select = builder.add_wire(mux_select_width);
+                    builder
+                        .add_priority_decoder(&decoder_inputs, mux_select)
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        })?;
+
+                    builder
+                        .add_multiplexer(&mux_inputs, mux_select, output_ports[0])
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: cell_name.clone(),
+                        })?;
+                }
                 "$tribuf" => {
                     if input_ports.len() != 2 {
                         return Err(YosysModuleImportError::InvalidCellPorts {

@@ -207,3 +207,96 @@ fn program_counter() {
         );
     }
 }
+
+#[test]
+fn proc_mux() {
+    const JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/import_tests/yosys/proc_mux.json"
+    ));
+
+    let (connections, mut sim) = test_yosys_import(
+        JSON,
+        &[
+            ("data_in", LogicWidth::new(3).unwrap()),
+            ("select_0", LogicWidth::MIN),
+            ("select_1", LogicWidth::MIN),
+        ],
+        &[("data_out", LogicWidth::MIN)],
+    );
+
+    struct TestData {
+        data: LogicState,
+        select: [LogicState; 2],
+        output: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(($d:tt, [$($s:tt),+ $(,)?]) -> $o:tt),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        data: logic_state!($d),
+                        select: [$(logic_state!($s)),+],
+                        output: logic_state!($o),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA: &[TestData] = test_data!(
+        (0b000, [0, 0]) -> 0,
+        (0b000, [1, 0]) -> 0,
+        (0b000, [0, 1]) -> 0,
+
+        (0b001, [0, 0]) -> 0,
+        (0b001, [1, 0]) -> 1,
+        (0b001, [0, 1]) -> 0,
+
+        (0b010, [0, 0]) -> 0,
+        (0b010, [1, 0]) -> 0,
+        (0b010, [0, 1]) -> 1,
+
+        (0b011, [0, 0]) -> 0,
+        (0b011, [1, 0]) -> 1,
+        (0b011, [0, 1]) -> 1,
+
+        (0b100, [0, 0]) -> 1,
+        (0b100, [1, 0]) -> 0,
+        (0b100, [0, 1]) -> 0,
+
+        (0b101, [0, 0]) -> 1,
+        (0b101, [1, 0]) -> 1,
+        (0b101, [0, 1]) -> 0,
+
+        (0b110, [0, 0]) -> 1,
+        (0b110, [1, 0]) -> 0,
+        (0b110, [0, 1]) -> 1,
+
+        (0b111, [0, 0]) -> 1,
+        (0b111, [1, 0]) -> 1,
+        (0b111, [0, 1]) -> 1,
+    );
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        sim.set_wire_base_drive(connections.inputs["data_in"], test_data.data);
+        sim.set_wire_base_drive(connections.inputs["select_0"], test_data.select[0]);
+        sim.set_wire_base_drive(connections.inputs["select_1"], test_data.select[1]);
+
+        match sim.run_sim(4) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output = sim.get_wire_state(connections.outputs["data_out"]);
+
+        assert!(
+            output.eq(test_data.output, LogicWidth::MIN),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(LogicWidth::MIN),
+            output.display_string(LogicWidth::MIN),
+        );
+    }
+}
