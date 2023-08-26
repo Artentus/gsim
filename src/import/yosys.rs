@@ -21,6 +21,113 @@ impl<T: Default> EnsureLen for Vec<T> {
     }
 }
 
+/// The known Yosys cell types
+#[allow(missing_docs)]
+#[derive(Debug, Clone)]
+pub enum CellType {
+    Not,
+    Pos,
+    Neg,
+    ReduceAnd,
+    ReduceOr,
+    ReduceXor,
+    ReduceXnor,
+    ReduceBool,
+    LogicNot,
+    And,
+    Or,
+    Xor,
+    Xnor,
+    Shl,
+    Sshl,
+    Shr,
+    Sshr,
+    LogicAnd,
+    LogicOr,
+    EqX,
+    NeX,
+    Pow,
+    Lt,
+    Le,
+    Eq,
+    Ne,
+    Ge,
+    Gt,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    DivFloor,
+    ModFloor,
+    Mux,
+    Pmux,
+    TriBuf,
+    Sr,
+    Dff,
+    Dffe,
+    Dlatch,
+    MemRdV2,
+    MemWrV2,
+    MemInitV2,
+    MemV2,
+    Unknown(Box<str>),
+}
+
+impl From<String> for CellType {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "$not" => Self::Not,
+            "$pos" => Self::Pos,
+            "$neg" => Self::Neg,
+            "$reduce_and" => Self::ReduceAnd,
+            "$reduce_or" => Self::ReduceOr,
+            "$reduce_xor" => Self::ReduceXor,
+            "$reduce_xnor" => Self::ReduceXnor,
+            "$reduce_bool" => Self::ReduceBool,
+            "$logic_not" => Self::LogicNot,
+            "$and" => Self::And,
+            "$or" => Self::Or,
+            "$xor" => Self::Xor,
+            "$xnor" => Self::Xnor,
+            "$shl" => Self::Shl,
+            "$sshl" => Self::Sshl,
+            "$shr" => Self::Shr,
+            "$sshr" => Self::Sshr,
+            "$logic_and" => Self::LogicAnd,
+            "$logic_or" => Self::LogicOr,
+            "$eqx" => Self::EqX,
+            "$nex" => Self::NeX,
+            "$pow" => Self::Pow,
+            "$lt" => Self::Lt,
+            "$le" => Self::Le,
+            "$eq" => Self::Eq,
+            "$ne" => Self::Ne,
+            "$ge" => Self::Ge,
+            "$gt" => Self::Gt,
+            "$add" => Self::Add,
+            "$sub" => Self::Sub,
+            "$mul" => Self::Mul,
+            "$div" => Self::Div,
+            "$mod" => Self::Mod,
+            "$divfloor" => Self::DivFloor,
+            "$modfloor" => Self::ModFloor,
+            "$mux" => Self::Mux,
+            "$pmux" => Self::Pmux,
+            "$tribuf" => Self::TriBuf,
+            "$sr" => Self::Sr,
+            "$dff" => Self::Dff,
+            "$dffe" => Self::Dffe,
+            "$dlatch" => Self::Dlatch,
+            "$memrd_v2" => Self::MemRdV2,
+            "$memwr_v2" => Self::MemWrV2,
+            "$meminit_v2" => Self::MemInitV2,
+            "$mem_v2" => Self::MemV2,
+            _ => Self::Unknown(value.into()),
+        }
+    }
+}
+
 fn single_from_map<'de, D, T>(deserializer: D) -> Result<(String, T), D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -37,6 +144,34 @@ where
             &"object with exactly one key",
         ))
     }
+}
+
+fn parameter_map<'de, D>(deserializer: D) -> Result<HashMap<String, u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let map = HashMap::<String, String>::deserialize(deserializer)?;
+    if map.len() == 1 {
+        Ok(map
+            .into_iter()
+            .map(|(k, v)| (k, u32::from_str_radix(&v, 2).unwrap()))
+            .collect())
+    } else {
+        Err(Error::invalid_length(
+            map.len(),
+            &"object with exactly one key",
+        ))
+    }
+}
+
+fn cell_type<'de, D>(deserializer: D) -> Result<CellType, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let name = String::deserialize(deserializer)?;
+    Ok(name.into())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -69,8 +204,10 @@ struct Port {
 
 #[derive(Deserialize)]
 struct Cell {
-    #[serde(rename = "type")]
-    cell_type: String,
+    #[serde(rename = "type", deserialize_with = "cell_type")]
+    cell_type: CellType,
+    #[serde(default, deserialize_with = "parameter_map")]
+    parameters: HashMap<String, u32>,
     port_directions: IndexMap<String, PortDirection>,
     connections: IndexMap<String, Bits>,
 }
@@ -153,6 +290,13 @@ pub enum YosysModuleImportError {
         cell_name: String,
         /// The unknown type of the cell
         cell_type: String,
+    },
+    /// The module contains a cell that is not supported for importing
+    UnsupportedCellType {
+        /// The name of the cell
+        cell_name: String,
+        /// The type of the cell
+        cell_type: CellType,
     },
     /// The module contains a cell that has a port with no specified direction
     MissingCellPortDirection {
@@ -437,30 +581,32 @@ impl ModuleImporter for YosysModuleImporter {
             }
 
             // https://yosyshq.readthedocs.io/projects/yosys/en/latest/CHAPTER_CellLib.html
-            match cell.cell_type.as_str() {
-                "$not" => unary_gate_cell!(add_not_gate),
-                "$reduce_and" => unary_gate_cell!(add_horizontal_and_gate),
-                "$reduce_or" | "$reduce_bool" => unary_gate_cell!(add_horizontal_or_gate),
-                "$logic_not" => unary_gate_cell!(add_horizontal_nor_gate),
-                "$and" => binary_gate_cell!(add_and_gate),
-                "$or" => binary_gate_cell!(add_or_gate),
-                "$xor" => binary_gate_cell!(add_xor_gate),
-                "$xnor" => binary_gate_cell!(add_xnor_gate),
-                "$shl" | "$sshl" => binary_op_cell!(add_left_shift),
-                "$shr" => binary_op_cell!(add_logical_right_shift),
-                "$sshr" => binary_op_cell!(add_arithmetic_right_shift),
-                "$add" => binary_op_cell!(add_add),
-                "$sub" => binary_op_cell!(add_sub),
-                "$mul" => binary_op_cell!(add_mul),
-                "$div" => binary_op_cell!(add_div),
-                "$mod" => binary_op_cell!(add_rem),
-                "$eq" => binary_op_cell!(add_compare_equal),
-                "$ne" => binary_op_cell!(add_compare_not_equal),
-                "$lt" => binary_op_cell!(add_compare_less_than),
-                "$gt" => binary_op_cell!(add_compare_greater_than),
-                "$le" => binary_op_cell!(add_compare_less_than_or_equal),
-                "$ge" => binary_op_cell!(add_compare_greater_than_or_equal),
-                "$mux" => {
+            match &cell.cell_type {
+                CellType::Not => unary_gate_cell!(add_not_gate),
+                CellType::ReduceAnd => unary_gate_cell!(add_horizontal_and_gate),
+                CellType::ReduceOr | CellType::ReduceBool => {
+                    unary_gate_cell!(add_horizontal_or_gate)
+                }
+                CellType::LogicNot => unary_gate_cell!(add_horizontal_nor_gate),
+                CellType::And => binary_gate_cell!(add_and_gate),
+                CellType::Or => binary_gate_cell!(add_or_gate),
+                CellType::Xor => binary_gate_cell!(add_xor_gate),
+                CellType::Xnor => binary_gate_cell!(add_xnor_gate),
+                CellType::Shl | CellType::Sshl => binary_op_cell!(add_left_shift),
+                CellType::Shr => binary_op_cell!(add_logical_right_shift),
+                CellType::Sshr => binary_op_cell!(add_arithmetic_right_shift),
+                CellType::Add => binary_op_cell!(add_add),
+                CellType::Sub => binary_op_cell!(add_sub),
+                CellType::Mul => binary_op_cell!(add_mul),
+                CellType::Div => binary_op_cell!(add_div),
+                CellType::Mod => binary_op_cell!(add_rem),
+                CellType::Eq => binary_op_cell!(add_compare_equal),
+                CellType::Ne => binary_op_cell!(add_compare_not_equal),
+                CellType::Lt => binary_op_cell!(add_compare_less_than),
+                CellType::Gt => binary_op_cell!(add_compare_greater_than),
+                CellType::Le => binary_op_cell!(add_compare_less_than_or_equal),
+                CellType::Ge => binary_op_cell!(add_compare_greater_than_or_equal),
+                CellType::Mux => {
                     if input_ports.len() != 3 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
                             cell_name: cell_name.clone(),
@@ -497,7 +643,7 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: cell_name.clone(),
                         })?;
                 }
-                "$pmux" => {
+                CellType::Pmux => {
                     if input_ports.len() != 3 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
                             cell_name: cell_name.clone(),
@@ -578,7 +724,7 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: cell_name.clone(),
                         })?;
                 }
-                "$tribuf" => {
+                CellType::TriBuf => {
                     if input_ports.len() != 2 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
                             cell_name: cell_name.clone(),
@@ -609,7 +755,7 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: cell_name.clone(),
                         })?;
                 }
-                "$dff" => {
+                CellType::Dff => {
                     if input_ports.len() != 2 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
                             cell_name: cell_name.clone(),
@@ -640,7 +786,7 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: cell_name.clone(),
                         })?;
                 }
-                "$dffe" => {
+                CellType::Dffe => {
                     if input_ports.len() != 3 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
                             cell_name: cell_name.clone(),
@@ -677,10 +823,16 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: cell_name.clone(),
                         })?;
                 }
-                cell_type => {
+                CellType::Unknown(cell_type) => {
                     return Err(YosysModuleImportError::UnknownCellType {
                         cell_name: cell_name.clone(),
-                        cell_type: cell_type.to_owned(),
+                        cell_type: (&**cell_type).to_owned(),
+                    })
+                }
+                cell_type => {
+                    return Err(YosysModuleImportError::UnsupportedCellType {
+                        cell_name: cell_name.clone(),
+                        cell_type: cell_type.clone(),
                     })
                 }
             }
