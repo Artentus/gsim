@@ -156,20 +156,11 @@ fn parameter_map<'de, D>(deserializer: D) -> Result<HashMap<String, u32>, D::Err
 where
     D: serde::Deserializer<'de>,
 {
-    use serde::de::Error;
-
     let map = HashMap::<String, String>::deserialize(deserializer)?;
-    if map.len() == 1 {
-        Ok(map
-            .into_iter()
-            .map(|(k, v)| (k, u32::from_str_radix(&v, 2).unwrap()))
-            .collect())
-    } else {
-        Err(Error::invalid_length(
-            map.len(),
-            &"object with exactly one key",
-        ))
-    }
+    Ok(map
+        .into_iter()
+        .map(|(k, v)| (k, u32::from_str_radix(&v, 2).unwrap()))
+        .collect())
 }
 
 fn cell_type<'de, D>(deserializer: D) -> Result<CellType, D::Error>
