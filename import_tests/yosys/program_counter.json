@@ -64,6 +64,9 @@
         },
         "mux1": {
           "type": "$mux",
+          "parameters": {
+            "WIDTH": "00000000000000000000000000100000"
+          },
           "port_directions": {
             "A": "input",
             "B": "input",
