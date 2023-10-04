@@ -647,6 +647,34 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
+                    let a_width = builder.get_wire_width(input_a);
+                    let b_width = builder.get_wire_width(input_b);
+                    let max_width = a_width.max(b_width);
+
+                    let input_a = if a_width < max_width {
+                        let a_ext = builder.add_wire(max_width);
+                        if cell.ports["A"].signed == Some(true) {
+                            builder.add_sign_extend(input_a, a_ext).unwrap();
+                        } else {
+                            builder.add_zero_extend(input_a, a_ext).unwrap();
+                        }
+                        a_ext
+                    } else {
+                        input_a
+                    };
+
+                    let input_b = if b_width < max_width {
+                        let b_ext = builder.add_wire(max_width);
+                        if cell.ports["B"].signed == Some(true) {
+                            builder.add_sign_extend(input_b, b_ext).unwrap();
+                        } else {
+                            builder.add_zero_extend(input_b, b_ext).unwrap();
+                        }
+                        b_ext
+                    } else {
+                        input_b
+                    };
+
                     builder
                         .$add_gate(input_a, input_b, output_ports[0])
                         .map_err(|_| YosysModuleImportError::InvalidCellPorts {
