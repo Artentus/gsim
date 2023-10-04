@@ -7,6 +7,12 @@ macro_rules! logic_state {
     ($state:ident) => {
         LogicState::$state
     };
+    ({% $($bit:tt),*}) => {
+        $crate::bits!($($bit),*)
+    };
+    ({$value:expr}) => {
+        LogicState::from_int($value)
+    };
     ($value:expr) => {
         LogicState::from_int($value)
     };

@@ -158,6 +158,14 @@ pub(crate) enum SmallComponent {
         input_b: WireId,
         output: WireId,
     },
+    ZeroExtend {
+        input: WireId,
+        output: WireId,
+    },
+    SignExtend {
+        input: WireId,
+        output: WireId,
+    },
 }
 
 impl SmallComponent {
@@ -380,6 +388,36 @@ impl SmallComponent {
                 input_b,
                 output,
             } => impl_arithmetic!(input_a, input_b, output => greater_than_or_equal_signed),
+            SmallComponent::ZeroExtend { input, output } => {
+                let state = wire_states[input];
+                let width = wire_widths[input];
+
+                let mask = LogicStorage::mask(width);
+                (
+                    output,
+                    LogicState {
+                        state: state.state & mask,
+                        valid: (state.valid & mask) | !mask,
+                    },
+                )
+            }
+            SmallComponent::SignExtend { input, output } => {
+                let state = wire_states[input];
+                let width = wire_widths[input];
+
+                let shift_amount = unsafe {
+                    // SAFETY: [1, 32] - [1, 32] = [0, 31]
+                    LogicOffset::new_unchecked(LogicWidth::MAX.get().saturating_sub(width.get()))
+                };
+
+                (
+                    output,
+                    LogicState {
+                        state: (state.state << shift_amount).ashr(shift_amount),
+                        valid: (state.valid << shift_amount).ashr(shift_amount),
+                    },
+                )
+            }
         };
 
         let output_width = wire_widths[output];

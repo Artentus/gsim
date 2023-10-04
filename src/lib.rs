@@ -1369,6 +1369,46 @@ impl SimulatorBuilder {
         CompareGreaterThanOrEqualSigned
     );
 
+    /// Adds a `zero extension` component to the simulation
+    pub fn add_zero_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+        let input_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
+        let output_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
+
+        if output_width < input_width {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let extend = SmallComponent::ZeroExtend { input, output };
+        let (output_offset, id) = self.add_small_component(extend);
+
+        let input_wire = self.sim.wires.get_mut(input).unwrap();
+        input_wire.add_driving(id);
+        let output_wire = self.sim.wires.get_mut(output).unwrap();
+        output_wire.drivers.push(output_offset);
+
+        Ok(id)
+    }
+
+    /// Adds a `sign extension` component to the simulation
+    pub fn add_sign_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+        let input_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
+        let output_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
+
+        if output_width < input_width {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let extend = SmallComponent::SignExtend { input, output };
+        let (output_offset, id) = self.add_small_component(extend);
+
+        let input_wire = self.sim.wires.get_mut(input).unwrap();
+        input_wire.add_driving(id);
+        let output_wire = self.sim.wires.get_mut(output).unwrap();
+        output_wire.drivers.push(output_offset);
+
+        Ok(id)
+    }
+
     /// Adds a `RAM` component to the simulation
     pub fn add_ram(
         &mut self,
