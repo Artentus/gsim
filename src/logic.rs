@@ -1,24 +1,11 @@
 #![allow(dead_code)]
 
-mod ops;
-use ops::*;
-
+use crate::{inline_vec, SafeDivCeil};
+use std::num::NonZeroU8;
 use std::ops::*;
 
-macro_rules! size_of {
-    ($t:ty) => {
-        std::mem::size_of::<$t>()
-    };
-}
-
-macro_rules! bit_size_of {
-    ($t:ty) => {
-        size_of!($t) * 8
-    };
-}
-
-/// An integer type of the same bit width as LogicState.
-pub type LogicSizeInteger = u32;
+/// An integer type of the same bit width as `LogicStorage`.
+pub(crate) type LogicSizeInteger = u32;
 
 type SignedLogicSizeInteger = i32;
 type DoubleLogicSizeInteger = u64;
@@ -34,8 +21,8 @@ impl LogicStorage {
     pub(crate) const ALL_ONE: Self = Self(!0);
 
     #[inline]
-    pub(crate) fn mask(width: LogicWidth) -> Self {
-        if width >= LogicWidth::MAX {
+    pub(crate) fn mask(width: AtomWidth) -> Self {
+        if width >= AtomWidth::MAX {
             Self::ALL_ONE
         } else {
             Self((1 << width.get()) - 1)
@@ -43,7 +30,7 @@ impl LogicStorage {
     }
 
     #[inline]
-    pub(crate) fn get_bit(&self, bit_index: LogicOffset) -> bool {
+    pub(crate) fn get_bit(&self, bit_index: AtomOffset) -> bool {
         ((self.0 >> bit_index.get()) & 0x1) != 0
     }
 
@@ -199,41 +186,41 @@ impl RemAssign for LogicStorage {
     }
 }
 
-impl Shl<LogicOffset> for LogicStorage {
+impl Shl<AtomOffset> for LogicStorage {
     type Output = Self;
 
     #[inline]
-    fn shl(self, rhs: LogicOffset) -> Self::Output {
+    fn shl(self, rhs: AtomOffset) -> Self::Output {
         Self(self.0 << rhs.get())
     }
 }
 
-impl ShlAssign<LogicOffset> for LogicStorage {
+impl ShlAssign<AtomOffset> for LogicStorage {
     #[inline]
-    fn shl_assign(&mut self, rhs: LogicOffset) {
+    fn shl_assign(&mut self, rhs: AtomOffset) {
         self.0 <<= rhs.get();
     }
 }
 
-impl Shr<LogicOffset> for LogicStorage {
+impl Shr<AtomOffset> for LogicStorage {
     type Output = Self;
 
     #[inline]
-    fn shr(self, rhs: LogicOffset) -> Self::Output {
+    fn shr(self, rhs: AtomOffset) -> Self::Output {
         Self(self.0 >> rhs.get())
     }
 }
 
-impl ShrAssign<LogicOffset> for LogicStorage {
+impl ShrAssign<AtomOffset> for LogicStorage {
     #[inline]
-    fn shr_assign(&mut self, rhs: LogicOffset) {
+    fn shr_assign(&mut self, rhs: AtomOffset) {
         self.0 >>= rhs.get();
     }
 }
 
 impl LogicStorage {
     #[inline]
-    pub(crate) fn ashr(self, rhs: LogicOffset) -> Self {
+    pub(crate) fn ashr(self, rhs: AtomOffset) -> Self {
         Self(((self.0 as SignedLogicSizeInteger) >> rhs.get()) as LogicSizeInteger)
     }
 
@@ -245,38 +232,45 @@ impl LogicStorage {
     }
 
     #[inline]
-    pub(crate) fn widening_mul(self, rhs: Self, width: LogicWidth) -> (Self, Self) {
+    pub(crate) fn widening_mul(self, rhs: Self, width: AtomWidth) -> (Self, Self) {
         let result = (self.0 as DoubleLogicSizeInteger) * (rhs.0 as DoubleLogicSizeInteger);
         (
             Self(result as LogicSizeInteger),
             Self((result >> width.get()) as LogicSizeInteger),
         )
     }
-}
 
-/// The maximum width of a logic state.
-pub const MAX_LOGIC_WIDTH: u8 = {
-    const MAX_LOGIC_WIDTH: usize = bit_size_of!(LogicStorage);
-    const_assert!(MAX_LOGIC_WIDTH <= (u8::MAX as usize));
-    MAX_LOGIC_WIDTH as u8
-};
+    #[inline]
+    pub(crate) fn lts(self, rhs: Self, width: AtomWidth) -> bool {
+        let lhs = self.0 as SignedLogicSizeInteger;
+        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let shift_amount = Atom::BITS.get() - width.get();
+        (lhs << shift_amount) < (rhs << shift_amount)
+    }
 
-/// The width in bits of a logic state, in the range 1 to `MAX_LOGIC_WIDTH` inclusive
-pub type LogicWidth = bounded_integer::BoundedU8<1, MAX_LOGIC_WIDTH>;
-assert_eq_size!(LogicWidth, u8);
-assert_eq_align!(LogicWidth, u8);
+    #[inline]
+    pub(crate) fn gts(self, rhs: Self, width: AtomWidth) -> bool {
+        let lhs = self.0 as SignedLogicSizeInteger;
+        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let shift_amount = Atom::BITS.get() - width.get();
+        (lhs << shift_amount) > (rhs << shift_amount)
+    }
 
-/// The maximum bit offset in a logic state (`== MAX_LOGIC_WIDTH - 1`).
-pub const MAX_LOGIC_OFFSET: u8 = MAX_LOGIC_WIDTH - 1;
+    #[inline]
+    pub(crate) fn les(self, rhs: Self, width: AtomWidth) -> bool {
+        let lhs = self.0 as SignedLogicSizeInteger;
+        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let shift_amount = Atom::BITS.get() - width.get();
+        (lhs << shift_amount) <= (rhs << shift_amount)
+    }
 
-/// A bit offset in a logic state, in the range 0 to `MAX_LOGIC_OFFSET` inclusive
-pub type LogicOffset = bounded_integer::BoundedU8<0, MAX_LOGIC_OFFSET>;
-assert_eq_size!(LogicOffset, u8);
-assert_eq_align!(LogicOffset, u8);
-
-#[inline]
-pub(crate) const fn width_to_offset(width: LogicWidth) -> Option<LogicOffset> {
-    LogicOffset::new(width.get())
+    #[inline]
+    pub(crate) fn ges(self, rhs: Self, width: AtomWidth) -> bool {
+        let lhs = self.0 as SignedLogicSizeInteger;
+        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let shift_amount = Atom::BITS.get() - width.get();
+        (lhs << shift_amount) >= (rhs << shift_amount)
+    }
 }
 
 /// The logic state of a single bit
@@ -294,7 +288,7 @@ pub enum LogicBitState {
 
 impl LogicBitState {
     #[inline]
-    fn from_bits(state_bit: bool, valid_bit: bool) -> Self {
+    const fn from_bits(state_bit: bool, valid_bit: bool) -> Self {
         match (state_bit, valid_bit) {
             (false, false) => Self::HighZ,
             (true, false) => Self::Undefined,
@@ -304,7 +298,50 @@ impl LogicBitState {
     }
 
     #[inline]
-    fn parse(c: u8) -> Option<Self> {
+    const fn to_bits(self) -> (bool, bool) {
+        match self {
+            Self::HighZ => (false, false),
+            Self::Undefined => (true, false),
+            Self::Logic0 => (false, true),
+            Self::Logic1 => (true, true),
+        }
+    }
+
+    /// Creates a logic bit state representing a boolean value
+    #[inline]
+    pub const fn from_bool(value: bool) -> Self {
+        match value {
+            false => Self::Logic0,
+            true => Self::Logic1,
+        }
+    }
+
+    /// The boolean value this logic bit state represents, if any
+    #[inline]
+    pub const fn to_bool(self) -> Option<bool> {
+        match self {
+            Self::HighZ | Self::Undefined => None,
+            Self::Logic0 => Some(false),
+            Self::Logic1 => Some(true),
+        }
+    }
+
+    #[inline]
+    pub(crate) const fn splat(self) -> Atom {
+        match self {
+            Self::HighZ => Atom::HIGH_Z,
+            Self::Undefined => Atom::UNDEFINED,
+            Self::Logic0 => Atom::LOGIC_0,
+            Self::Logic1 => Atom::LOGIC_1,
+        }
+    }
+
+    /// - `b'Z'` | `b'z'` => `HighZ`
+    /// - `b'X'` | `b'x'` => `Undefined`
+    /// - `b'0'` => `Logic0`
+    /// - `b'1'` => `Logic1`
+    #[inline]
+    pub const fn parse_byte(c: u8) -> Option<Self> {
         match c {
             b'Z' | b'z' => Some(Self::HighZ),
             b'X' | b'x' => Some(Self::Undefined),
@@ -314,19 +351,46 @@ impl LogicBitState {
         }
     }
 
-    /// A character representing this logic state
-    /// - `HighZ`: `'Z'`
-    /// - `Undefined`: `'X'`
-    /// - `Logic0`: `'0'`
-    /// - `Logic1`: `'1'`
+    /// - `'Z'` | `'z'` => `HighZ`
+    /// - `'X'` | `'x'` => `Undefined`
+    /// - `'0'` => `Logic0`
+    /// - `'1'` => `Logic1`
     #[inline]
-    pub fn display_char(self) -> char {
-        match self {
-            LogicBitState::HighZ => 'Z',
-            LogicBitState::Undefined => 'X',
-            LogicBitState::Logic0 => '0',
-            LogicBitState::Logic1 => '1',
+    pub const fn parse(c: char) -> Option<Self> {
+        if c.is_ascii() {
+            Self::parse_byte(c as u8)
+        } else {
+            None
         }
+    }
+}
+
+impl From<bool> for LogicBitState {
+    #[inline]
+    fn from(value: bool) -> Self {
+        Self::from_bool(value)
+    }
+}
+
+impl TryFrom<LogicBitState> for bool {
+    type Error = ();
+
+    #[inline]
+    fn try_from(value: LogicBitState) -> Result<Self, Self::Error> {
+        value.to_bool().ok_or(())
+    }
+}
+
+impl std::fmt::Display for LogicBitState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            LogicBitState::HighZ => "Z",
+            LogicBitState::Undefined => "X",
+            LogicBitState::Logic0 => "0",
+            LogicBitState::Logic1 => "1",
+        };
+
+        f.write_str(s)
     }
 }
 
@@ -352,7 +416,7 @@ impl<'de> serde::Deserialize<'de> for LogicBitState {
                 E: Error,
             {
                 if v.len() == 1 {
-                    LogicBitState::parse(v.as_bytes()[0])
+                    LogicBitState::parse_byte(v.as_bytes()[0])
                 } else {
                     None
                 }
@@ -364,10 +428,20 @@ impl<'de> serde::Deserialize<'de> for LogicBitState {
     }
 }
 
-/// Stores the logic state of up to `MAX_LOGIC_WIDTH` bits
+const MAX_ATOM_WIDTH: u8 = Atom::BITS.get();
+pub(crate) type AtomWidth = bounded_integer::BoundedU8<1, MAX_ATOM_WIDTH>;
+assert_eq_size!(AtomWidth, u8);
+assert_eq_align!(AtomWidth, u8);
+
+const MAX_ATOM_OFFSET: u8 = Atom::BITS.get() - 1;
+pub(crate) type AtomOffset = bounded_integer::BoundedU8<0, MAX_ATOM_OFFSET>;
+assert_eq_size!(AtomOffset, u8);
+assert_eq_align!(AtomOffset, u8);
+
+/// The smallest unit of logic state in the simulator
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct LogicState {
+pub(crate) struct Atom {
     //  state | valid | meaning
     // -------|-------|---------
     //    0   |   0   | High-Z
@@ -378,59 +452,68 @@ pub struct LogicState {
     pub(crate) valid: LogicStorage,
 }
 
-impl LogicState {
-    /// A logic state representing high impedance on all bits
-    pub const HIGH_Z: Self = Self {
+const_assert_eq!(
+    std::mem::size_of::<Atom>() * 8,
+    (Atom::BITS.get() as usize) * 2,
+);
+
+impl Atom {
+    pub(crate) const BITS: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(32) };
+
+    pub(crate) const HIGH_Z: Self = Self {
         state: LogicStorage::ALL_ZERO,
         valid: LogicStorage::ALL_ZERO,
     };
 
-    /// A logic state representing an undefined logic level on all bits
-    pub const UNDEFINED: Self = Self {
+    pub(crate) const UNDEFINED: Self = Self {
         state: LogicStorage::ALL_ONE,
         valid: LogicStorage::ALL_ZERO,
     };
 
-    /// A logic state representing a low logic level on all bits
-    pub const LOGIC_0: Self = Self {
+    pub(crate) const LOGIC_0: Self = Self {
         state: LogicStorage::ALL_ZERO,
         valid: LogicStorage::ALL_ONE,
     };
 
-    /// A logic state representing a high logic level on all bits
-    pub const LOGIC_1: Self = Self {
+    pub(crate) const LOGIC_1: Self = Self {
         state: LogicStorage::ALL_ONE,
         valid: LogicStorage::ALL_ONE,
     };
 
-    /// Creates a new logic state representing the given integer value
     #[inline]
-    pub const fn from_int(value: LogicSizeInteger) -> Self {
+    pub(crate) const fn from_int(value: u32) -> Self {
         Self {
             state: LogicStorage(value),
             valid: LogicStorage::ALL_ONE,
         }
     }
 
-    /// Creates a new logic state representing the given boolean value
     #[inline]
-    pub const fn from_bool(value: bool) -> Self {
+    pub(crate) const fn from_bool(value: bool) -> Self {
         Self {
-            state: LogicStorage(if value { 1 } else { 0 }),
+            state: LogicStorage(value as LogicSizeInteger),
             valid: LogicStorage::ALL_ONE,
         }
     }
 
-    /// Creates a new logic state from the given bits (most significant bit first)
-    pub const fn from_bits(bits: &[LogicBitState]) -> Self {
-        assert!(bits.len() <= (MAX_LOGIC_WIDTH as usize));
+    #[inline]
+    pub(crate) const fn from_bit(value: LogicBitState) -> Self {
+        let (state, valid) = value.to_bits();
+
+        Self {
+            state: LogicStorage(state as LogicSizeInteger),
+            valid: LogicStorage(valid as LogicSizeInteger),
+        }
+    }
+
+    fn from_bits(bits: &[LogicBitState]) -> Self {
+        debug_assert!(bits.len() > 0);
+        debug_assert!(bits.len() <= (Self::BITS.get() as usize));
 
         let mut state = 0;
         let mut valid = 0;
 
-        // TODO: write this as a for loop once they become stable in const fns
-        let mut i = 0;
-        while i < bits.len() {
+        for i in 0..bits.len() {
             state <<= 1;
             valid <<= 1;
 
@@ -443,8 +526,6 @@ impl LogicState {
 
             state |= bit_state;
             valid |= bit_valid;
-
-            i += 1;
         }
 
         Self {
@@ -453,34 +534,18 @@ impl LogicState {
         }
     }
 
-    /// Constructs a logic state from a string of bits (most significant bit first)
-    ///
-    /// Example:
-    /// ```
-    /// use gsim::{LogicState, LogicWidth};
-    ///
-    /// let state = LogicState::parse("10XZ").unwrap();
-    /// assert_eq!(state.display_string(LogicWidth::new(4).unwrap()), "10XZ");
-    /// ```
-    pub fn parse(s: &str) -> Option<Self> {
-        if !s.is_ascii() {
-            return None;
-        }
-
-        // Now we know s.len() == s.chars().count()
-        if s.is_empty() || (s.len() > (MAX_LOGIC_WIDTH as usize)) {
-            return None;
-        }
+    fn parse(s: &[u8]) -> Option<Self> {
+        debug_assert!(s.len() > 0);
+        debug_assert!(s.len() <= (Self::BITS.get() as usize));
 
         let mut state = 0;
         let mut valid = 0;
 
-        // We also know s.bytes() yields the same as s.chars()
-        for c in s.bytes() {
+        for &c in s {
             state <<= 1;
             valid <<= 1;
 
-            let bit = LogicBitState::parse(c)?;
+            let bit = LogicBitState::parse_byte(c)?;
             let (bit_state, bit_valid) = match bit {
                 LogicBitState::HighZ => (0, 0),
                 LogicBitState::Undefined => (1, 0),
@@ -498,8 +563,14 @@ impl LogicState {
         })
     }
 
-    /// Gets the logic state of a single bit
-    pub fn get_bit_state(&self, bit_index: LogicOffset) -> LogicBitState {
+    #[inline]
+    pub(crate) fn is_valid(&self, width: AtomWidth) -> bool {
+        let mask = LogicStorage::mask(width);
+        (self.valid | !mask) == LogicStorage::ALL_ONE
+    }
+
+    #[inline]
+    pub(crate) fn get_bit_state(&self, bit_index: AtomOffset) -> LogicBitState {
         let state_bit = self.state.get_bit(bit_index);
         let valid_bit = self.valid.get_bit(bit_index);
         LogicBitState::from_bits(state_bit, valid_bit)
@@ -518,174 +589,264 @@ impl LogicState {
         (self.state.0, self.valid.0)
     }
 
-    /// Creates a string representing the first `width` bits of this state
-    pub fn display_string(&self, width: LogicWidth) -> String {
-        (0..width.get())
-            .rev()
-            .map(|bit_index| {
-                let bit_index = LogicOffset::new(bit_index).expect("invalid bit index");
-                self.get_bit_state(bit_index).display_char()
-            })
-            .collect()
-    }
-
-    /// Tests this state for equality with another state while only considering the first `width` bits
-    pub fn eq(self, rhs: Self, width: LogicWidth) -> bool {
-        let mask = LogicStorage::mask(width);
-        ((self.state & mask) == (rhs.state & mask)) && ((self.valid & mask) == (rhs.valid & mask))
-    }
-
-    /// Computes logical AND between this state and `rhs`
-    pub fn logic_and(self, rhs: Self) -> Self {
-        logic_and(self, rhs)
-    }
-
-    /// Computes logical OR between this state and `rhs`
-    pub fn logic_or(self, rhs: Self) -> Self {
-        logic_or(self, rhs)
-    }
-
-    /// Computes logical XOR between this state and `rhs`
-    pub fn logic_xor(self, rhs: Self) -> Self {
-        logic_xor(self, rhs)
-    }
-
-    /// Computes logical NAND between this state and `rhs`
-    pub fn logic_nand(self, rhs: Self) -> Self {
-        logic_nand(self, rhs)
-    }
-
-    /// Computes logical NOR between this state and `rhs`
-    pub fn logic_nor(self, rhs: Self) -> Self {
-        logic_nor(self, rhs)
-    }
-
-    /// Computes logical XNOR between this state and `rhs`
-    pub fn logic_xnor(self, rhs: Self) -> Self {
-        logic_xnor(self, rhs)
-    }
-
-    /// Computes logical NOT of this state
-    pub fn logic_not(self) -> Self {
-        logic_not(self)
-    }
-
-    /// Computes the sum of this state and `rhs`
-    pub fn add(self, rhs: Self, width: LogicWidth) -> Self {
-        add(self, rhs, width)
-    }
-
-    /// Computes the difference between this state and `rhs`
-    pub fn sub(self, rhs: Self, width: LogicWidth) -> Self {
-        sub(self, rhs, width)
-    }
-
-    /// Computes the product of this state and `rhs`
-    pub fn mul(self, rhs: Self, width: LogicWidth) -> Self {
-        mul(self, rhs, width)
-    }
-
-    /// Computes the quotient of this state and `rhs`
-    pub fn div(self, rhs: Self, width: LogicWidth) -> Self {
-        div(self, rhs, width)
-    }
-
-    /// Computes the remainder of the quotient of this state and `rhs`
-    pub fn rem(self, rhs: Self, width: LogicWidth) -> Self {
-        rem(self, rhs, width)
-    }
-
-    /// Shifts this state by `rhs` bits to the left
-    pub fn shl(self, rhs: Self, width: LogicWidth) -> Self {
-        shl(self, rhs, width)
-    }
-
-    /// Logically shifts this state by `rhs` bits to the right
-    pub fn lshr(self, rhs: Self, width: LogicWidth) -> Self {
-        lshr(self, rhs, width)
-    }
-
-    /// Arithmetically shifts this state by `rhs` bits to the right
-    pub fn ashr(self, rhs: Self, width: LogicWidth) -> Self {
-        ashr(self, rhs, width)
-    }
-
-    /// Computes logical AND between all bits of this state
-    pub fn horizontal_logic_and(self, width: LogicWidth) -> Self {
-        horizontal_logic_and(self, width)
-    }
-
-    /// Computes logical OR between all bits of this state
-    pub fn horizontal_logic_or(self, width: LogicWidth) -> Self {
-        horizontal_logic_or(self, width)
-    }
-
-    /// Computes logical NAND between all bits of this state
-    pub fn horizontal_logic_nand(self, width: LogicWidth) -> Self {
-        horizontal_logic_nand(self, width)
-    }
-
-    /// Computes logical NOR between all bits of this state
-    pub fn horizontal_logic_nor(self, width: LogicWidth) -> Self {
-        horizontal_logic_nor(self, width)
-    }
-
-    /// Compares this state and `rhs` for equality
-    pub fn equal(self, rhs: Self, width: LogicWidth) -> Self {
-        equal(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for inequality
-    pub fn not_equal(self, rhs: Self, width: LogicWidth) -> Self {
-        not_equal(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'less than' relation
-    pub fn less_than(self, rhs: Self, width: LogicWidth) -> Self {
-        less_than(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'greater than' relation
-    pub fn greater_than(self, rhs: Self, width: LogicWidth) -> Self {
-        greater_than(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'less than or equal' relation
-    pub fn less_than_or_equal(self, rhs: Self, width: LogicWidth) -> Self {
-        less_than_or_equal(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'greater than or equal' relation
-    pub fn greater_than_or_equal(self, rhs: Self, width: LogicWidth) -> Self {
-        greater_than_or_equal(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'less than' relation, interpreting the bits as signed
-    pub fn less_than_signed(self, rhs: Self, width: LogicWidth) -> Self {
-        less_than_signed(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'greater than' relation, interpreting the bits as signed
-    pub fn greater_than_signed(self, rhs: Self, width: LogicWidth) -> Self {
-        greater_than_signed(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'less than or equal' relation, interpreting the bits as signed
-    pub fn less_than_or_equal_signed(self, rhs: Self, width: LogicWidth) -> Self {
-        less_than_or_equal_signed(self, rhs, width)
-    }
-
-    /// Compares this state and `rhs` for a 'greater than or equal' relation, interpreting the bits as signed
-    pub fn greater_than_or_equal_signed(self, rhs: Self, width: LogicWidth) -> Self {
-        greater_than_or_equal_signed(self, rhs, width)
-    }
-
-    /// Turns all HIGH Z bits into UNDEFINED bits
     #[inline]
-    pub fn high_z_to_undefined(self) -> Self {
+    pub(crate) fn eq(self, other: Self, width: AtomWidth) -> bool {
+        let mask = LogicStorage::mask(width);
+        ((self.state & mask) == (other.state & mask))
+            && ((self.valid & mask) == (other.valid & mask))
+    }
+
+    #[inline]
+    pub(crate) fn high_z_to_undefined(self) -> Self {
         Self {
             state: self.state | !self.valid,
             valid: self.valid,
+        }
+    }
+}
+
+impl std::fmt::Display for Atom {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for i in (0..Self::BITS.get()).rev() {
+            let i = AtomOffset::new(i).unwrap();
+            let bit = self.get_bit_state(i);
+            write!(f, "{bit}")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum LogicStateRepr {
+    HighZ,
+    Undefined,
+    Logic0,
+    Logic1,
+    Int(LogicStorage),
+    Bits(inline_vec!(Atom)),
+}
+
+/// A logic state of arbitrary bit width
+#[derive(Debug, Clone)]
+#[repr(transparent)]
+pub struct LogicState(pub(crate) LogicStateRepr);
+
+impl LogicState {
+    /// A logic state representing high impedance on all bits
+    pub const HIGH_Z: Self = Self(LogicStateRepr::HighZ);
+
+    /// A logic state representing an undefined logic level on all bits
+    pub const UNDEFINED: Self = Self(LogicStateRepr::Undefined);
+
+    /// A logic state representing a low logic level on all bits
+    pub const LOGIC_0: Self = Self(LogicStateRepr::Logic0);
+
+    /// A logic state representing a high logic level on all bits
+    pub const LOGIC_1: Self = Self(LogicStateRepr::Logic1);
+
+    /// Creates a new logic state representing the given integer value
+    ///
+    /// Bits past the first 32 are implicitely assigned the value 0
+    #[inline]
+    pub const fn from_int(value: u32) -> Self {
+        Self(LogicStateRepr::Int(LogicStorage(value)))
+    }
+
+    /// Creates a new logic state representing the given boolean value
+    ///
+    /// Bits past the first one are implicitely assigned the value 0
+    #[inline]
+    pub const fn from_bool(value: bool) -> Self {
+        Self(LogicStateRepr::Int(LogicStorage(value as LogicSizeInteger)))
+    }
+
+    /// Creates a new logic state from the given bits (most significant bit first)
+    ///
+    /// Bits past the specified ones are implicitely assigned the value Z
+    pub fn from_bits(bits: &[LogicBitState]) -> Self {
+        let width = u8::try_from(bits.len())
+            .ok()
+            .and_then(NonZeroU8::new)
+            .expect("invalid bit width");
+
+        let head_width = (width.get() % Atom::BITS.get()) as usize;
+        let list_len = (width.get().div_ceil(Atom::BITS.get())) as usize;
+
+        let head_bits = &bits[..head_width];
+        let tail_bits = &bits[head_width..];
+
+        let mut list = smallvec::smallvec![Atom::HIGH_Z; list_len];
+        let head = Atom::from_bits(head_bits);
+        list[list_len - 1] = head;
+
+        let mut chunks = tail_bits.chunks_exact(Atom::BITS.get() as usize);
+        for (i, item_bits) in chunks.by_ref().enumerate() {
+            let item = Atom::from_bits(item_bits);
+            list[list_len - 2 - i] = item;
+        }
+        debug_assert_eq!(chunks.remainder().len(), 0);
+
+        Self(LogicStateRepr::Bits(list))
+    }
+
+    /// Constructs a logic state from a string of bits (most significant bit first)
+    ///
+    /// Bits past the specified ones are implicitely assigned the value Z
+    ///
+    /// Example:
+    /// ```
+    /// use gsim::LogicState;
+    /// use std::num::NonZeroU8;
+    ///
+    /// let state = LogicState::parse("10XZ").unwrap();
+    /// assert_eq!(state.display_string(NonZeroU8::new(4).unwrap()), "10XZ");
+    /// ```
+    pub fn parse(s: &str) -> Option<Self> {
+        let width = u8::try_from(s.len())
+            .ok()
+            .and_then(NonZeroU8::new)
+            .expect("invalid bit width");
+
+        if !s.is_ascii() {
+            return None;
+        }
+
+        let head_width = (width.get() % Atom::BITS.get()) as usize;
+        let list_len = (width.get().div_ceil(Atom::BITS.get())) as usize;
+
+        let head_str = &s.as_bytes()[..head_width];
+        let tail_str = &s.as_bytes()[head_width..];
+
+        let mut list = smallvec::smallvec![Atom::HIGH_Z; list_len];
+        let head = Atom::parse(head_str)?;
+        list[list_len - 1] = head;
+
+        let mut chunks = tail_str.chunks_exact(Atom::BITS.get() as usize);
+        for (i, item_bits) in chunks.by_ref().enumerate() {
+            let item = Atom::parse(item_bits)?;
+            list[list_len - 2 - i] = item;
+        }
+        debug_assert_eq!(chunks.remainder().len(), 0);
+
+        Some(Self(LogicStateRepr::Bits(list)))
+    }
+
+    /// Gets the logic state of a single bit
+    pub fn get_bit_state(&self, bit_index: u8) -> LogicBitState {
+        match self.0 {
+            LogicStateRepr::HighZ => LogicBitState::HighZ,
+            LogicStateRepr::Undefined => LogicBitState::Undefined,
+            LogicStateRepr::Logic0 => LogicBitState::Logic0,
+            LogicStateRepr::Logic1 => LogicBitState::Logic1,
+            LogicStateRepr::Int(value) => {
+                if let Some(bit_index) = u8::try_from(bit_index).ok().and_then(AtomOffset::new) {
+                    let state_bit = value.get_bit(bit_index);
+                    LogicBitState::from_bits(state_bit, true)
+                } else {
+                    LogicBitState::Logic0
+                }
+            }
+            LogicStateRepr::Bits(ref list) => {
+                let item_index = (bit_index / Atom::BITS.get()) as usize;
+                let bit_index = AtomOffset::new(bit_index % Atom::BITS.get()).unwrap();
+
+                let item = list[item_index];
+                item.get_bit_state(bit_index)
+            }
+        }
+    }
+
+    /// Creates a string representing the first `width` bits of this state
+    pub fn display_string(&self, width: NonZeroU8) -> String {
+        use std::fmt::Write;
+
+        let mut s = String::with_capacity(width.get() as usize);
+        for i in (0..width.get()).rev() {
+            let bit = self.get_bit_state(i);
+            write!(s, "{bit}").unwrap();
+        }
+        s
+    }
+
+    #[inline]
+    pub(crate) fn iter_atoms(&self) -> LogicStateIter<'_> {
+        match self.0 {
+            LogicStateRepr::HighZ => LogicStateIter::HighZ,
+            LogicStateRepr::Undefined => LogicStateIter::Undefined,
+            LogicStateRepr::Logic0 => LogicStateIter::Logic0,
+            LogicStateRepr::Logic1 => LogicStateIter::Logic1,
+            LogicStateRepr::Int(value) => LogicStateIter::Int(Some(value)),
+            LogicStateRepr::Bits(ref atoms) => LogicStateIter::Bits { atoms, current: 0 },
+        }
+    }
+
+    /// Tests the first `width` bits of this state and another for equality
+    pub fn eq(&self, other: &Self, width: NonZeroU8) -> bool {
+        match (&self.0, &other.0) {
+            (LogicStateRepr::HighZ, LogicStateRepr::HighZ)
+            | (LogicStateRepr::Undefined, LogicStateRepr::Undefined)
+            | (LogicStateRepr::Logic0, LogicStateRepr::Logic0)
+            | (LogicStateRepr::Logic1, LogicStateRepr::Logic1) => return true,
+            (LogicStateRepr::HighZ, LogicStateRepr::Undefined)
+            | (LogicStateRepr::HighZ, LogicStateRepr::Logic0)
+            | (LogicStateRepr::HighZ, LogicStateRepr::Logic1)
+            | (LogicStateRepr::Undefined, LogicStateRepr::HighZ)
+            | (LogicStateRepr::Undefined, LogicStateRepr::Logic0)
+            | (LogicStateRepr::Undefined, LogicStateRepr::Logic1)
+            | (LogicStateRepr::Logic0, LogicStateRepr::HighZ)
+            | (LogicStateRepr::Logic0, LogicStateRepr::Undefined)
+            | (LogicStateRepr::Logic0, LogicStateRepr::Logic1)
+            | (LogicStateRepr::Logic1, LogicStateRepr::HighZ)
+            | (LogicStateRepr::Logic1, LogicStateRepr::Undefined)
+            | (LogicStateRepr::Logic1, LogicStateRepr::Logic0) => return false,
+            _ => (),
+        }
+
+        let count = width.safe_div_ceil(Atom::BITS).get() as usize;
+        let mut total_width = width.get();
+        for (this, other) in self.iter_atoms().zip(other.iter_atoms()).take(count) {
+            let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+            total_width -= width.get();
+
+            if !this.eq(other, width) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+pub(crate) enum LogicStateIter<'a> {
+    HighZ,
+    Undefined,
+    Logic0,
+    Logic1,
+    Int(Option<LogicStorage>),
+    Bits { atoms: &'a [Atom], current: usize },
+}
+
+impl Iterator for LogicStateIter<'_> {
+    type Item = Atom;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            LogicStateIter::HighZ => Some(Atom::HIGH_Z),
+            LogicStateIter::Undefined => Some(Atom::UNDEFINED),
+            LogicStateIter::Logic0 => Some(Atom::LOGIC_0),
+            LogicStateIter::Logic1 => Some(Atom::LOGIC_1),
+            LogicStateIter::Int(value) => Some(Atom {
+                state: value.take().unwrap_or(LogicStorage::ALL_ZERO),
+                valid: LogicStorage::ALL_ONE,
+            }),
+            LogicStateIter::Bits { atoms, current } => {
+                let atom = atoms.get(*current).copied();
+                if atom.is_some() {
+                    *current += 1;
+                }
+                atom
+            }
         }
     }
 }
@@ -723,10 +884,11 @@ impl<'de> serde::Deserialize<'de> for LogicState {
 ///
 /// Example:
 /// ```
-/// use gsim::{bits, LogicState, LogicWidth};
+/// use gsim::bits;
+/// use std::num::NonZeroU8;
 ///
 /// let state = bits!(1, 0, X, Z);
-/// assert_eq!(state.display_string(LogicWidth::new(4).unwrap()), "10XZ");
+/// assert_eq!(state.display_string(NonZeroU8::new(4).unwrap()), "10XZ");
 /// ```
 #[macro_export]
 macro_rules! bits {
@@ -736,9 +898,8 @@ macro_rules! bits {
     (@BIT x) => { $crate::LogicBitState::Undefined };
     (@BIT 0) => { $crate::LogicBitState::Logic0 };
     (@BIT 1) => { $crate::LogicBitState::Logic1 };
-    ($($bit:tt),*) => {{
-        const STATE: $crate::LogicState = $crate::LogicState::from_bits(&[$($crate::bits!(@BIT $bit)),*]);
-        STATE
+    ($($bit:tt),+) => {{
+        $crate::LogicState::from_bits(&[$($crate::bits!(@BIT $bit)),+])
     }}
 }
 

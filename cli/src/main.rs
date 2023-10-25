@@ -128,7 +128,7 @@ fn list(_args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
 
     for (input_name, &input_wire) in &context.ports.inputs {
         let input_width = context.sim.get_wire_width(input_wire);
-        let input_state = context.sim.get_wire_base_drive(input_wire);
+        let input_state = context.sim.get_wire_drive(input_wire);
 
         writeln!(
             result,
@@ -185,7 +185,7 @@ fn drive(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
         return Ok(None);
     };
 
-    context.sim.set_wire_base_drive(input_wire, new_state);
+    context.sim.set_wire_drive(input_wire, &new_state);
 
     let input_width = context.sim.get_wire_width(input_wire);
     let result = format!(

@@ -2,18 +2,20 @@
 
 #![allow(missing_debug_implementations)]
 
-#[cfg(feature = "yosys-import")]
-pub mod yosys;
+//#[cfg(feature = "yosys-import")]
+//pub mod yosys;
 
+use crate::WireId;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// The list of connections of an imported module
 #[derive(Debug, Default)]
 pub struct ModuleConnections {
     /// The inputs of the module
-    pub inputs: HashMap<String, crate::WireId>,
+    pub inputs: HashMap<Rc<str>, WireId>,
     /// The outputs of the module
-    pub outputs: HashMap<String, crate::WireId>,
+    pub outputs: HashMap<Rc<str>, WireId>,
 }
 
 /// Imports a module into a simulation

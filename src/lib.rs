@@ -3,14 +3,15 @@
 //! ### Example
 //! ```
 //! use gsim::*;
+//! use std::num::NonZeroU8;
 //!
 //! let mut builder = SimulatorBuilder::default();
 //!
 //! // Add wires and components to the simulation
-//! let wire_width = LogicWidth::new(1).unwrap();
-//! let input_a = builder.add_wire(wire_width);
-//! let input_b = builder.add_wire(wire_width);
-//! let output = builder.add_wire(wire_width);
+//! let wire_width = NonZeroU8::new(1).unwrap();
+//! let input_a = builder.add_wire(wire_width).unwrap();
+//! let input_b = builder.add_wire(wire_width).unwrap();
+//! let output = builder.add_wire(wire_width).unwrap();
 //! // The gate ID is not usefull to us because we don't intend on reading its data
 //! let _gate = builder.add_and_gate(&[input_a, input_b], output).unwrap();
 //!
@@ -18,8 +19,8 @@
 //! let mut sim = builder.build();
 //!
 //! // Manually drive the input wires
-//! sim.set_wire_base_drive(input_a, LogicState::from_bool(true));
-//! sim.set_wire_base_drive(input_b, LogicState::from_bool(false));
+//! sim.set_wire_drive(input_a, &LogicState::from_bool(true));
+//! sim.set_wire_drive(input_b, &LogicState::from_bool(false));
 //!
 //! // Run the simulation
 //! const MAX_STEPS: u64 = 2;
@@ -31,7 +32,7 @@
 //!
 //! // Make sure we got the expected result
 //! let output_state = sim.get_wire_state(output);
-//! assert!(output_state.eq(LogicState::from_bool(false), wire_width));
+//! assert!(output_state.eq(&LogicState::from_bool(false), wire_width));
 //! ```
 
 #![deny(missing_docs)]
@@ -42,19 +43,23 @@
 extern crate static_assertions;
 
 mod component;
-pub use component::ComponentData;
-use component::*;
-
-mod logic;
-pub use logic::*;
-
+mod id_lists;
 pub mod import;
+mod logic;
 
 #[cfg(test)]
 mod test;
 
-use smallvec::smallvec;
+use component::*;
+use id_lists::*;
+use logic::*;
+use smallvec::{smallvec, SmallVec};
+use std::num::NonZeroU8;
 use std::sync::Mutex;
+
+pub use component::ComponentData;
+pub use id_lists::{ComponentId, WireId};
+pub use logic::{LogicBitState, LogicState};
 
 const fn const_max(a: usize, b: usize) -> usize {
     if a >= b {
@@ -79,209 +84,54 @@ macro_rules! inline_vec {
     ($t:ty) => {
         smallvec::SmallVec<[$t; <$t as $crate::InlineCount>::INLINE_COUNT]>
     };
+    ($t:ty; $n:ty) => {
+        smallvec::SmallVec<[$t; <$n as $crate::InlineCount>::INLINE_COUNT]>
+    };
 }
 
 use inline_vec;
 
-fn num_cpus() -> usize {
-    use std::sync::OnceLock;
+trait SafeDivCeil<Rhs = Self> {
+    type Output;
 
-    static NUM_CPUS: OnceLock<usize> = OnceLock::new();
-    *NUM_CPUS.get_or_init(num_cpus::get)
+    fn safe_div_ceil(self, rhs: Rhs) -> Self::Output;
 }
 
-const fn div_ceil(lhs: usize, rhs: usize) -> usize {
-    assert!(rhs > 0);
+impl SafeDivCeil for NonZeroU8 {
+    type Output = Self;
 
-    let d = lhs / rhs;
-    let r = lhs % rhs;
-    if r > 0 {
-        d + 1
-    } else {
-        d
+    #[inline]
+    fn safe_div_ceil(self, rhs: Self) -> Self::Output {
+        unsafe {
+            // SAFETY:
+            //   - `self` is not zero, so ceiling division will always be > 0
+            //   - `rhs` is not zero, so division by zero cannot occurr
+            Self::new_unchecked(self.get().div_ceil(rhs.get()))
+        }
     }
 }
 
-macro_rules! def_id_type {
-    ($(#[$attr:meta])* $ns:ident::$id_name:ident) => {
-        #[allow(dead_code)]
-        mod $ns {
-            use std::marker::PhantomData;
-            use sync_unsafe_cell::SyncUnsafeCell;
-            use std::ops::Range;
-
-            const INVALID_ID: u32 = u32::MAX;
-
-            $(#[$attr])*
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-            #[repr(transparent)]
-            pub struct $id_name(u32);
-            assert_eq_size!($id_name, u32);
-            assert_eq_align!($id_name, u32);
-
-            impl $id_name {
-                /// An invalid ID
-                pub const INVALID: Self = Self(INVALID_ID);
-
-                /// Checks whether this ID is invalid
-                #[inline]
-                pub const fn is_invalid(self) -> bool {
-                    self.0 == INVALID_ID
-                }
-            }
-
-            impl Default for $id_name {
-                #[inline]
-                fn default() -> Self {
-                    Self::INVALID
-                }
-            }
-
-            #[repr(transparent)]
-            pub(crate) struct IdList<T> {
-                list: Vec<SyncUnsafeCell<T>>,
-            }
-
-            impl<T> IdList<T> {
-                #[inline]
-                pub const fn new() -> Self {
-                    Self { list: Vec::new() }
-                }
-
-                #[inline]
-                pub fn insert(&mut self, item: T) -> $id_name {
-                    assert!(self.list.len() < (INVALID_ID as usize), "too many items");
-                    let id = $id_name(self.list.len() as u32);
-                    self.list.push(SyncUnsafeCell::new(item));
-                    id
-                }
-
-                #[inline]
-                pub fn get(&self, id: $id_name) -> Option<&T> {
-                    self.list.get(id.0 as usize).map(|cell| unsafe {
-                        // SAFETY: since we have a shared reference to `self`, no mutable references exist
-                        &*cell.get()
-                    })
-                }
-
-                #[inline]
-                pub fn get_mut(&mut self, id: $id_name) -> Option<&mut T> {
-                    self.list.get_mut(id.0 as usize).map(SyncUnsafeCell::get_mut)
-                }
-
-                /// SAFETY: caller must ensure there are no other references to the item with this ID
-                pub unsafe fn get_unsafe(&self, id: $id_name) -> Option<&mut T> {
-                    self.list.get(id.0 as usize).map(|cell| unsafe { &mut *cell.get() })
-                }
-
-                #[inline]
-                pub fn ids(&self) -> IdIter<'_> {
-                    IdIter::new(self.list.len() as u32)
-                }
-
-                #[inline]
-                pub fn iter(&self) -> impl Iterator<Item = &T> {
-                    self.list.iter().map(|cell| unsafe {
-                        // SAFETY: since we have a shared reference to `self`, no mutable references exist
-                        &*cell.get()
-                    })
-                }
-
-                #[inline]
-                pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut T> {
-                    self.list.iter_mut().map(SyncUnsafeCell::get_mut)
-                }
-            }
-
-            impl<T> std::ops::Index<$id_name> for IdList<T> {
-                type Output = T;
-
-                #[inline]
-                fn index(&self, id: $id_name) -> &Self::Output {
-                    self.get(id).unwrap()
-                }
-            }
-
-            impl<T> std::ops::IndexMut<$id_name> for IdList<T> {
-                #[inline]
-                fn index_mut(&mut self, id: $id_name) -> &mut Self::Output {
-                    self.get_mut(id).unwrap()
-                }
-            }
-
-            #[derive(Clone)]
-            pub(crate) struct IdIter<'a> {
-                range: Range<u32>,
-                _a: PhantomData<&'a ()>,
-            }
-
-            impl<'a> IdIter<'a> {
-                #[inline]
-                fn new(len: u32) -> Self {
-                    Self {
-                        range: 0..len,
-                        _a: PhantomData,
-                    }
-                }
-            }
-
-            impl<'a> Iterator for IdIter<'a> {
-                type Item = $id_name;
-
-                #[inline]
-                fn next(&mut self) -> Option<Self::Item> {
-                    self.range.next().map($id_name)
-                }
-
-                #[inline]
-                fn size_hint(&self) -> (usize, Option<usize>) {
-                    Iterator::size_hint(&self.range)
-                }
-
-                #[inline]
-                fn count(self) -> usize {
-                    Iterator::count(self.range)
-                }
-            }
-
-            impl<'a> ExactSizeIterator for IdIter<'a> {
-                #[inline]
-                fn len(&self) -> usize {
-                    ExactSizeIterator::len(&self.range)
-                }
-            }
-        }
-
-        pub use $ns::$id_name;
-    };
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WireUpdateResult {
+    Unchanged,
+    Changed,
+    Conflict,
 }
-
-def_id_type!(
-    /// A unique identifier for a wire inside a simulation
-    wire_id::WireId
-);
-
-def_id_type!(
-    /// A unique identifier for a component inside a simulation
-    component_id::ComponentId
-);
-
-type WireUpdateResult = Result<LogicState, ()>;
 
 #[derive(Debug)]
 struct Wire {
-    drivers: inline_vec!(usize),
+    state: WireStateId,
+    drivers: inline_vec!(OutputStateId),
     driving: inline_vec!(ComponentId),
-    base_drive: LogicState,
 }
 
 impl Wire {
     #[inline]
-    fn new() -> Self {
+    fn new(state: WireStateId) -> Self {
         Self {
+            state,
             drivers: smallvec![],
             driving: smallvec![],
-            base_drive: LogicState::HIGH_Z,
         }
     }
 
@@ -295,9 +145,16 @@ impl Wire {
         }
     }
 
-    fn update(&self, width: LogicWidth, component_outputs: &[LogicState]) -> WireUpdateResult {
+    #[inline]
+    fn update(
+        &self,
+        width: NonZeroU8,
+        drive: &[Atom],
+        state: &mut [Atom],
+        output_states: &OutputStateList,
+    ) -> WireUpdateResult {
         #[inline]
-        fn combine(a: LogicState, b: LogicState, mask: LogicStorage) -> WireUpdateResult {
+        fn combine(a: Atom, b: Atom, mask: LogicStorage) -> Option<Atom> {
             //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning | conflict
             // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------|----------
             //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    0    |    0    | High-Z    | no
@@ -325,31 +182,46 @@ impl Wire {
             } & mask;
 
             if conflict == LogicStorage::ALL_ZERO {
-                Ok(LogicState {
+                Some(Atom {
                     state: a.state | b.state,
                     valid: a.valid | b.valid,
                 })
             } else {
-                Err(())
+                None
             }
         }
 
-        let mask = LogicStorage::mask(width);
+        let mut changed = false;
+        let mut total_width = width.get();
+        for (i, (drive, state)) in drive.iter().copied().zip(state).enumerate() {
+            let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+            let mask = LogicStorage::mask(width);
 
-        let mut new_state = LogicState {
-            state: self.base_drive.state,
-            valid: self.base_drive.valid,
-        };
+            let mut new_state = drive;
+            for &driver in &self.drivers {
+                let output = output_states.get_state(driver)[i];
+                new_state = match combine(new_state, output, mask) {
+                    Some(a) => a,
+                    None => return WireUpdateResult::Conflict,
+                };
+            }
 
-        for driver in self.drivers.iter().copied() {
-            let output = component_outputs[driver];
-            new_state = combine(new_state, output, mask)?;
+            new_state.state &= mask;
+            new_state.valid &= mask;
+
+            if !state.eq(new_state, width) {
+                *state = new_state;
+                changed = true;
+            }
+
+            total_width -= width.get();
         }
 
-        new_state.state &= mask;
-        new_state.valid &= mask;
-
-        Ok(new_state)
+        if changed {
+            WireUpdateResult::Changed
+        } else {
+            WireUpdateResult::Unchanged
+        }
     }
 }
 
@@ -386,6 +258,8 @@ pub enum SimulationRunResult {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum AddComponentError {
+    /// The memory limit for components was reached
+    TooManyComponents,
     /// Two or more wires that were expected to did not have the same width
     WireWidthMismatch,
     /// One or more wires had a width incompatible with the component
@@ -401,21 +275,16 @@ pub enum AddComponentError {
 /// The result of adding a component to a simulator
 pub type AddComponentResult = Result<ComponentId, AddComponentError>;
 
-type WireList = wire_id::IdList<Wire>;
-type WireWidthList = wire_id::IdList<LogicWidth>;
-type WireStateList = wire_id::IdList<LogicState>;
-
 /// A digital circuit simulator
 ///
 /// See crate level documentation for a usage example
 #[allow(missing_debug_implementations)]
 pub struct Simulator {
     wires: WireList,
-    wire_widths: WireWidthList,
     wire_states: WireStateList,
 
-    components: component_id::IdList<Component>,
-    component_outputs: Vec<LogicState>,
+    components: ComponentList,
+    output_states: OutputStateList,
 
     wire_update_queue: Vec<WireId>,
     component_update_queue: Vec<ComponentId>,
@@ -426,11 +295,10 @@ impl Simulator {
     fn new() -> Self {
         Self {
             wires: WireList::new(),
-            wire_widths: WireWidthList::new(),
             wire_states: WireStateList::new(),
 
-            components: component_id::IdList::new(),
-            component_outputs: Vec::new(),
+            components: ComponentList::new(),
+            output_states: OutputStateList::new(),
 
             wire_update_queue: Vec::new(),
             component_update_queue: Vec::new(),
@@ -438,33 +306,42 @@ impl Simulator {
     }
 
     /// Gets the width of a wire
-    pub fn get_wire_width(&self, wire: WireId) -> LogicWidth {
-        *self.wire_widths.get(wire).expect("invalid wire ID")
+    pub fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
+        let wire = &self.wires[wire];
+        self.wire_states.get_width(wire.state)
     }
 
     /// Drives a wire to a certain state without needing a component
-    pub fn set_wire_base_drive(&mut self, wire: WireId, drive: LogicState) {
-        let wire = self.wires.get_mut(wire).expect("invalid wire ID");
-        wire.base_drive = drive;
+    ///
+    /// Any unspecified bits will be set to Z
+    pub fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
+        let wire = &self.wires[wire];
+        let drive = self.wire_states.get_drive_mut(wire.state);
+
+        for (dst, src) in drive.iter_mut().zip(new_drive.iter_atoms()) {
+            *dst = src;
+        }
     }
 
     /// Gets the current base drive of a wire
-    pub fn get_wire_base_drive(&self, wire: WireId) -> LogicState {
-        let wire = self.wires.get(wire).expect("invalid wire ID");
-        wire.base_drive
+    pub fn get_wire_drive(&self, wire: WireId) -> LogicState {
+        let wire = &self.wires[wire];
+        let drive = self.wire_states.get_drive(wire.state);
+
+        LogicState(LogicStateRepr::Bits(drive.iter().copied().collect()))
     }
 
     /// Gets the current state of a wire
     pub fn get_wire_state(&self, wire: WireId) -> LogicState {
-        *self.wire_states.get(wire).expect("invalid wire ID")
+        let wire = &self.wires[wire];
+        let state = self.wire_states.get_state(wire.state);
+
+        LogicState(LogicStateRepr::Bits(state.iter().copied().collect()))
     }
 
     /// Gets a components data
     pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
-        self.components
-            .get_mut(component)
-            .expect("invalid component ID")
-            .get_data()
+        self.components[component].get_data()
     }
 }
 
@@ -495,43 +372,29 @@ impl Simulator {
 
         let conflicts = Mutex::new(Vec::new());
 
-        const MIN_CHUNK_SIZE: usize = 100;
-        let num_chunks = num_cpus() * 8;
-        let chunk_size = div_ceil(self.wire_update_queue.len(), num_chunks).max(MIN_CHUNK_SIZE);
-
         let component_update_queue_iter = self
             .wire_update_queue
-            .par_chunks(chunk_size)
-            .flat_map_iter(|chunk| {
-                let mut local_queue = Vec::new();
+            .par_iter()
+            .with_min_len(100)
+            .copied()
+            .flat_map_iter(|wire_id| {
+                let wire = &self.wires[wire_id];
+                let (width, drive, state) = unsafe {
+                    // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
+                    self.wire_states.get_data_unsafe(wire.state)
+                };
 
-                for &wire_id in chunk {
-                    let wire = &self.wires[wire_id];
-                    let width = self.wire_widths[wire_id];
-                    let state = unsafe {
-                        // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                        self.wire_states.get_unsafe(wire_id).unwrap()
-                    };
+                match wire.update(width, drive, state, &self.output_states) {
+                    WireUpdateResult::Unchanged => [].as_slice(),
+                    WireUpdateResult::Changed => wire.driving.as_slice(),
+                    WireUpdateResult::Conflict => {
+                        // Locking here is ok because we are in the error path
+                        let mut conflict_list = conflicts.lock().expect("failed to aquire mutex");
+                        conflict_list.push(wire_id);
 
-                    match wire.update(width, &self.component_outputs) {
-                        Ok(new_state) => {
-                            if !new_state.eq(*state, width) {
-                                *state = new_state;
-
-                                // If the wire's state changed, insert all connected components into the next update queue.
-                                local_queue.extend_from_slice(wire.driving.as_slice());
-                            }
-                        }
-                        Err(()) => {
-                            // Locking here is ok because we are in the error path
-                            let mut conflict_list =
-                                conflicts.lock().expect("failed to aquire mutex");
-                            conflict_list.push(wire_id);
-                        }
+                        [].as_slice()
                     }
                 }
-
-                local_queue
             });
 
         self.component_update_queue
@@ -543,7 +406,9 @@ impl Simulator {
             .into_boxed_slice();
 
         if !conflicts.is_empty() {
-            SimulationStepResult::Err(SimulationErrors { conflicts })
+            SimulationStepResult::Err(SimulationErrors {
+                conflicts: Vec::new().into_boxed_slice(),
+            })
         } else if self.component_update_queue.is_empty() {
             SimulationStepResult::Unchanged
         } else {
@@ -561,45 +426,26 @@ impl Simulator {
 
         self.wire_update_queue.clear();
 
-        // Ugly hack to make a pointer `Sync`
-        #[derive(Clone, Copy)]
-        #[repr(transparent)]
-        struct SyncPtr<T> {
-            ptr: *mut T,
-        }
-        unsafe impl<T> Sync for SyncPtr<T> {}
-
-        let component_outputs = SyncPtr {
-            ptr: self.component_outputs.as_mut_ptr(),
-        };
-
         let wire_update_queue_iter = self
             .component_update_queue
             .par_iter()
             .with_min_len(100)
             .copied()
             .flat_map_iter(|component_id| {
-                let component_outputs = component_outputs;
-
                 let component = unsafe {
                     // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                    self.components.get_unsafe(component_id).unwrap()
+                    self.components.get_unsafe(component_id)
                 };
 
-                let output_offset = component.output_offset();
-                let output_count = component.output_count();
-                let outputs = unsafe {
-                    // SAFETY:
-                    //   - `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                    //   - each ID has a unique range associated with it
-                    std::slice::from_raw_parts_mut(
-                        component_outputs.ptr.add(output_offset),
-                        output_count,
-                    )
+                let (output_base, output_atom_count) = component.output_range();
+                let output_states = unsafe {
+                    // SAFETY: since the component is unique, so are the outputs
+                    self.output_states
+                        .get_slice_unsafe(output_base, output_atom_count)
                 };
 
                 // `Component::update` returns all the wires that need to be inserted into the next update queue.
-                component.update(&self.wire_widths, &self.wire_states, outputs)
+                component.update(&self.wire_states, output_states)
             });
 
         self.wire_update_queue.par_extend(wire_update_queue_iter);
@@ -613,13 +459,8 @@ impl Simulator {
 
     /// Resets the simulation
     pub fn reset(&mut self) {
-        for state in self.wire_states.iter_mut() {
-            *state = LogicState::HIGH_Z;
-        }
-
-        for output in self.component_outputs.iter_mut() {
-            *output = LogicState::HIGH_Z;
-        }
+        self.wire_states.clear_states();
+        self.output_states.clear_states();
 
         for component in self.components.iter_mut() {
             component.reset();
@@ -687,21 +528,26 @@ macro_rules! def_add_binary_gate {
             input_b: WireId,
             output: WireId,
         ) -> AddComponentResult {
-            self.check_wire_widths_match(&[input_a, input_b, output])?;
+            let width = self.check_wire_widths_match(&[input_a, input_b, output])?;
 
+            let output_state = self
+                .sim
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire_a = &self.sim.wires[input_a];
+            let wire_b = &self.sim.wires[input_b];
             let gate = SmallComponent::$gate {
-                input_a,
-                input_b,
+                input_a: wire_a.state,
+                input_b: wire_b.state,
                 output,
             };
-            let (output_offset, id) = self.add_small_component(gate);
+            let id = self.add_small_component(gate, &[output_state])?;
 
-            let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
-            input_wire_a.add_driving(id);
-            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
-            input_wire_b.add_driving(id);
-            let output_wire = self.sim.wires.get_mut(output).unwrap();
-            output_wire.drivers.push(output_offset);
+            self.mark_driving(input_a, id);
+            self.mark_driving(input_b, id);
+            self.mark_driver(output, output_state);
 
             Ok(id)
         }
@@ -712,15 +558,23 @@ macro_rules! def_add_unary_gate {
     ($(#[$attr:meta])* $name:ident, $gate:ident) => {
         $(#[$attr])*
         pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-            self.check_wire_widths_match(&[input, output])?;
+            let width = self.check_wire_widths_match(&[input, output])?;
 
-            let gate = SmallComponent::$gate { input, output };
-            let (output_offset, id) = self.add_small_component(gate);
+            let output_state = self
+                .sim
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
 
-            let input_wire = self.sim.wires.get_mut(input).unwrap();
-            input_wire.add_driving(id);
-            let output_wire = self.sim.wires.get_mut(output).unwrap();
-            output_wire.drivers.push(output_offset);
+            let wire = &self.sim.wires[input];
+            let gate = SmallComponent::$gate {
+                input: wire.state,
+                output,
+            };
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input, id);
+            self.mark_driver(output, output_state);
 
             Ok(id)
         }
@@ -730,37 +584,42 @@ macro_rules! def_add_unary_gate {
 macro_rules! def_add_wide_gate {
     ($(#[$attr:meta])* $name:ident, $gate:ident, $wide_gate:ident) => {
         $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            inputs: &[WireId],
-            output: WireId,
-        ) -> AddComponentResult {
+        pub fn $name(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
             if inputs.len() < 2 {
                 return Err(AddComponentError::TooFewInputs);
             }
 
-            self.check_wire_widths_match(inputs)?;
+            let width = self.check_wire_widths_match(inputs)?;
             self.check_wire_widths_match(&[inputs[0], output])?;
 
-            let (output_offset, id) = if inputs.len() == 2 {
-                // Small gate optimization
+            let output_state = self
+                .sim
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let id = if inputs.len() == 2 {
+                let wire_a = &self.sim.wires[inputs[0]];
+                let wire_b = &self.sim.wires[inputs[1]];
                 let gate = SmallComponent::$gate {
-                    input_a: inputs[0],
-                    input_b: inputs[1],
+                    input_a: wire_a.state,
+                    input_b: wire_b.state,
                     output,
                 };
-                self.add_small_component(gate)
+                self.add_small_component(gate, &[output_state])
             } else {
-                let gate = $wide_gate::new(inputs, output);
-                self.add_large_component(gate)
-            };
+                let inputs: SmallVec<_> = inputs
+                    .iter()
+                    .map(|&input| self.sim.wires[input].state)
+                    .collect();
+                let gate = $wide_gate::new(inputs, output_state, output);
+                self.add_large_component(gate, &[output_state])
+            }?;
 
             for &input in inputs {
-                let wire = self.sim.wires.get_mut(input).unwrap();
-                wire.add_driving(id);
+                self.mark_driving(input, id);
             }
-            let output_wire = self.sim.wires.get_mut(output).unwrap();
-            output_wire.drivers.push(output_offset);
+            self.mark_driver(output, output_state);
 
             Ok(id)
         }
@@ -771,18 +630,23 @@ macro_rules! def_add_horizontal_gate {
     ($(#[$attr:meta])* $name:ident, $gate:ident) => {
         $(#[$attr])*
         pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-            let output_wire_width = self.sim.wire_widths.get(output).expect("invalid wire ID");
-            if *output_wire_width != 1 {
-                return Err(AddComponentError::WireWidthIncompatible);
-            }
+            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
 
-            let gate = SmallComponent::$gate { input, output };
-            let (output_offset, id) = self.add_small_component(gate);
+            let output_state = self
+                .sim
+                .output_states
+                .push(NonZeroU8::MIN)
+                .ok_or(AddComponentError::TooManyComponents)?;
 
-            let input_wire = self.sim.wires.get_mut(input).unwrap();
-            input_wire.add_driving(id);
-            let output_wire = self.sim.wires.get_mut(output).unwrap();
-            output_wire.drivers.push(output_offset);
+            let wire = &self.sim.wires[input];
+            let gate = SmallComponent::$gate {
+                input: wire.state,
+                output,
+            };
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input, id);
+            self.mark_driver(output, output_state);
 
             Ok(id)
         }
@@ -798,30 +662,59 @@ macro_rules! def_add_comparator {
             input_b: WireId,
             output: WireId,
         ) -> AddComponentResult {
-            self.check_wire_widths_match(&[input_a, input_b])?;
+            let width = self.check_wire_widths_match(&[input_a, input_b])?;
+            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
 
-            let output_wire_width = self.sim.wire_widths.get(output).expect("invalid wire ID");
-            if *output_wire_width != 1 {
-                return Err(AddComponentError::WireWidthIncompatible);
-            }
+            let output_state = self
+                .sim
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
 
+            let wire_a = &self.sim.wires[input_a];
+            let wire_b = &self.sim.wires[input_b];
             let gate = SmallComponent::$gate {
-                input_a,
-                input_b,
+                input_a: wire_a.state,
+                input_b: wire_b.state,
                 output,
             };
-            let (output_offset, id) = self.add_small_component(gate);
+            let id = self.add_small_component(gate, &[output_state])?;
 
-            let input_wire_a = self.sim.wires.get_mut(input_a).unwrap();
-            input_wire_a.add_driving(id);
-            let input_wire_b = self.sim.wires.get_mut(input_b).unwrap();
-            input_wire_b.add_driving(id);
-            let output_wire = self.sim.wires.get_mut(output).unwrap();
-            output_wire.drivers.push(output_offset);
+            self.mark_driving(input_a, id);
+            self.mark_driving(input_b, id);
+            self.mark_driver(output, output_state);
 
             Ok(id)
         }
     };
+}
+
+/// Defines the polarity of a clock signal
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ClockPolarity {
+    /// The clock will trigger on a rising edge
+    #[default]
+    Rising,
+    /// The clock will trigger on a falling edge
+    Falling,
+}
+
+impl ClockPolarity {
+    #[inline]
+    const fn active_state(self) -> bool {
+        match self {
+            ClockPolarity::Rising => true,
+            ClockPolarity::Falling => false,
+        }
+    }
+
+    #[inline]
+    const fn inactive_state(self) -> bool {
+        match self {
+            ClockPolarity::Rising => false,
+            ClockPolarity::Falling => true,
+        }
+    }
 }
 
 /// Builds a simulator
@@ -843,31 +736,30 @@ impl Default for SimulatorBuilder {
 
 impl SimulatorBuilder {
     /// Adds a wire to the simulation
-    pub fn add_wire(&mut self, width: LogicWidth) -> WireId {
-        let wire_id = self.sim.wires.insert(Wire::new());
-        let width_id = self.sim.wire_widths.insert(width);
-        let state_id = self.sim.wire_states.insert(LogicState::HIGH_Z);
-        debug_assert_eq!(wire_id, width_id);
-        debug_assert_eq!(wire_id, state_id);
-        wire_id
+    ///
+    /// Returns `None` if the memory limit for wires has been reached
+    pub fn add_wire(&mut self, width: NonZeroU8) -> Option<WireId> {
+        let state_id = self.sim.wire_states.push(width)?;
+        let wire = Wire::new(state_id);
+        self.sim.wires.push(wire)
     }
 
     /// Gets the width of a wire
     #[inline]
-    pub fn get_wire_width(&self, wire: WireId) -> LogicWidth {
+    pub fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
         self.sim.get_wire_width(wire)
     }
 
     /// Drives a wire to a certain state without needing a component
     #[inline]
-    pub fn set_wire_base_drive(&mut self, wire: WireId, drive: LogicState) {
-        self.sim.set_wire_base_drive(wire, drive)
+    pub fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
+        self.sim.set_wire_drive(wire, new_drive)
     }
 
-    /// Gets the current base drive of a wire
+    /// Gets the current drive of a wire
     #[inline]
-    pub fn get_wire_base_drive(&self, wire: WireId) -> LogicState {
-        self.sim.get_wire_base_drive(wire)
+    pub fn get_wire_drive(&self, wire: WireId) -> LogicState {
+        self.sim.get_wire_drive(wire)
     }
 
     /// Gets a components data
@@ -876,45 +768,98 @@ impl SimulatorBuilder {
         self.sim.get_component_data(component)
     }
 
-    fn add_small_component(&mut self, component: SmallComponent) -> (usize, ComponentId) {
-        let output_offset = self.sim.component_outputs.len();
-        self.sim.component_outputs.push(LogicState::HIGH_Z);
+    #[inline]
+    fn mark_driving(&mut self, wire: WireId, component: ComponentId) {
+        let wire = &mut self.sim.wires[wire];
+        wire.add_driving(component);
+    }
 
-        (
-            output_offset,
-            self.sim
-                .components
-                .insert(Component::new_small(component, output_offset)),
-        )
+    #[inline]
+    fn mark_driver(&mut self, wire: WireId, output_state: OutputStateId) {
+        let wire = &mut self.sim.wires[wire];
+        wire.drivers.push(output_state);
+    }
+
+    fn check_wire_widths_match(&self, wires: &[WireId]) -> Result<NonZeroU8, AddComponentError> {
+        let mut iter = wires.iter().copied();
+
+        if let Some(first) = iter.next() {
+            let first_width = self.get_wire_width(first);
+
+            for wire in iter {
+                let width = self.get_wire_width(wire);
+                if width != first_width {
+                    return Err(AddComponentError::WireWidthMismatch);
+                }
+            }
+
+            Ok(first_width)
+        } else {
+            Err(AddComponentError::TooFewInputs)
+        }
+    }
+
+    fn check_wire_width_eq(&self, wire: WireId, width: NonZeroU8) -> Result<(), AddComponentError> {
+        let wire_width = self.get_wire_width(wire);
+        if wire_width != width {
+            Err(AddComponentError::WireWidthIncompatible)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn add_small_component(
+        &mut self,
+        component: SmallComponent,
+        outputs: &[OutputStateId],
+    ) -> Result<ComponentId, AddComponentError> {
+        let output_atom_count = outputs
+            .iter()
+            .copied()
+            .map(|id| self.sim.output_states.get_width(id))
+            .map(|width| width.safe_div_ceil(Atom::BITS))
+            .map(NonZeroU8::get)
+            .map(u16::from)
+            .try_fold(0, u16::checked_add)
+            .expect("combined output width too large");
+
+        let component = Component::new_small(
+            component,
+            outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
+            output_atom_count,
+        );
+
+        self.sim
+            .components
+            .push(component)
+            .ok_or(AddComponentError::TooManyComponents)
     }
 
     fn add_large_component<C: LargeComponent + 'static>(
         &mut self,
         component: C,
-    ) -> (usize, ComponentId) {
-        let output_offset = self.sim.component_outputs.len();
-        for _ in 0..component.output_count() {
-            self.sim.component_outputs.push(LogicState::HIGH_Z);
-        }
+        outputs: &[OutputStateId],
+    ) -> Result<ComponentId, AddComponentError> {
+        let output_atom_count = outputs
+            .iter()
+            .copied()
+            .map(|id| self.sim.output_states.get_width(id))
+            .map(|width| width.safe_div_ceil(Atom::BITS))
+            .map(NonZeroU8::get)
+            .map(u16::from)
+            .try_fold(0, u16::checked_add)
+            .expect("combined output width too large");
 
-        (
-            output_offset,
-            self.sim
-                .components
-                .insert(Component::new_large(component, output_offset)),
-        )
-    }
+        let component = Component::new_large(
+            component,
+            outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
+            output_atom_count,
+        );
 
-    fn check_wire_widths_match(&self, wires: &[WireId]) -> Result<(), AddComponentError> {
-        if wires.windows(2).all(|w| {
-            let w0 = self.sim.wire_widths.get(w[0]).expect("invalid wire ID");
-            let w1 = self.sim.wire_widths.get(w[1]).expect("invalid wire ID");
-            *w0 == *w1
-        }) {
-            Ok(())
-        } else {
-            Err(AddComponentError::WireWidthMismatch)
-        }
+        self.sim
+            .components
+            .push(component)
+            .ok_or(AddComponentError::TooManyComponents)
     }
 
     def_add_wide_gate!(
@@ -959,6 +904,54 @@ impl SimulatorBuilder {
         WideXnorGate
     );
 
+    def_add_binary_gate!(
+        /// Adds an `ADD` component to the simulation
+        add_add,
+        Add
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `SUB` component to the simulation
+        add_sub,
+        Sub
+    );
+
+    //def_add_binary_gate!(
+    //    /// Adds a `MUL` component to the simulation
+    //    add_mul,
+    //    Mul
+    //);
+    //
+    //def_add_binary_gate!(
+    //    /// Adds a `DIV` component to the simulation
+    //    add_div,
+    //    Div
+    //);
+    //
+    //def_add_binary_gate!(
+    //    /// Adds a `REM` component to the simulation
+    //    add_rem,
+    //    Rem
+    //);
+    //
+    //def_add_binary_gate!(
+    //    /// Adds a `Left Shift` component to the simulation
+    //    add_left_shift,
+    //    LeftShift
+    //);
+    //
+    //def_add_binary_gate!(
+    //    /// Adds a `Logical Right Shift` component to the simulation
+    //    add_logical_right_shift,
+    //    LogicalRightShift
+    //);
+    //
+    //def_add_binary_gate!(
+    //    /// Adds an `Arithmetic Right Shift` component to the simulation
+    //    add_arithmetic_right_shift,
+    //    ArithmeticRightShift
+    //);
+
     def_add_unary_gate!(
         /// Adds a `NOT Gate` component to the simulation
         add_not_gate,
@@ -972,105 +965,104 @@ impl SimulatorBuilder {
         enable: WireId,
         output: WireId,
     ) -> AddComponentResult {
-        self.check_wire_widths_match(&[input, output])?;
+        let width = self.check_wire_widths_match(&[input, output])?;
+        self.check_wire_width_eq(enable, NonZeroU8::MIN)?;
 
-        let enable_wire_width = self.sim.wire_widths.get(enable).expect("invalid wire ID");
-        if *enable_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
+        let output_state = self
+            .sim
+            .output_states
+            .push(width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let buffer = SmallComponent::Buffer {
-            input,
-            enable,
+        let wire = &self.sim.wires[input];
+        let wire_en = &self.sim.wires[enable];
+        let gate = SmallComponent::Buffer {
+            input: wire.state,
+            enable: wire_en.state,
             output,
         };
-        let (output_offset, id) = self.add_small_component(buffer);
+        let id = self.add_small_component(gate, &[output_state])?;
 
-        let input_wire = self.sim.wires.get_mut(input).unwrap();
-        input_wire.add_driving(id);
-        let enable_wire = self.sim.wires.get_mut(enable).unwrap();
-        enable_wire.add_driving(id);
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
+        self.mark_driving(input, id);
+        self.mark_driving(enable, id);
+        self.mark_driver(output, output_state);
 
         Ok(id)
     }
 
-    /// Adds a `Slice` component to the simulation
-    pub fn add_slice(
-        &mut self,
-        input: WireId,
-        offset: LogicOffset,
-        output: WireId,
-    ) -> AddComponentResult {
-        let input_wire_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
-        let output_wire_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
-
-        if output_wire_width > input_wire_width {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        if (offset.get() + output_wire_width.get()) > input_wire_width.get() {
-            return Err(AddComponentError::OffsetOutOfRange);
-        }
-
-        let slice = SmallComponent::Slice {
-            input,
-            offset,
-            output,
-        };
-        let (output_offset, id) = self.add_small_component(slice);
-
-        let input_wire = self.sim.wires.get_mut(input).unwrap();
-        input_wire.add_driving(id);
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
-
-        Ok(id)
-    }
-
-    /// Adds a `Merge` component to the simulation
-    pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
-        if inputs.len() < 2 {
-            return Err(AddComponentError::TooFewInputs);
-        }
-
-        let input_wire_widths: Vec<_> = inputs
-            .iter()
-            .map(|&input| *self.sim.wire_widths.get(input).expect("invalid wire ID"))
-            .collect();
-        let output_wire_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
-
-        let total_input_width = input_wire_widths.iter().map(|width| width.get()).sum();
-        let Some(total_input_width) = LogicWidth::new(total_input_width) else {
-            return Err(AddComponentError::WireWidthIncompatible);
-        };
-        if total_input_width != output_wire_width {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let (output_offset, id) = if inputs.len() == 2 {
-            // Small gate optimization
-            let merge = SmallComponent::Merge {
-                input_a: inputs[0],
-                input_b: inputs[1],
-                output,
-            };
-            self.add_small_component(merge)
-        } else {
-            let merge = WideMerge::new(inputs, output);
-            self.add_large_component(merge)
-        };
-
-        for &input in inputs {
-            let wire = self.sim.wires.get_mut(input).unwrap();
-            wire.add_driving(id);
-        }
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
-
-        Ok(id)
-    }
+    ///// Adds a `Slice` component to the simulation
+    //pub fn add_slice(
+    //    &mut self,
+    //    input: WireId,
+    //    offset: usize,
+    //    output: WireId,
+    //) -> AddComponentResult {
+    //    let input_wire_width = self.get_wire_width(input);
+    //    let output_wire_width = self.get_wire_width(output);
+    //
+    //    if output_wire_width > input_wire_width {
+    //        return Err(AddComponentError::WireWidthIncompatible);
+    //    }
+    //
+    //    if (offset + output_wire_width.get()) > input_wire_width.get() {
+    //        return Err(AddComponentError::OffsetOutOfRange);
+    //    }
+    //
+    //    let slice = SmallComponent::Slice {
+    //        input,
+    //        offset,
+    //        output,
+    //    };
+    //    let (output_offset, id) = self.add_small_component(slice);
+    //
+    //    self.mark_driving(input, id);
+    //    self.mark_driver(output, output_offset);
+    //
+    //    Ok(id)
+    //}
+    //
+    ///// Adds a `Merge` component to the simulation
+    //pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
+    //    if inputs.len() < 2 {
+    //        return Err(AddComponentError::TooFewInputs);
+    //    }
+    //
+    //    let input_wire_widths: Vec<_> = inputs
+    //        .iter()
+    //        .map(|&input| self.get_wire_width(input))
+    //        .collect();
+    //    let output_wire_width = self.get_wire_width(output);
+    //
+    //    let total_input_width = input_wire_widths
+    //        .iter()
+    //        .copied()
+    //        .map(NonZeroU8::get)
+    //        .try_fold(0, u8::checked_add)
+    //        .ok_or(AddComponentError::WireWidthIncompatible)?;
+    //    if total_input_width != output_wire_width.get() {
+    //        return Err(AddComponentError::WireWidthIncompatible);
+    //    }
+    //
+    //    let (output_offset, id) = if inputs.len() == 2 {
+    //        // Small gate optimization
+    //        let merge = SmallComponent::Merge {
+    //            input_a: inputs[0],
+    //            input_b: inputs[1],
+    //            output,
+    //        };
+    //        self.add_small_component(merge)
+    //    } else {
+    //        let merge = WideMerge::new(inputs, output);
+    //        self.add_large_component(merge)
+    //    };
+    //
+    //    for &input in inputs {
+    //        self.mark_driving(input, id);
+    //    }
+    //    self.mark_driver(output, output_offset);
+    //
+    //    Ok(id)
+    //}
 
     /// Adds an `Adder` component to the simulation
     pub fn add_adder(
@@ -1081,63 +1073,65 @@ impl SimulatorBuilder {
         output: WireId,
         carry_out: WireId,
     ) -> AddComponentResult {
-        self.check_wire_widths_match(&[input_a, input_b, output])?;
+        let width = self.check_wire_widths_match(&[input_a, input_b, output])?;
+        self.check_wire_width_eq(carry_in, NonZeroU8::MIN)?;
+        self.check_wire_width_eq(carry_out, NonZeroU8::MIN)?;
 
-        let carry_in_wire_width = self.sim.wire_widths.get(carry_in).expect("invalid wire ID");
-        if *carry_in_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let carry_out_wire_width = self
+        let output_state = self
             .sim
-            .wire_widths
-            .get(carry_out)
-            .expect("invalid wire ID");
-        if *carry_out_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
+            .output_states
+            .push(width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let adder = Adder::new(input_a, input_b, carry_in, output, carry_out);
-        let (output_offset, id) = self.add_large_component(adder);
+        let cout_state = self
+            .sim
+            .output_states
+            .push(NonZeroU8::MIN)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let input_a_wire = self.sim.wires.get_mut(input_a).unwrap();
-        input_a_wire.add_driving(id);
-        let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
-        input_b_wire.add_driving(id);
-        let carry_in_wire = self.sim.wires.get_mut(carry_in).unwrap();
-        carry_in_wire.add_driving(id);
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
-        let carry_out_wire = self.sim.wires.get_mut(carry_out).unwrap();
-        carry_out_wire.drivers.push(output_offset + 1);
+        let wire_a = &self.sim.wires[input_a];
+        let wire_b = &self.sim.wires[input_b];
+        let wire_cin = &self.sim.wires[carry_in];
+        let gate = Adder::new(
+            wire_a.state,
+            wire_b.state,
+            wire_cin.state,
+            output_state,
+            output,
+            cout_state,
+            carry_out,
+        );
+        let id = self.add_large_component(gate, &[output_state, cout_state])?;
 
-        Ok(id)
-    }
-
-    /// Adds a `Multiplier` component to the simulation
-    pub fn add_multiplier(
-        &mut self,
-        input_a: WireId,
-        input_b: WireId,
-        output_low: WireId,
-        output_high: WireId,
-    ) -> AddComponentResult {
-        self.check_wire_widths_match(&[input_a, input_b, output_low, output_high])?;
-
-        let multiplier = Multiplier::new(input_a, input_b, output_low, output_high);
-        let (output_offset, id) = self.add_large_component(multiplier);
-
-        let input_a_wire = self.sim.wires.get_mut(input_a).unwrap();
-        input_a_wire.add_driving(id);
-        let input_b_wire = self.sim.wires.get_mut(input_b).unwrap();
-        input_b_wire.add_driving(id);
-        let output_low_wire = self.sim.wires.get_mut(output_low).unwrap();
-        output_low_wire.drivers.push(output_offset);
-        let output_high_wire = self.sim.wires.get_mut(output_high).unwrap();
-        output_high_wire.drivers.push(output_offset + 1);
+        self.mark_driving(input_a, id);
+        self.mark_driving(input_b, id);
+        self.mark_driving(carry_in, id);
+        self.mark_driver(output, output_state);
+        self.mark_driver(carry_out, cout_state);
 
         Ok(id)
     }
+
+    ///// Adds a `Multiplier` component to the simulation
+    //pub fn add_multiplier(
+    //    &mut self,
+    //    input_a: WireId,
+    //    input_b: WireId,
+    //    output_low: WireId,
+    //    output_high: WireId,
+    //) -> AddComponentResult {
+    //    self.check_wire_widths_match(&[input_a, input_b, output_low, output_high])?;
+    //
+    //    let multiplier = Multiplier::new(input_a, input_b, output_low, output_high);
+    //    let (output_offset, id) = self.add_large_component(multiplier);
+    //
+    //    self.mark_driving(input_a, id);
+    //    self.mark_driving(input_b, id);
+    //    self.mark_driver(output_low, output_offset);
+    //    self.mark_driver(output_high, output_offset + output_low.count().get());
+    //
+    //    Ok(id)
+    //}
 
     /// Adds a `Multiplexer` component to the simulation
     pub fn add_multiplexer(
@@ -1146,61 +1140,75 @@ impl SimulatorBuilder {
         select: WireId,
         output: WireId,
     ) -> AddComponentResult {
-        let select_wire_width = self.sim.wire_widths.get(select).expect("invalid wire ID");
-        let expected_input_count = 1u64 << select_wire_width.get();
-        if (inputs.len() as u64) != expected_input_count {
+        if !inputs.len().is_power_of_two() {
             return Err(AddComponentError::InvalidInputCount);
         }
 
-        self.check_wire_widths_match(inputs)?;
+        let expected_select_bits = inputs.len().ilog2();
+        if expected_select_bits > (Atom::BITS.get() as u32) {
+            return Err(AddComponentError::InvalidInputCount);
+        }
+
+        let select_width = self.get_wire_width(select);
+        if (select_width.get() as u32) != expected_select_bits {
+            return Err(AddComponentError::InvalidInputCount);
+        }
+
+        let width = self.check_wire_widths_match(inputs)?;
         self.check_wire_widths_match(&[inputs[0], output])?;
 
-        let mux = Multiplexer::new(inputs, select, output);
-        let (output_offset, id) = self.add_large_component(mux);
+        let output_state = self
+            .sim
+            .output_states
+            .push(width)
+            .ok_or(AddComponentError::TooManyComponents)?;
+
+        let wires: SmallVec<_> = inputs
+            .iter()
+            .map(|&wire| self.sim.wires[wire].state)
+            .collect();
+        let wire_sel = &self.sim.wires[select];
+        let mux = Multiplexer::new(wires, wire_sel.state, output_state, output);
+        let id = self.add_large_component(mux, &[output_state])?;
 
         for &input in inputs {
-            let wire = self.sim.wires.get_mut(input).unwrap();
-            wire.add_driving(id);
+            self.mark_driving(input, id);
         }
-        let select_wire = self.sim.wires.get_mut(select).unwrap();
-        select_wire.add_driving(id);
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
+        self.mark_driving(select, id);
+        self.mark_driver(output, output_state);
 
         Ok(id)
     }
 
-    /// Adds a `Priority Decoder` component to the simulation
-    pub fn add_priority_decoder(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> AddComponentResult {
-        for &input in inputs {
-            let input_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
-            if input_width != LogicWidth::MIN {
-                return Err(AddComponentError::WireWidthIncompatible);
-            }
-        }
-
-        let output_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
-        let expected_width = usize::BITS - inputs.len().leading_zeros();
-        if (output_width.get() as u32) != expected_width {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let decoder = PriorityDecoder::new(inputs, output);
-        let (output_offset, id) = self.add_large_component(decoder);
-
-        for &input in inputs {
-            let wire = self.sim.wires.get_mut(input).unwrap();
-            wire.add_driving(id);
-        }
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
-
-        Ok(id)
-    }
+    ///// Adds a `Priority Decoder` component to the simulation
+    //pub fn add_priority_decoder(
+    //    &mut self,
+    //    inputs: &[WireId],
+    //    output: WireId,
+    //) -> AddComponentResult {
+    //    for &input in inputs {
+    //        let input_width = self.get_wire_width(input);
+    //        if input_width.get() != 1 {
+    //            return Err(AddComponentError::WireWidthIncompatible);
+    //        }
+    //    }
+    //
+    //    let output_width = self.get_wire_width(output);
+    //    let expected_width = (usize::BITS - inputs.len().leading_zeros()) as usize;
+    //    if output_width.get() != expected_width {
+    //        return Err(AddComponentError::WireWidthIncompatible);
+    //    }
+    //
+    //    let decoder = PriorityDecoder::new(inputs, output);
+    //    let (output_offset, id) = self.add_large_component(decoder);
+    //
+    //    for &input in inputs {
+    //        self.mark_driving(input, id);
+    //    }
+    //    self.mark_driver(output, output_offset);
+    //
+    //    Ok(id)
+    //}
 
     /// Adds a `Register` component to the simulation
     pub fn add_register(
@@ -1209,81 +1217,39 @@ impl SimulatorBuilder {
         data_out: WireId,
         enable: WireId,
         clock: WireId,
+        clock_polarity: ClockPolarity,
     ) -> AddComponentResult {
-        self.check_wire_widths_match(&[data_in, data_out])?;
+        let width = self.check_wire_widths_match(&[data_in, data_out])?;
+        self.check_wire_width_eq(enable, NonZeroU8::MIN)?;
+        self.check_wire_width_eq(clock, NonZeroU8::MIN)?;
 
-        let enable_wire_width = self.sim.wire_widths.get(enable).expect("invalid wire ID");
-        if *enable_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
+        let output_state = self
+            .sim
+            .output_states
+            .push(width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let clock_wire_width = self.sim.wire_widths.get(clock).expect("invalid wire ID");
-        if *clock_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
+        let wire_din = &self.sim.wires[data_in];
+        let wire_en = &self.sim.wires[enable];
+        let wire_clk = &self.sim.wires[clock];
+        let register = Register::new(
+            width,
+            wire_din.state,
+            output_state,
+            data_out,
+            wire_en.state,
+            wire_clk.state,
+            clock_polarity,
+        );
+        let id = self.add_large_component(register, &[output_state])?;
 
-        let register = Register::new(data_in, data_out, enable, clock);
-        let (output_offset, id) = self.add_large_component(register);
-
-        let data_in_wire = self.sim.wires.get_mut(data_in).unwrap();
-        data_in_wire.add_driving(id);
-        let enable_wire = self.sim.wires.get_mut(enable).unwrap();
-        enable_wire.add_driving(id);
-        let clock_wire = self.sim.wires.get_mut(clock).unwrap();
-        clock_wire.add_driving(id);
-        let data_out_wire = self.sim.wires.get_mut(data_out).unwrap();
-        data_out_wire.drivers.push(output_offset);
+        self.mark_driving(data_in, id);
+        self.mark_driving(enable, id);
+        self.mark_driving(clock, id);
+        self.mark_driver(data_out, output_state);
 
         Ok(id)
     }
-
-    def_add_binary_gate!(
-        /// Adds an `ADD` component to the simulation
-        add_add,
-        Add
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `SUB` component to the simulation
-        add_sub,
-        Sub
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `MUL` component to the simulation
-        add_mul,
-        Mul
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `DIV` component to the simulation
-        add_div,
-        Div
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `REM` component to the simulation
-        add_rem,
-        Rem
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `Left Shift` component to the simulation
-        add_left_shift,
-        LeftShift
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `Logical Right Shift` component to the simulation
-        add_logical_right_shift,
-        LogicalRightShift
-    );
-
-    def_add_binary_gate!(
-        /// Adds an `Arithmetic Right Shift` component to the simulation
-        add_arithmetic_right_shift,
-        ArithmeticRightShift
-    );
 
     def_add_horizontal_gate!(
         /// Adds a `Horizontal AND Gate` component to the simulation
@@ -1298,6 +1264,12 @@ impl SimulatorBuilder {
     );
 
     def_add_horizontal_gate!(
+        /// Adds a `Horizontal XOR Gate` component to the simulation
+        add_horizontal_xor_gate,
+        HorizontalXor
+    );
+
+    def_add_horizontal_gate!(
         /// Adds a `Horizontal NAND Gate` component to the simulation
         add_horizontal_nand_gate,
         HorizontalNand
@@ -1307,6 +1279,12 @@ impl SimulatorBuilder {
         /// Adds a `Horizontal NOR Gate` component to the simulation
         add_horizontal_nor_gate,
         HorizontalNor
+    );
+
+    def_add_horizontal_gate!(
+        /// Adds a `Horizontal XNOR Gate` component to the simulation
+        add_horizontal_xnor_gate,
+        HorizontalXnor
     );
 
     def_add_comparator!(
@@ -1371,40 +1349,56 @@ impl SimulatorBuilder {
 
     /// Adds a `zero extension` component to the simulation
     pub fn add_zero_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-        let input_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
-        let output_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
+        let input_width = self.get_wire_width(input);
+        let output_width = self.get_wire_width(output);
 
         if output_width < input_width {
             return Err(AddComponentError::WireWidthIncompatible);
         }
 
-        let extend = SmallComponent::ZeroExtend { input, output };
-        let (output_offset, id) = self.add_small_component(extend);
+        let output_state = self
+            .sim
+            .output_states
+            .push(output_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let input_wire = self.sim.wires.get_mut(input).unwrap();
-        input_wire.add_driving(id);
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
+        let wire = &self.sim.wires[input];
+        let extend = SmallComponent::ZeroExtend {
+            input: wire.state,
+            output,
+        };
+        let id = self.add_small_component(extend, &[output_state])?;
+
+        self.mark_driving(input, id);
+        self.mark_driver(output, output_state);
 
         Ok(id)
     }
 
     /// Adds a `sign extension` component to the simulation
     pub fn add_sign_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-        let input_width = *self.sim.wire_widths.get(input).expect("invalid wire ID");
-        let output_width = *self.sim.wire_widths.get(output).expect("invalid wire ID");
+        let input_width = self.get_wire_width(input);
+        let output_width = self.get_wire_width(output);
 
         if output_width < input_width {
             return Err(AddComponentError::WireWidthIncompatible);
         }
 
-        let extend = SmallComponent::SignExtend { input, output };
-        let (output_offset, id) = self.add_small_component(extend);
+        let output_state = self
+            .sim
+            .output_states
+            .push(output_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let input_wire = self.sim.wires.get_mut(input).unwrap();
-        input_wire.add_driving(id);
-        let output_wire = self.sim.wires.get_mut(output).unwrap();
-        output_wire.drivers.push(output_offset);
+        let wire = &self.sim.wires[input];
+        let extend = SmallComponent::SignExtend {
+            input: wire.state,
+            output,
+        };
+        let id = self.add_small_component(extend, &[output_state])?;
+
+        self.mark_driving(input, id);
+        self.mark_driver(output, output_state);
 
         Ok(id)
     }
@@ -1418,76 +1412,86 @@ impl SimulatorBuilder {
         data_out: WireId,
         write: WireId,
         clock: WireId,
+        clock_polarity: ClockPolarity,
     ) -> AddComponentResult {
-        self.check_wire_widths_match(&[write_addr, read_addr])?;
-        self.check_wire_widths_match(&[data_in, data_out])?;
+        let addr_width = self.check_wire_widths_match(&[write_addr, read_addr])?;
+        let data_width = self.check_wire_widths_match(&[data_in, data_out])?;
+        self.check_wire_width_eq(write, NonZeroU8::MIN)?;
+        self.check_wire_width_eq(clock, NonZeroU8::MIN)?;
 
-        let write_wire_width = self.sim.wire_widths.get(write).expect("invalid wire ID");
-        if *write_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let clock_wire_width = self.sim.wire_widths.get(clock).expect("invalid wire ID");
-        if *clock_wire_width != 1 {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let addr_width = *self
+        let output_state = self
             .sim
-            .wire_widths
-            .get(write_addr)
-            .expect("invalid wire ID");
-        let data_width = *self.sim.wire_widths.get(data_in).expect("invalid wire ID");
+            .output_states
+            .push(data_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
+        let wire_waddr = &self.sim.wires[write_addr];
+        let wire_din = &self.sim.wires[data_in];
+        let wire_raddr = &self.sim.wires[read_addr];
+        let wire_w = &self.sim.wires[write];
+        let wire_clk = &self.sim.wires[clock];
         let ram = Ram::new(
-            write_addr, data_in, read_addr, data_out, write, clock, addr_width, data_width,
+            wire_waddr.state,
+            wire_din.state,
+            wire_raddr.state,
+            output_state,
+            data_out,
+            wire_w.state,
+            wire_clk.state,
+            clock_polarity,
+            addr_width,
+            data_width,
         );
-        let (output_offset, id) = self.add_large_component(ram);
+        let id = self.add_large_component(ram, &[output_state])?;
 
-        let write_addr_wire = self.sim.wires.get_mut(write_addr).unwrap();
-        write_addr_wire.add_driving(id);
-        let read_addr_wire = self.sim.wires.get_mut(read_addr).unwrap();
-        read_addr_wire.add_driving(id);
-        let data_in_wire = self.sim.wires.get_mut(data_in).unwrap();
-        data_in_wire.add_driving(id);
-        let write_wire = self.sim.wires.get_mut(write).unwrap();
-        write_wire.add_driving(id);
-        let clock_wire = self.sim.wires.get_mut(clock).unwrap();
-        clock_wire.add_driving(id);
-        let data_out_wire = self.sim.wires.get_mut(data_out).unwrap();
-        data_out_wire.drivers.push(output_offset);
+        self.mark_driving(write_addr, id);
+        self.mark_driving(read_addr, id);
+        self.mark_driving(data_in, id);
+        self.mark_driving(write, id);
+        self.mark_driving(clock, id);
+        self.mark_driver(data_out, output_state);
 
         Ok(id)
     }
 
     /// Adds a `ROM` component to the simulation
     pub fn add_rom(&mut self, addr: WireId, data: WireId) -> AddComponentResult {
-        let addr_width = *self.sim.wire_widths.get(addr).expect("invalid wire ID");
-        let data_width = *self.sim.wire_widths.get(data).expect("invalid wire ID");
+        let addr_width = self.get_wire_width(addr);
+        let data_width = self.get_wire_width(data);
 
-        let rom = Rom::new(addr, data, addr_width, data_width);
-        let (output_offset, id) = self.add_large_component(rom);
+        let output_state = self
+            .sim
+            .output_states
+            .push(data_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
 
-        let read_addr_wire = self.sim.wires.get_mut(addr).unwrap();
-        read_addr_wire.add_driving(id);
-        let data_out_wire = self.sim.wires.get_mut(data).unwrap();
-        data_out_wire.drivers.push(output_offset);
+        let wire_addr = &self.sim.wires[addr];
+        let rom = Rom::new(wire_addr.state, output_state, data, addr_width, data_width);
+        let id = self.add_large_component(rom, &[output_state])?;
+
+        self.mark_driving(addr, id);
+        self.mark_driver(data, output_state);
 
         Ok(id)
     }
 
-    /// Imports a module into this circuit
-    #[inline]
-    pub fn import_module<T: import::ModuleImporter>(
-        &mut self,
-        importer: &T,
-    ) -> Result<import::ModuleConnections, T::Error> {
-        importer.import_into(self)
-    }
+    ///// Imports a module into this circuit
+    //#[inline]
+    //pub fn import_module<T: import::ModuleImporter>(
+    //    &mut self,
+    //    importer: &T,
+    //) -> Result<import::ModuleConnections, T::Error> {
+    //    importer.import_into(self)
+    //}
 
     /// Creates the simulator
-    #[inline]
-    pub fn build(self) -> Simulator {
+    pub fn build(mut self) -> Simulator {
+        self.sim.wires.shrink_to_fit();
+        self.sim.wire_states.shrink_to_fit();
+
+        self.sim.components.shrink_to_fit();
+        self.sim.output_states.shrink_to_fit();
+
         self.sim
     }
 }

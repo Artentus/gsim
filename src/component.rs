@@ -1,431 +1,568 @@
+#![allow(missing_debug_implementations)]
+
+mod ops;
+use ops::*;
+
 use crate::*;
+use itertools::izip;
 use smallvec::smallvec;
 
-#[derive(Debug)]
 pub(crate) enum SmallComponent {
     AndGate {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     OrGate {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     XorGate {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     NandGate {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     NorGate {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     XnorGate {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     NotGate {
-        input: WireId,
+        input: WireStateId,
         output: WireId,
     },
     Buffer {
-        input: WireId,
-        enable: WireId,
+        input: WireStateId,
+        enable: WireStateId,
         output: WireId,
     },
     Slice {
-        input: WireId,
-        offset: LogicOffset,
+        input: WireStateId,
+        offset: u8,
         output: WireId,
     },
     Merge {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     Add {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     Sub {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     Mul {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     Div {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     Rem {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     LeftShift {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     LogicalRightShift {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     ArithmeticRightShift {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     HorizontalAnd {
-        input: WireId,
+        input: WireStateId,
         output: WireId,
     },
     HorizontalOr {
-        input: WireId,
+        input: WireStateId,
+        output: WireId,
+    },
+    HorizontalXor {
+        input: WireStateId,
         output: WireId,
     },
     HorizontalNand {
-        input: WireId,
+        input: WireStateId,
         output: WireId,
     },
     HorizontalNor {
-        input: WireId,
+        input: WireStateId,
+        output: WireId,
+    },
+    HorizontalXnor {
+        input: WireStateId,
         output: WireId,
     },
     CompareEqual {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareNotEqual {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareLessThan {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareGreaterThan {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareLessThanOrEqual {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareGreaterThanOrEqual {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareLessThanSigned {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareGreaterThanSigned {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareLessThanOrEqualSigned {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     CompareGreaterThanOrEqualSigned {
-        input_a: WireId,
-        input_b: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
         output: WireId,
     },
     ZeroExtend {
-        input: WireId,
+        input: WireStateId,
         output: WireId,
     },
     SignExtend {
-        input: WireId,
+        input: WireStateId,
         output: WireId,
     },
 }
 
 impl SmallComponent {
     fn update(
-        &mut self,
-        wire_widths: &WireWidthList,
+        &self,
+        output_base: OutputStateId,
         wire_states: &WireStateList,
-        output_state: &mut LogicState,
+        mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        macro_rules! impl_gate {
-            ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
-                let state_a = wire_states[$input_a];
-                let state_b = wire_states[$input_b];
-                ($output, state_a.$op(state_b))
-            }};
-        }
-
-        macro_rules! impl_arithmetic {
-            ($input_a:ident, $input_b:ident, $output:ident => $op:ident) => {{
-                let width = wire_widths[$input_a];
-                let state_a = wire_states[$input_a];
-                let state_b = wire_states[$input_b];
-                ($output, state_a.$op(state_b, width))
-            }};
-        }
-
-        macro_rules! impl_horizontal_gate {
-            ($input:ident, $output:ident => $op:ident) => {{
-                let width = wire_widths[$input];
-                let state = wire_states[$input];
-                ($output, state.$op(width))
-            }};
-        }
-
-        let (output, new_output_state) = match *self {
+        match *self {
             SmallComponent::AndGate {
                 input_a,
                 input_b,
                 output,
-            } => impl_gate!(input_a, input_b, output => logic_and),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_and_3(width, out, lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::OrGate {
                 input_a,
                 input_b,
                 output,
-            } => impl_gate!(input_a, input_b, output => logic_or),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_or_3(width, out, lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::XorGate {
                 input_a,
                 input_b,
                 output,
-            } => impl_gate!(input_a, input_b, output => logic_xor),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_xor_3(width, out, lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::NandGate {
                 input_a,
                 input_b,
                 output,
-            } => impl_gate!(input_a, input_b, output => logic_nand),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_nand_3(width, out, lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::NorGate {
                 input_a,
                 input_b,
                 output,
-            } => impl_gate!(input_a, input_b, output => logic_nor),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_nor_3(width, out, lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::XnorGate {
                 input_a,
                 input_b,
                 output,
-            } => impl_gate!(input_a, input_b, output => logic_xnor),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_xnor_3(width, out, lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::NotGate { input, output } => {
-                let state = wire_states[input];
-                (output, state.logic_not())
+                let val = wire_states.get_state(input);
+                let (width, out) = output_states.get_data(output_base);
+                match logic_not_2(width, out, val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::Buffer {
                 input,
                 enable,
                 output,
             } => {
-                let state = wire_states[input];
-                let state_enable = wire_states[enable];
-
-                let output_state = match state_enable.get_bit_state(LogicOffset::MIN) {
-                    LogicBitState::HighZ | LogicBitState::Undefined => LogicState::UNDEFINED,
-                    LogicBitState::Logic0 => LogicState::HIGH_Z,
-                    LogicBitState::Logic1 => state,
-                };
-
-                (output, output_state)
-            }
-            SmallComponent::Slice {
-                input,
-                offset,
-                output,
-            } => {
-                let state = wire_states[input];
-
-                (
-                    output,
-                    LogicState {
-                        state: state.state >> offset,
-                        valid: state.valid >> offset,
-                    },
-                )
-            }
-            SmallComponent::Merge {
-                input_a,
-                input_b,
-                output,
-            } => {
-                let wire_a_width = wire_widths[input_a];
-                let state_a = wire_states[input_a];
-                let state_b = wire_states[input_b];
-
-                let mask = LogicStorage::mask(wire_a_width);
-                let offset = width_to_offset(wire_a_width).expect("invalid merge offset");
-
-                (
-                    output,
-                    LogicState {
-                        state: (state_a.state & mask) | (state_b.state << offset),
-                        valid: (state_a.valid & mask) | (state_b.valid << offset),
-                    },
-                )
+                let val = wire_states.get_state(input);
+                let en = wire_states.get_state(enable);
+                let (width, out) = output_states.get_data(output_base);
+                match buffer(width, out, val, en[0].get_bit_state(AtomOffset::MIN)) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::Add {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => add),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+
+                match add(
+                    width,
+                    out,
+                    &mut LogicBitState::Undefined,
+                    lhs,
+                    rhs,
+                    LogicBitState::Logic0,
+                    AddMode::Add,
+                ) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::Sub {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => sub),
-            SmallComponent::Mul {
-                input_a,
-                input_b,
-                output,
-            } => impl_arithmetic!(input_a, input_b, output => mul),
-            SmallComponent::Div {
-                input_a,
-                input_b,
-                output,
-            } => impl_arithmetic!(input_a, input_b, output => div),
-            SmallComponent::Rem {
-                input_a,
-                input_b,
-                output,
-            } => impl_arithmetic!(input_a, input_b, output => rem),
-            SmallComponent::LeftShift {
-                input_a,
-                input_b,
-                output,
-            } => impl_arithmetic!(input_a, input_b, output => shl),
-            SmallComponent::LogicalRightShift {
-                input_a,
-                input_b,
-                output,
-            } => impl_arithmetic!(input_a, input_b, output => lshr),
-            SmallComponent::ArithmeticRightShift {
-                input_a,
-                input_b,
-                output,
-            } => impl_arithmetic!(input_a, input_b, output => ashr),
+            } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+
+                match add(
+                    width,
+                    out,
+                    &mut LogicBitState::Undefined,
+                    lhs,
+                    rhs,
+                    LogicBitState::Logic1,
+                    AddMode::Subtract,
+                ) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::HorizontalAnd { input, output } => {
-                impl_horizontal_gate!(input, output => horizontal_logic_and)
+                let width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (_, out) = output_states.get_data(output_base);
+                match horizontal_logic_and(width, &mut out[0], val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::HorizontalOr { input, output } => {
-                impl_horizontal_gate!(input, output => horizontal_logic_or)
+                let width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (_, out) = output_states.get_data(output_base);
+                match horizontal_logic_or(width, &mut out[0], val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
+            SmallComponent::HorizontalXor { input, output } => {
+                let width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (_, out) = output_states.get_data(output_base);
+                match horizontal_logic_xor(width, &mut out[0], val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::HorizontalNand { input, output } => {
-                impl_horizontal_gate!(input, output => horizontal_logic_nand)
+                let width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (_, out) = output_states.get_data(output_base);
+                match horizontal_logic_nand(width, &mut out[0], val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::HorizontalNor { input, output } => {
-                impl_horizontal_gate!(input, output => horizontal_logic_nor)
+                let width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (_, out) = output_states.get_data(output_base);
+                match horizontal_logic_nor(width, &mut out[0], val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
+            SmallComponent::HorizontalXnor { input, output } => {
+                let width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (_, out) = output_states.get_data(output_base);
+                match horizontal_logic_xnor(width, &mut out[0], val) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::CompareEqual {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => equal),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match equal(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareNotEqual {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => not_equal),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match not_equal(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareLessThan {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => less_than),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match less_than(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareGreaterThan {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => greater_than),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match greater_than(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareLessThanOrEqual {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => less_than_or_equal),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match less_than_or_equal(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareGreaterThanOrEqual {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => greater_than_or_equal),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match greater_than_or_equal(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareLessThanSigned {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => less_than_signed),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match less_than_signed(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareGreaterThanSigned {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => greater_than_signed),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match greater_than_signed(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareLessThanOrEqualSigned {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => less_than_or_equal_signed),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match less_than_or_equal_signed(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::CompareGreaterThanOrEqualSigned {
                 input_a,
                 input_b,
                 output,
-            } => impl_arithmetic!(input_a, input_b, output => greater_than_or_equal_signed),
+            } => {
+                let width = wire_states.get_width(input_a);
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (_, out) = output_states.get_data(output_base);
+                match greater_than_or_equal_signed(width, &mut out[0], lhs, rhs) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
+            }
             SmallComponent::ZeroExtend { input, output } => {
-                let state = wire_states[input];
-                let width = wire_widths[input];
-
-                let mask = LogicStorage::mask(width);
-                (
-                    output,
-                    LogicState {
-                        state: state.state & mask,
-                        valid: (state.valid & mask) | !mask,
-                    },
-                )
+                let val_width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (out_width, out) = output_states.get_data(output_base);
+                match zero_extend(val_width, out_width, val, out) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
             SmallComponent::SignExtend { input, output } => {
-                let state = wire_states[input];
-                let width = wire_widths[input];
-
-                let shift_amount = unsafe {
-                    // SAFETY: [1, 32] - [1, 32] = [0, 31]
-                    LogicOffset::new_unchecked(LogicWidth::MAX.get().saturating_sub(width.get()))
-                };
-
-                (
-                    output,
-                    LogicState {
-                        state: (state.state << shift_amount).ashr(shift_amount),
-                        valid: (state.valid << shift_amount).ashr(shift_amount),
-                    },
-                )
+                let val_width = wire_states.get_width(input);
+                let val = wire_states.get_state(input);
+                let (out_width, out) = output_states.get_data(output_base);
+                match sign_extend(val_width, out_width, val, out) {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![output],
+                }
             }
-        };
 
-        let output_width = wire_widths[output];
-        if !new_output_state.eq(*output_state, output_width) {
-            *output_state = new_output_state;
-            smallvec![output]
-        } else {
-            smallvec![]
+            _ => todo!(),
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct MemoryCell<'a> {
+    mem: &'a mut [Atom],
+}
+
+impl MemoryCell<'_> {
+    pub fn read(&self) -> LogicState {
+        LogicState(LogicStateRepr::Bits(self.mem.iter().copied().collect()))
+    }
+
+    pub fn write(&mut self, value: &LogicState) {
+        for (dst, src) in self.mem.iter_mut().zip(value.iter_atoms()) {
+            *dst = src;
         }
     }
 }
@@ -435,7 +572,7 @@ pub struct MemoryBlock<'a> {
     mem: &'a mut Memory,
 }
 
-impl<'a> MemoryBlock<'a> {
+impl MemoryBlock<'_> {
     #[inline]
     pub fn len(&self) -> usize {
         self.mem.len()
@@ -447,32 +584,22 @@ impl<'a> MemoryBlock<'a> {
     }
 
     #[inline]
-    pub fn write(&mut self, addr: usize, value: LogicState) {
-        self.mem.write(addr, value);
-    }
-}
-
-impl<'a> std::fmt::Debug for MemoryBlock<'a> {
-    #[inline]
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self.mem, f)
+    pub fn write(&mut self, addr: usize, value: &LogicState) {
+        self.mem.write(addr, value.iter_atoms());
     }
 }
 
 /// Contains mutable data of a component
-#[derive(Debug)]
 pub enum ComponentData<'a> {
     /// The component does not store any data
     None,
     /// The component stores a single register value
-    RegisterValue(&'a mut LogicState),
+    RegisterValue(MemoryCell<'a>),
     /// The component stores a memory block
     MemoryBlock(MemoryBlock<'a>),
 }
 
 pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
-    fn output_count(&self) -> usize;
-
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::None
     }
@@ -481,54 +608,57 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
 
     fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId);
 }
 
 macro_rules! wide_gate {
-    ($name:ident, $op:ident) => {
+    ($name:ident, $op3:ident, $op2:ident) => {
         #[derive(Debug)]
         pub(crate) struct $name {
-            inputs: inline_vec!(WireId),
-            output: WireId,
+            inputs: inline_vec!(WireStateId),
+            output: OutputStateId,
+            output_wire: WireId,
         }
 
         impl $name {
             #[inline]
-            pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
+            pub(crate) fn new(
+                inputs: impl Into<inline_vec!(WireStateId)>,
+                output: OutputStateId,
+                output_wire: WireId,
+            ) -> Self {
+                let inputs = inputs.into();
+                debug_assert!(inputs.len() > 2);
+
                 Self {
-                    inputs: inputs.into(),
+                    inputs,
                     output,
+                    output_wire,
                 }
             }
         }
 
         impl LargeComponent for $name {
-            fn output_count(&self) -> usize {
-                1
-            }
-
             fn update(
                 &mut self,
-                wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
-                outputs: &mut [LogicState],
+                mut output_states: OutputStateSlice<'_>,
             ) -> inline_vec!(WireId) {
-                let new_output_state = self
-                    .inputs
-                    .iter()
-                    .map(|&input| wire_states[input])
-                    .reduce(|a, b| a.$op(b))
-                    .unwrap_or(LogicState::UNDEFINED);
+                let lhs = wire_states.get_state(self.inputs[0]);
+                let rhs = wire_states.get_state(self.inputs[1]);
+                let (width, out) = output_states.get_data(self.output);
+                let mut result = $op3(width, out, lhs, rhs);
 
-                let output_width = wire_widths[self.output];
-                if !new_output_state.eq(outputs[0], output_width) {
-                    outputs[0] = new_output_state;
-                    smallvec![self.output]
-                } else {
-                    smallvec![]
+                for &input in self.inputs.iter().skip(2) {
+                    let rhs = wire_states.get_state(input);
+                    result |= $op2(width, out, rhs);
+                }
+
+                match result {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![self.output_wire],
                 }
             }
         }
@@ -536,612 +666,731 @@ macro_rules! wide_gate {
 }
 
 macro_rules! wide_gate_inv {
-    ($name:ident, $op:ident) => {
+    ($name:ident, $op3:ident, $op2:ident) => {
         #[derive(Debug)]
         pub(crate) struct $name {
-            inputs: inline_vec!(WireId),
-            output: WireId,
+            inputs: inline_vec!(WireStateId),
+            output: OutputStateId,
+            output_wire: WireId,
         }
 
         impl $name {
             #[inline]
-            pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
+            pub(crate) fn new(
+                inputs: impl Into<inline_vec!(WireStateId)>,
+                output: OutputStateId,
+                output_wire: WireId,
+            ) -> Self {
+                let inputs = inputs.into();
+                debug_assert!(inputs.len() > 2);
+
                 Self {
-                    inputs: inputs.into(),
+                    inputs,
                     output,
+                    output_wire,
                 }
             }
         }
 
         impl LargeComponent for $name {
-            fn output_count(&self) -> usize {
-                1
-            }
-
             fn update(
                 &mut self,
-                wire_widths: &WireWidthList,
                 wire_states: &WireStateList,
-                outputs: &mut [LogicState],
+                mut output_states: OutputStateSlice<'_>,
             ) -> inline_vec!(WireId) {
-                let new_output_state = self
-                    .inputs
-                    .iter()
-                    .map(|&input| wire_states[input])
-                    .reduce(|a, b| a.$op(b))
-                    .unwrap_or(LogicState::UNDEFINED)
-                    .logic_not();
+                let lhs = wire_states.get_state(self.inputs[0]);
+                let rhs = wire_states.get_state(self.inputs[1]);
+                let (width, out) = output_states.get_data(self.output);
+                let mut result = $op3(width, out, lhs, rhs);
 
-                let output_width = wire_widths[self.output];
-                if !new_output_state.eq(outputs[0], output_width) {
-                    outputs[0] = new_output_state;
-                    smallvec![self.output]
-                } else {
-                    smallvec![]
+                for &input in self.inputs.iter().skip(2) {
+                    let rhs = wire_states.get_state(input);
+                    result |= $op2(width, out, rhs);
+                }
+
+                result |= logic_not_1(width, out);
+
+                match result {
+                    OpResult::Unchanged => smallvec![],
+                    OpResult::Changed => smallvec![self.output_wire],
                 }
             }
         }
     };
 }
 
-wide_gate!(WideAndGate, logic_and);
-wide_gate!(WideOrGate, logic_or);
-wide_gate!(WideXorGate, logic_xor);
-wide_gate_inv!(WideNandGate, logic_and);
-wide_gate_inv!(WideNorGate, logic_or);
-wide_gate_inv!(WideXnorGate, logic_xor);
+wide_gate!(WideAndGate, logic_and_3, logic_and_2);
+wide_gate!(WideOrGate, logic_or_3, logic_or_2);
+wide_gate!(WideXorGate, logic_xor_3, logic_xor_2);
+wide_gate_inv!(WideNandGate, logic_and_3, logic_and_2);
+wide_gate_inv!(WideNorGate, logic_or_3, logic_or_2);
+wide_gate_inv!(WideXnorGate, logic_xor_3, logic_xor_2);
 
-#[derive(Debug)]
-pub(crate) struct WideMerge {
-    inputs: inline_vec!(WireId),
-    output: WireId,
-}
-
-impl WideMerge {
-    #[inline]
-    pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
-        Self {
-            inputs: inputs.into(),
-            output,
-        }
-    }
-}
-
-impl LargeComponent for WideMerge {
-    fn output_count(&self) -> usize {
-        1
-    }
-
-    fn update(
-        &mut self,
-        wire_widths: &WireWidthList,
-        wire_states: &WireStateList,
-        outputs: &mut [LogicState],
-    ) -> inline_vec!(WireId) {
-        let mut new_output_state = LogicState::HIGH_Z;
-        let mut offset = 0;
-        for input in self.inputs.iter().copied() {
-            let input_state = wire_states[input];
-            let input_width = wire_widths[input];
-
-            let input_mask = LogicStorage::mask(input_width);
-            let input_offset = LogicOffset::new(offset).expect("invalid merge offset");
-
-            new_output_state.state |= (input_state.state & input_mask) << input_offset;
-            new_output_state.valid |= (input_state.valid & input_mask) << input_offset;
-
-            offset += input_width.get();
-        }
-
-        let output_width = wire_widths[self.output];
-        if !new_output_state.eq(outputs[0], output_width) {
-            outputs[0] = new_output_state;
-            smallvec![self.output]
-        } else {
-            smallvec![]
-        }
-    }
-}
+//#[derive(Debug)]
+//pub(crate) struct WideMerge {
+//    inputs: inline_vec!(WireStateId),
+//    output: WireStateId,
+//}
+//
+//impl WideMerge {
+//    #[inline]
+//    pub(crate) fn new(inputs: &[WireStateId], output: WireStateId) -> Self {
+//        Self {
+//            inputs: inputs.into(),
+//            output,
+//        }
+//    }
+//}
+//
+//impl LargeComponent for WideMerge {
+//    fn update(
+//        &mut self,
+//        wire_widths: &WireWidthList,
+//        wire_states: &WireStateList,
+//        outputs: &mut [Atom],
+//    ) -> inline_vec!(WireId) {
+//        let mut new_output_state = Atom::HIGH_Z;
+//        let mut offset = 0;
+//        for input in self.inputs.iter().copied() {
+//            let input_state = wire_states[input];
+//            let input_width = wire_widths[input];
+//
+//            let input_mask = LogicStorage::mask(input_width);
+//            let input_offset = AtomOffset::new(offset).expect("invalid merge offset");
+//
+//            new_output_state.state |= (input_state.state & input_mask) << input_offset;
+//            new_output_state.valid |= (input_state.valid & input_mask) << input_offset;
+//
+//            offset += input_width.get();
+//        }
+//
+//        let output_width = wire_widths[self.output];
+//        if !new_output_state.eq(outputs[0], output_width) {
+//            outputs[0] = new_output_state;
+//            smallvec![self.output]
+//        } else {
+//            smallvec![]
+//        }
+//    }
+//}
 
 #[derive(Debug)]
 pub(crate) struct Adder {
-    input_a: WireId,
-    input_b: WireId,
-    carry_in: WireId,
-    output: WireId,
-    carry_out: WireId,
+    input_a: WireStateId,
+    input_b: WireStateId,
+    carry_in: WireStateId,
+    output: OutputStateId,
+    output_wire: WireId,
+    carry_out: OutputStateId,
+    carry_out_wire: WireId,
 }
 
 impl Adder {
     #[inline]
     pub(crate) fn new(
-        input_a: WireId,
-        input_b: WireId,
-        carry_in: WireId,
-        output: WireId,
-        carry_out: WireId,
+        input_a: WireStateId,
+        input_b: WireStateId,
+        carry_in: WireStateId,
+        output: OutputStateId,
+        output_wire: WireId,
+        carry_out: OutputStateId,
+        carry_out_wire: WireId,
     ) -> Self {
         Self {
             input_a,
             input_b,
             carry_in,
             output,
+            output_wire,
             carry_out,
+            carry_out_wire,
         }
     }
 }
 
 impl LargeComponent for Adder {
-    fn output_count(&self) -> usize {
-        2
-    }
-
     fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        let width = wire_widths[self.input_a];
-        let a = wire_states[self.input_a];
-        let b = wire_states[self.input_b];
-        let c = wire_states[self.carry_in];
+        let lhs = wire_states.get_state(self.input_a);
+        let rhs = wire_states.get_state(self.input_b);
+        let cin = wire_states.get_state(self.carry_in);
 
-        let (new_output, new_carry_out) = 'compute: {
-            let c_in = match c.get_bit_state(LogicOffset::MIN) {
-                LogicBitState::HighZ | LogicBitState::Undefined => {
-                    break 'compute (LogicState::UNDEFINED, LogicState::UNDEFINED)
-                }
-                LogicBitState::Logic0 => false,
-                LogicBitState::Logic1 => true,
-            };
+        let carry_in = cin[0].get_bit_state(AtomOffset::MIN);
+        let (width, out) = output_states.get_data(self.output);
 
-            let mask = LogicStorage::mask(width);
-            let a_state = a.state & mask;
-            let b_state = b.state & mask;
-            let a_valid = a.valid | !mask;
-            let b_valid = b.valid | !mask;
+        let mut carry_out = LogicBitState::Undefined;
+        let add_result = add(width, out, &mut carry_out, lhs, rhs, carry_in, AddMode::Add);
 
-            if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
-                let (sum, c_out) = a_state.carrying_add(b_state, c_in);
-
-                let c_out = if let Some(c_index) = LogicOffset::new(width.get()) {
-                    sum.get_bit(c_index)
-                } else {
-                    c_out
-                };
-
-                (
-                    LogicState {
-                        state: sum,
-                        valid: LogicStorage::ALL_ONE,
-                    },
-                    LogicState::from_bool(c_out),
-                )
-            } else {
-                (LogicState::UNDEFINED, LogicState::UNDEFINED)
-            }
+        let mut changed = match add_result {
+            OpResult::Unchanged => smallvec![],
+            OpResult::Changed => smallvec![self.output_wire],
         };
 
-        let output_changed = if !new_output.eq(outputs[0], width) {
-            outputs[0] = new_output;
-            true
-        } else {
-            false
-        };
-
-        let carry_out_changed = if !new_carry_out.eq(outputs[1], width) {
-            outputs[1] = new_carry_out;
-            true
-        } else {
-            false
-        };
-
-        match (output_changed, carry_out_changed) {
-            (true, true) => smallvec![self.output, self.carry_out],
-            (true, false) => smallvec![self.output],
-            (false, true) => smallvec![self.carry_out],
-            (false, false) => smallvec![],
+        let (_, cout) = output_states.get_data(self.carry_out);
+        if carry_out != cout[0].get_bit_state(AtomOffset::MIN) {
+            cout[0] = Atom::from_bit(carry_out);
+            changed.push(self.carry_out_wire);
         }
+
+        changed
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct Multiplier {
-    input_a: WireId,
-    input_b: WireId,
-    output_low: WireId,
-    output_high: WireId,
-}
-
-impl Multiplier {
-    #[inline]
-    pub(crate) fn new(
-        input_a: WireId,
-        input_b: WireId,
-        output_low: WireId,
-        output_high: WireId,
-    ) -> Self {
-        Self {
-            input_a,
-            input_b,
-            output_low,
-            output_high,
-        }
-    }
-}
-
-impl LargeComponent for Multiplier {
-    fn output_count(&self) -> usize {
-        2
-    }
-
-    fn update(
-        &mut self,
-        wire_widths: &WireWidthList,
-        wire_states: &WireStateList,
-        outputs: &mut [LogicState],
-    ) -> inline_vec!(WireId) {
-        let width = wire_widths[self.input_a];
-        let a = wire_states[self.input_a];
-        let b = wire_states[self.input_b];
-
-        let (new_low_state, new_high_state) = if (width.get() * 2) <= MAX_LOGIC_WIDTH {
-            let full_result = a.mul(b, width);
-
-            let shift_amount = unsafe {
-                // SAFETY: width is at most half of MAX_LOGIC_WIDTH, so it is always a valid offset.
-                LogicOffset::new_unchecked(width.get())
-            };
-
-            let high_result = LogicState {
-                state: full_result.state >> shift_amount,
-                valid: full_result.valid >> shift_amount,
-            };
-
-            (full_result, high_result)
-        } else {
-            let mask = LogicStorage::mask(width);
-            let a_state = a.state & mask;
-            let b_state = b.state & mask;
-            let a_valid = a.valid | !mask;
-            let b_valid = b.valid | !mask;
-
-            if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
-                let (low_result, high_result) = a_state.widening_mul(b_state, width);
-
-                (
-                    LogicState {
-                        state: low_result,
-                        valid: LogicStorage::ALL_ONE,
-                    },
-                    LogicState {
-                        state: high_result,
-                        valid: LogicStorage::ALL_ONE,
-                    },
-                )
-            } else {
-                (LogicState::UNDEFINED, LogicState::UNDEFINED)
-            }
-        };
-
-        let low_changed = if !new_low_state.eq(outputs[0], width) {
-            outputs[0] = new_low_state;
-            true
-        } else {
-            false
-        };
-
-        let high_changed = if !new_high_state.eq(outputs[1], width) {
-            outputs[1] = new_high_state;
-            true
-        } else {
-            false
-        };
-
-        match (low_changed, high_changed) {
-            (true, true) => smallvec![self.output_low, self.output_high],
-            (true, false) => smallvec![self.output_low],
-            (false, true) => smallvec![self.output_high],
-            (false, false) => smallvec![],
-        }
-    }
-}
+//#[derive(Debug)]
+//pub(crate) struct Multiplier {
+//    input_a: WireStateId,
+//    input_b: WireStateId,
+//    output_low: WireStateId,
+//    output_high: WireStateId,
+//}
+//
+//impl Multiplier {
+//    #[inline]
+//    pub(crate) fn new(
+//        input_a: WireStateId,
+//        input_b: WireStateId,
+//        output_low: WireStateId,
+//        output_high: WireStateId,
+//    ) -> Self {
+//        Self {
+//            input_a,
+//            input_b,
+//            output_low,
+//            output_high,
+//        }
+//    }
+//}
+//
+//impl LargeComponent for Multiplier {
+//    fn update(
+//        &mut self,
+//        wire_widths: &WireWidthList,
+//        wire_states: &WireStateList,
+//        outputs: &mut [Atom],
+//    ) -> inline_vec!(WireId) {
+//        let width = wire_widths[self.input_a];
+//        let a = wire_states[self.input_a];
+//        let b = wire_states[self.input_b];
+//
+//        let (new_low_state, new_high_state) = if (width.get() * 2) <= MAX_LOGIC_WIDTH {
+//            let full_result = a.mul(b, width);
+//
+//            let shift_amount = unsafe {
+//                // SAFETY: width is at most half of MAX_LOGIC_WIDTH, so it is always a valid offset.
+//                AtomOffset::new_unchecked(width.get())
+//            };
+//
+//            let high_result = Atom {
+//                state: full_result.state >> shift_amount,
+//                valid: full_result.valid >> shift_amount,
+//            };
+//
+//            (full_result, high_result)
+//        } else {
+//            let mask = LogicStorage::mask(width);
+//            let a_state = a.state & mask;
+//            let b_state = b.state & mask;
+//            let a_valid = a.valid | !mask;
+//            let b_valid = b.valid | !mask;
+//
+//            if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
+//                let (low_result, high_result) = a_state.widening_mul(b_state, width);
+//
+//                (
+//                    Atom {
+//                        state: low_result,
+//                        valid: LogicStorage::ALL_ONE,
+//                    },
+//                    Atom {
+//                        state: high_result,
+//                        valid: LogicStorage::ALL_ONE,
+//                    },
+//                )
+//            } else {
+//                (Atom::UNDEFINED, Atom::UNDEFINED)
+//            }
+//        };
+//
+//        let low_changed = if !new_low_state.eq(outputs[0], width) {
+//            outputs[0] = new_low_state;
+//            true
+//        } else {
+//            false
+//        };
+//
+//        let high_changed = if !new_high_state.eq(outputs[1], width) {
+//            outputs[1] = new_high_state;
+//            true
+//        } else {
+//            false
+//        };
+//
+//        match (low_changed, high_changed) {
+//            (true, true) => smallvec![self.output_low, self.output_high],
+//            (true, false) => smallvec![self.output_low],
+//            (false, true) => smallvec![self.output_high],
+//            (false, false) => smallvec![],
+//        }
+//    }
+//}
 
 #[derive(Debug)]
 pub(crate) struct Multiplexer {
-    inputs: inline_vec!(WireId),
-    select: WireId,
-    output: WireId,
+    inputs: inline_vec!(WireStateId),
+    select: WireStateId,
+    output: OutputStateId,
+    output_wire: WireId,
 }
 
 impl Multiplexer {
     #[inline]
-    pub(crate) fn new(inputs: &[WireId], select: WireId, output: WireId) -> Self {
+    pub(crate) fn new(
+        inputs: impl Into<inline_vec!(WireStateId)>,
+        select: WireStateId,
+        output: OutputStateId,
+        output_wire: WireId,
+    ) -> Self {
         Self {
             inputs: inputs.into(),
             select,
             output,
+            output_wire,
         }
     }
 }
 
 impl LargeComponent for Multiplexer {
-    fn output_count(&self) -> usize {
-        1
-    }
-
     fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        let select_state = wire_states[self.select];
-        let select_width = wire_widths[self.select];
+        let select_width = AtomWidth::new(wire_states.get_width(self.select).get())
+            .expect("select signal too wide");
+        let select = wire_states.get_state(self.select)[0];
+        let (width, out) = output_states.get_data(self.output);
 
-        let select_mask = LogicStorage::mask(select_width);
-        let select_valid = select_state.valid | !select_mask;
+        let mut changed = false;
+        let mut total_width = width.get();
+        if select.is_valid(select_width) {
+            let select_mask = LogicStorage::mask(select_width);
+            let input_index = (select.state & select_mask).get() as usize;
+            let input = wire_states.get_state(self.inputs[input_index]);
 
-        let new_output_state = if select_valid == LogicStorage::ALL_ONE {
-            let index = select_state.state & select_mask;
-            let input = self.inputs[index.get() as usize];
-            wire_states[input].high_z_to_undefined()
-        } else {
-            LogicState::UNDEFINED
-        };
+            for (out, &new) in izip!(out, input) {
+                let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                total_width -= width.get();
 
-        let output_width = wire_widths[self.output];
-        if !new_output_state.eq(outputs[0], output_width) {
-            outputs[0] = new_output_state;
-            smallvec![self.output]
-        } else {
-            smallvec![]
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct PriorityDecoder {
-    inputs: inline_vec!(WireId),
-    output: WireId,
-}
-
-impl PriorityDecoder {
-    #[inline]
-    pub(crate) fn new(inputs: &[WireId], output: WireId) -> Self {
-        Self {
-            inputs: inputs.into(),
-            output,
-        }
-    }
-}
-
-impl LargeComponent for PriorityDecoder {
-    fn output_count(&self) -> usize {
-        1
-    }
-
-    fn update(
-        &mut self,
-        wire_widths: &WireWidthList,
-        wire_states: &WireStateList,
-        outputs: &mut [LogicState],
-    ) -> inline_vec!(WireId) {
-        let mut new_output_state = LogicState::LOGIC_0;
-
-        for (i, input) in self.inputs.iter().copied().enumerate() {
-            match wire_states[input].get_bit_state(LogicOffset::MIN) {
-                LogicBitState::HighZ | LogicBitState::Undefined => {
-                    new_output_state = LogicState::UNDEFINED;
-                    break;
+                let new = new.high_z_to_undefined();
+                if !out.eq(new, width) {
+                    *out = new;
+                    changed = true;
                 }
-                LogicBitState::Logic1 => {
-                    new_output_state = LogicState::from_int((i + 1) as LogicSizeInteger);
-                    break;
+            }
+        } else {
+            for out in out {
+                let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                total_width -= width.get();
+
+                if !out.eq(Atom::UNDEFINED, width) {
+                    *out = Atom::UNDEFINED;
+                    changed = true;
                 }
-                LogicBitState::Logic0 => continue,
             }
         }
 
-        let output_width = wire_widths[self.output];
-        if !new_output_state.eq(outputs[0], output_width) {
-            outputs[0] = new_output_state;
-            smallvec![self.output]
+        if changed {
+            smallvec![self.output_wire]
         } else {
             smallvec![]
         }
+    }
+}
+
+//#[derive(Debug)]
+//pub(crate) struct PriorityDecoder {
+//    inputs: inline_vec!(WireStateId),
+//    output: WireStateId,
+//}
+//
+//impl PriorityDecoder {
+//    #[inline]
+//    pub(crate) fn new(inputs: &[WireStateId], output: WireStateId) -> Self {
+//        Self {
+//            inputs: inputs.into(),
+//            output,
+//        }
+//    }
+//}
+//
+//impl LargeComponent for PriorityDecoder {
+//    fn update(
+//        &mut self,
+//        wire_widths: &WireWidthList,
+//        wire_states: &WireStateList,
+//        outputs: &mut [Atom],
+//    ) -> inline_vec!(WireId) {
+//        let mut new_output_state = Atom::LOGIC_0;
+//
+//        for (i, input) in self.inputs.iter().copied().enumerate() {
+//            match wire_states[input].get_bit_state(AtomOffset::MIN) {
+//                LogicBitState::HighZ | LogicBitState::Undefined => {
+//                    new_output_state = Atom::UNDEFINED;
+//                    break;
+//                }
+//                LogicBitState::Logic1 => {
+//                    new_output_state = Atom::from_int((i + 1) as LogicSizeInteger);
+//                    break;
+//                }
+//                LogicBitState::Logic0 => continue,
+//            }
+//        }
+//
+//        let output_width = wire_widths[self.output];
+//        if !new_output_state.eq(outputs[0], output_width) {
+//            outputs[0] = new_output_state;
+//            smallvec![self.output]
+//        } else {
+//            smallvec![]
+//        }
+//    }
+//}
+
+#[derive(Debug)]
+struct ClockTrigger {
+    prev: Option<bool>,
+    polarity: ClockPolarity,
+}
+
+impl ClockTrigger {
+    #[inline]
+    const fn new(polarity: ClockPolarity) -> Self {
+        Self {
+            prev: None,
+            polarity,
+        }
+    }
+
+    #[inline]
+    fn reset(&mut self) {
+        self.prev = None;
+    }
+
+    #[inline]
+    fn update(&mut self, current: LogicBitState) -> bool {
+        let current = match current {
+            LogicBitState::HighZ | LogicBitState::Undefined => self.prev,
+            LogicBitState::Logic0 => Some(false),
+            LogicBitState::Logic1 => Some(true),
+        };
+
+        let edge = (self.prev == Some(self.polarity.inactive_state()))
+            && (current == Some(self.polarity.active_state()));
+
+        self.prev = current;
+        edge
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct Register {
-    data_in: WireId,
-    data_out: WireId,
-    enable: WireId,
-    clock: WireId,
-    prev_clock: Option<bool>,
-    data: LogicState,
+    data_in: WireStateId,
+    data_out: OutputStateId,
+    data_out_wire: WireId,
+    enable: WireStateId,
+    clock: WireStateId,
+    clock_trigger: ClockTrigger,
+    data: inline_vec!(Atom),
 }
 
 impl Register {
     #[inline]
-    pub(crate) fn new(data_in: WireId, data_out: WireId, enable: WireId, clock: WireId) -> Self {
+    pub(crate) fn new(
+        width: NonZeroU8,
+        data_in: WireStateId,
+        data_out: OutputStateId,
+        data_out_wire: WireId,
+        enable: WireStateId,
+        clock: WireStateId,
+        clock_polarity: ClockPolarity,
+    ) -> Self {
+        let atom_count = width.safe_div_ceil(Atom::BITS).get() as usize;
+
         Self {
             data_in,
             data_out,
+            data_out_wire,
             enable,
             clock,
-            prev_clock: None,
-            data: LogicState::UNDEFINED,
+            clock_trigger: ClockTrigger::new(clock_polarity),
+            data: smallvec![Atom::UNDEFINED; atom_count],
         }
     }
 }
 
 impl LargeComponent for Register {
-    fn output_count(&self) -> usize {
-        1
-    }
-
     fn get_data(&mut self) -> ComponentData<'_> {
-        ComponentData::RegisterValue(&mut self.data)
+        ComponentData::RegisterValue(MemoryCell {
+            mem: &mut self.data,
+        })
     }
 
     fn reset(&mut self) {
-        self.prev_clock = None;
-        self.data = LogicState::UNDEFINED;
+        self.clock_trigger.reset();
+        self.data.fill(Atom::UNDEFINED);
     }
 
     fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        let data_in_state = wire_states[self.data_in];
-        let enable_state = wire_states[self.enable];
-        let clock_state = wire_states[self.clock];
+        let data_in = wire_states.get_state(self.data_in);
+        let enable = wire_states.get_state(self.enable)[0].get_bit_state(AtomOffset::MIN);
+        let clock = wire_states.get_state(self.clock)[0].get_bit_state(AtomOffset::MIN);
 
-        let new_clock = match clock_state.get_bit_state(LogicOffset::MIN) {
-            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock,
-            LogicBitState::Logic0 => Some(false),
-            LogicBitState::Logic1 => Some(true),
-        };
-
-        let new_data = if let (Some(false), Some(true)) = (self.prev_clock, new_clock) {
-            match enable_state.get_bit_state(LogicOffset::MIN) {
-                LogicBitState::HighZ | LogicBitState::Undefined => LogicState::UNDEFINED,
-                LogicBitState::Logic0 => self.data,
-                LogicBitState::Logic1 => data_in_state.high_z_to_undefined(),
+        if self.clock_trigger.update(clock) {
+            match enable {
+                LogicBitState::HighZ | LogicBitState::Undefined => {
+                    self.data.fill(Atom::UNDEFINED);
+                }
+                LogicBitState::Logic0 => (),
+                LogicBitState::Logic1 => {
+                    for (dst, &src) in izip!(&mut self.data, data_in) {
+                        *dst = src.high_z_to_undefined();
+                    }
+                }
             }
-        } else {
-            self.data
-        };
+        }
 
-        self.prev_clock = new_clock;
-        self.data = new_data;
+        let (width, out) = output_states.get_data(self.data_out);
+        let mut total_width = width.get();
+        let mut changed = false;
+        for (out, &new) in izip!(out, &self.data) {
+            let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+            total_width -= width.get();
 
-        let data_width = wire_widths[self.data_out];
-        if !new_data.eq(outputs[0], data_width) {
-            outputs[0] = new_data;
-            smallvec![self.data_out]
+            if !out.eq(new, width) {
+                *out = new;
+                changed = true;
+            }
+        }
+
+        if changed {
+            smallvec![self.data_out_wire]
         } else {
             smallvec![]
         }
     }
 }
 
-// This has to contain raw pointers because using vectors would require a mutex.
+#[derive(Debug)]
 enum Memory {
     U8(Box<[[u8; 2]]>),
     U16(Box<[[u16; 2]]>),
     U32(Box<[[u32; 2]]>),
+    Big {
+        atom_width: NonZeroU8,
+        atoms: Box<[Atom]>,
+    },
 }
 
 impl Memory {
     #[allow(clippy::unnecessary_cast)]
-    fn new(width: LogicWidth, len: usize) -> Self {
-        const VALUE: (LogicSizeInteger, LogicSizeInteger) = LogicState::UNDEFINED.to_state_valid();
+    fn new(width: NonZeroU8, len: usize) -> Self {
+        const VALUE: (LogicSizeInteger, LogicSizeInteger) = Atom::UNDEFINED.to_state_valid();
         const STATE: LogicSizeInteger = VALUE.0;
         const VALID: LogicSizeInteger = VALUE.1;
 
-        if width <= 8 {
-            let mem = vec![[STATE as u8, VALID as u8]; len];
-            Self::U8(mem.into_boxed_slice())
-        } else if width <= 16 {
-            let mem = vec![[STATE as u16, VALID as u16]; len];
-            Self::U16(mem.into_boxed_slice())
+        if width.get() <= 8 {
+            let atoms = vec![[STATE as u8, VALID as u8]; len];
+            Self::U8(atoms.into_boxed_slice())
+        } else if width.get() <= 16 {
+            let atoms = vec![[STATE as u16, VALID as u16]; len];
+            Self::U16(atoms.into_boxed_slice())
+        } else if width.get() <= 32 {
+            let atoms = vec![[STATE as u32, VALID as u32]; len];
+            Self::U32(atoms.into_boxed_slice())
         } else {
-            let mem = vec![[STATE as u32, VALID as u32]; len];
-            Self::U32(mem.into_boxed_slice())
+            let atom_width = width.safe_div_ceil(Atom::BITS);
+            let atoms = vec![Atom::UNDEFINED; len * (atom_width.get() as usize)];
+            Self::Big {
+                atom_width,
+                atoms: atoms.into_boxed_slice(),
+            }
         }
     }
 
     #[inline]
     fn len(&self) -> usize {
         match self {
-            Self::U8(mem) => mem.len(),
-            Self::U16(mem) => mem.len(),
-            Self::U32(mem) => mem.len(),
+            Self::U8(atoms) => atoms.len(),
+            Self::U16(atoms) => atoms.len(),
+            Self::U32(atoms) => atoms.len(),
+            Self::Big { atom_width, atoms } => atoms.len() / (atom_width.get() as usize),
         }
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn read(&self, addr: usize) -> LogicState {
         let (state, valid) = match self {
-            Self::U8(mem) => {
-                let [state, valid] = mem[addr];
+            Self::U8(atoms) => {
+                let [state, valid] = atoms[addr];
                 (state as LogicSizeInteger, valid as LogicSizeInteger)
             }
-            Self::U16(mem) => {
-                let [state, valid] = mem[addr];
+            Self::U16(atoms) => {
+                let [state, valid] = atoms[addr];
                 (state as LogicSizeInteger, valid as LogicSizeInteger)
             }
-            Self::U32(mem) => {
-                let [state, valid] = mem[addr];
+            Self::U32(atoms) => {
+                let [state, valid] = atoms[addr];
                 (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+            Self::Big { atom_width, atoms } => {
+                let start = addr * (atom_width.get() as usize);
+                let end = start + (atom_width.get() as usize);
+                let slice = &atoms[start..end];
+                return LogicState(LogicStateRepr::Bits(slice.iter().copied().collect()));
             }
         };
 
-        LogicState::from_state_valid(state, valid)
+        let value = Atom::from_state_valid(state, valid);
+        LogicState(LogicStateRepr::Bits(smallvec![value]))
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn write(&mut self, addr: usize, value: LogicState) {
-        let (state, valid) = value.to_state_valid();
+    fn iter_cell(&self, addr: usize) -> MemoryCellIter<'_> {
+        let (state, valid) = match self {
+            Self::U8(atoms) => {
+                let [state, valid] = atoms[addr];
+                (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+            Self::U16(atoms) => {
+                let [state, valid] = atoms[addr];
+                (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+            Self::U32(atoms) => {
+                let [state, valid] = atoms[addr];
+                (state as LogicSizeInteger, valid as LogicSizeInteger)
+            }
+            Self::Big { atom_width, atoms } => {
+                let start = addr * (atom_width.get() as usize);
+                let end = start + (atom_width.get() as usize);
+                let slice = &atoms[start..end];
+                return MemoryCellIter::Multi(slice.iter());
+            }
+        };
 
+        let value = Atom::from_state_valid(state, valid);
+        MemoryCellIter::Single(Some(value))
+    }
+
+    #[allow(clippy::unnecessary_cast)]
+    fn write(&mut self, addr: usize, mut value: impl Iterator<Item = Atom>) {
         match self {
-            Self::U8(mem) => {
-                mem[addr] = [state as u8, valid as u8];
+            Self::U8(atoms) => {
+                let (state, valid) = value.next().unwrap().to_state_valid();
+                atoms[addr] = [state as u8, valid as u8];
             }
-            Self::U16(mem) => {
-                mem[addr] = [state as u16, valid as u16];
+            Self::U16(atoms) => {
+                let (state, valid) = value.next().unwrap().to_state_valid();
+                atoms[addr] = [state as u16, valid as u16];
             }
-            Self::U32(mem) => {
-                mem[addr] = [state as u32, valid as u32];
+            Self::U32(atoms) => {
+                let (state, valid) = value.next().unwrap().to_state_valid();
+                atoms[addr] = [state as u32, valid as u32];
+            }
+            Self::Big { atom_width, atoms } => {
+                let start = addr * (atom_width.get() as usize);
+                let end = start + (atom_width.get() as usize);
+                let slice = &mut atoms[start..end];
+                for (dst, src) in izip!(slice, value) {
+                    *dst = src;
+                }
             }
         }
     }
 
     #[allow(clippy::unnecessary_cast)]
     fn clear(&mut self) {
-        const VALUE: (LogicSizeInteger, LogicSizeInteger) = LogicState::UNDEFINED.to_state_valid();
+        const VALUE: (LogicSizeInteger, LogicSizeInteger) = Atom::UNDEFINED.to_state_valid();
         const STATE: LogicSizeInteger = VALUE.0;
         const VALID: LogicSizeInteger = VALUE.1;
 
         match self {
-            Self::U8(mem) => {
-                mem.fill([STATE as u8, VALID as u8]);
+            Self::U8(atoms) => {
+                atoms.fill([STATE as u8, VALID as u8]);
             }
-            Self::U16(mem) => {
-                mem.fill([STATE as u16, VALID as u16]);
+            Self::U16(atoms) => {
+                atoms.fill([STATE as u16, VALID as u16]);
             }
-            Self::U32(mem) => {
-                mem.fill([STATE as u32, VALID as u32]);
+            Self::U32(atoms) => {
+                atoms.fill([STATE as u32, VALID as u32]);
+            }
+            Self::Big { atoms, .. } => {
+                atoms.fill(Atom::UNDEFINED);
             }
         }
     }
 }
 
-impl std::fmt::Debug for Memory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+enum MemoryCellIter<'a> {
+    Single(Option<Atom>),
+    Multi(std::slice::Iter<'a, Atom>),
+}
+
+impl Iterator for MemoryCellIter<'_> {
+    type Item = Atom;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
         match self {
-            Self::U8(mem) => std::fmt::Debug::fmt(&**mem, f),
-            Self::U16(mem) => std::fmt::Debug::fmt(&**mem, f),
-            Self::U32(mem) => std::fmt::Debug::fmt(&**mem, f),
+            MemoryCellIter::Single(value) => value.take(),
+            MemoryCellIter::Multi(iter) => iter.next().copied(),
         }
     }
+}
+
+#[inline]
+fn to_address(width: NonZeroU8, atoms: &[Atom]) -> Option<usize> {
+    const MAX_ATOM_COUNT: usize = (std::mem::size_of::<usize>() * 8) / (Atom::BITS.get() as usize);
+
+    let atom_count = width.safe_div_ceil(Atom::BITS).get() as usize;
+    debug_assert!(atom_count <= MAX_ATOM_COUNT);
+
+    let mut addr = 0;
+    let mut total_width = width.get();
+    for i in 0..atom_count {
+        let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+        total_width -= width.get();
+
+        let atom = atoms[i];
+        if !atom.is_valid(width) {
+            return None;
+        }
+
+        let mask = LogicStorage::mask(width);
+        let atom_value = (atom.state & mask).get() as usize;
+        let shift = i * (Atom::BITS.get() as usize);
+        addr |= atom_value << shift;
+    }
+
+    Some(addr)
 }
 
 #[derive(Debug)]
 pub(crate) struct Ram {
-    write_addr: WireId,
-    data_in: WireId,
-    read_addr: WireId,
-    data_out: WireId,
-    write: WireId,
-    clock: WireId,
-    prev_clock: Option<bool>,
+    write_addr: WireStateId,
+    data_in: WireStateId,
+    read_addr: WireStateId,
+    data_out: OutputStateId,
+    data_out_wire: WireId,
+    write: WireStateId,
+    clock: WireStateId,
+    clock_trigger: ClockTrigger,
     mem: Memory,
 }
 
@@ -1149,100 +1398,106 @@ impl Ram {
     #[allow(clippy::too_many_arguments)]
     #[inline]
     pub(crate) fn new(
-        write_addr: WireId,
-        data_in: WireId,
-        read_addr: WireId,
-        data_out: WireId,
-        write: WireId,
-        clock: WireId,
-        addr_width: LogicWidth,
-        data_width: LogicWidth,
+        write_addr: WireStateId,
+        data_in: WireStateId,
+        read_addr: WireStateId,
+        data_out: OutputStateId,
+        data_out_wire: WireId,
+        write: WireStateId,
+        clock: WireStateId,
+        clock_polarity: ClockPolarity,
+        addr_width: NonZeroU8,
+        data_width: NonZeroU8,
     ) -> Self {
         Self {
             write_addr,
             data_in,
             read_addr,
             data_out,
+            data_out_wire,
             write,
             clock,
-            prev_clock: None,
+            clock_trigger: ClockTrigger::new(clock_polarity),
             mem: Memory::new(data_width, 1usize << addr_width.get()),
         }
     }
 }
 
 impl LargeComponent for Ram {
-    fn output_count(&self) -> usize {
-        1
-    }
-
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
     }
 
     fn reset(&mut self) {
-        self.prev_clock = None;
+        self.clock_trigger.reset();
         self.mem.clear();
     }
 
     fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        let addr_width = wire_widths[self.write_addr];
-        let data_width = wire_widths[self.data_out];
-        let write_addr_state = wire_states[self.write_addr];
-        let read_addr_state = wire_states[self.read_addr];
-        let data_in_state = wire_states[self.data_in];
-        let write_state = wire_states[self.write];
-        let clock_state = wire_states[self.clock];
+        let data_in = wire_states.get_state(self.data_in);
+        let write = wire_states.get_state(self.write)[0].get_bit_state(AtomOffset::MIN);
+        let clock = wire_states.get_state(self.clock)[0].get_bit_state(AtomOffset::MIN);
 
-        let addr_mask = LogicStorage::mask(addr_width);
+        if self.clock_trigger.update(clock) {
+            let write_addr_width = wire_states.get_width(self.write_addr);
+            let write_addr = wire_states.get_state(self.write_addr);
+            let write_addr = to_address(write_addr_width, write_addr);
 
-        let new_clock = match clock_state.get_bit_state(LogicOffset::MIN) {
-            LogicBitState::HighZ | LogicBitState::Undefined => self.prev_clock,
-            LogicBitState::Logic0 => Some(false),
-            LogicBitState::Logic1 => Some(true),
-        };
-
-        if let (Some(false), Some(true)) = (self.prev_clock, new_clock) {
-            let write_addr = write_addr_state.state & addr_mask;
-            let write_addr_valid = write_addr_state.valid | !addr_mask;
-
-            if write_addr_valid == LogicStorage::ALL_ONE {
-                match write_state.get_bit_state(LogicOffset::MIN) {
-                    LogicBitState::HighZ | LogicBitState::Undefined => self
-                        .mem
-                        .write(write_addr.get() as usize, LogicState::UNDEFINED),
-                    LogicBitState::Logic0 => {}
-                    LogicBitState::Logic1 => self.mem.write(
-                        write_addr.get() as usize,
-                        data_in_state.high_z_to_undefined(),
-                    ),
+            if let Some(write_addr) = write_addr {
+                match write {
+                    LogicBitState::HighZ | LogicBitState::Undefined => {
+                        let data_iter = std::iter::repeat(Atom::UNDEFINED);
+                        self.mem.write(write_addr, data_iter);
+                    }
+                    LogicBitState::Logic0 => (),
+                    LogicBitState::Logic1 => {
+                        let data_iter = data_in.iter().copied().map(Atom::high_z_to_undefined);
+                        self.mem.write(write_addr, data_iter);
+                    }
                 }
             } else {
                 // NOTE:
                 //   There is nothing sensible we can do here.
                 //   In a real circuit a random address would be overwritten.
             }
-        };
+        }
 
-        let read_addr = read_addr_state.state & addr_mask;
-        let read_addr_valid = read_addr_state.valid | !addr_mask;
+        let read_addr_width = wire_states.get_width(self.read_addr);
+        let read_addr = wire_states.get_state(self.read_addr);
+        let read_addr = to_address(read_addr_width, read_addr);
 
-        let new_data = if read_addr_valid == LogicStorage::ALL_ONE {
-            self.mem.read(read_addr.get() as usize)
+        let (width, out) = output_states.get_data(self.data_out);
+        let mut total_width = width.get();
+        let mut changed = false;
+        if let Some(read_addr) = read_addr {
+            for (out, new) in izip!(out, self.mem.iter_cell(read_addr)) {
+                let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                total_width -= width.get();
+
+                let new = new.high_z_to_undefined();
+                if !out.eq(new, width) {
+                    *out = new;
+                    changed = true;
+                }
+            }
         } else {
-            LogicState::UNDEFINED
-        };
+            for out in out {
+                let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                total_width -= width.get();
 
-        self.prev_clock = new_clock;
+                if !out.eq(Atom::UNDEFINED, width) {
+                    *out = Atom::UNDEFINED;
+                    changed = true;
+                }
+            }
+        }
 
-        if !new_data.eq(outputs[0], data_width) {
-            outputs[0] = new_data;
-            smallvec![self.data_out]
+        if changed {
+            smallvec![self.data_out_wire]
         } else {
             smallvec![]
         }
@@ -1251,32 +1506,31 @@ impl LargeComponent for Ram {
 
 #[derive(Debug)]
 pub(crate) struct Rom {
-    addr: WireId,
-    data: WireId,
+    addr: WireStateId,
+    data: OutputStateId,
+    data_wire: WireId,
     mem: Memory,
 }
 
 impl Rom {
     #[inline]
     pub(crate) fn new(
-        addr: WireId,
-        data: WireId,
-        addr_width: LogicWidth,
-        data_width: LogicWidth,
+        addr: WireStateId,
+        data: OutputStateId,
+        data_wire: WireId,
+        addr_width: NonZeroU8,
+        data_width: NonZeroU8,
     ) -> Self {
         Self {
             addr,
             data,
+            data_wire,
             mem: Memory::new(data_width, 1usize << addr_width.get()),
         }
     }
 }
 
 impl LargeComponent for Rom {
-    fn output_count(&self) -> usize {
-        1
-    }
-
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
     }
@@ -1285,107 +1539,132 @@ impl LargeComponent for Rom {
 
     fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        let addr_width = wire_widths[self.addr];
-        let data_width = wire_widths[self.data];
-        let addr_state = wire_states[self.addr];
+        let addr_width = wire_states.get_width(self.addr);
+        let addr = wire_states.get_state(self.addr);
+        let addr = to_address(addr_width, addr);
 
-        let addr_mask = LogicStorage::mask(addr_width);
+        let (width, out) = output_states.get_data(self.data);
+        let mut total_width = width.get();
+        let mut changed = false;
+        if let Some(read_addr) = addr {
+            for (out, new) in izip!(out, self.mem.iter_cell(read_addr)) {
+                let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                total_width -= width.get();
 
-        let addr = addr_state.state & addr_mask;
-        let addr_valid = addr_state.valid | !addr_mask;
-
-        let new_data = if addr_valid == LogicStorage::ALL_ONE {
-            self.mem.read(addr.get() as usize)
+                let new = new.high_z_to_undefined();
+                if !out.eq(new, width) {
+                    *out = new;
+                    changed = true;
+                }
+            }
         } else {
-            LogicState::UNDEFINED
-        };
+            for out in out {
+                let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                total_width -= width.get();
 
-        if !new_data.eq(outputs[0], data_width) {
-            outputs[0] = new_data;
-            smallvec![self.data]
+                if !out.eq(Atom::UNDEFINED, width) {
+                    *out = Atom::UNDEFINED;
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            smallvec![self.data_wire]
         } else {
             smallvec![]
         }
     }
 }
 
-#[derive(Debug)]
-enum ComponentKind {
-    Small(SmallComponent),
-    Large(Box<dyn LargeComponent>),
-}
-
-#[derive(Debug)]
-pub(crate) struct Component {
-    kind: ComponentKind,
-    output_offset: usize,
+pub(crate) enum Component {
+    Small {
+        component: SmallComponent,
+        output_base: OutputStateId,
+        output_atom_count: u16,
+    },
+    Large {
+        component: Box<dyn LargeComponent>,
+        output_base: OutputStateId,
+        output_atom_count: u16,
+    },
 }
 
 impl Component {
     #[inline]
-    pub(crate) fn new_small(component: SmallComponent, output_offset: usize) -> Self {
-        Self {
-            kind: ComponentKind::Small(component),
-            output_offset,
+    pub(crate) fn new_small(
+        component: SmallComponent,
+        output_base: OutputStateId,
+        output_atom_count: u16,
+    ) -> Self {
+        Self::Small {
+            component,
+            output_base,
+            output_atom_count,
         }
     }
 
     #[inline]
     pub(crate) fn new_large<C: LargeComponent + 'static>(
         component: C,
-        output_offset: usize,
+        output_base: OutputStateId,
+        output_atom_count: u16,
     ) -> Self {
-        Self {
-            kind: ComponentKind::Large(Box::new(component)),
-            output_offset,
+        Self::Large {
+            component: Box::new(component),
+            output_base,
+            output_atom_count,
         }
     }
 
     #[inline]
-    pub(crate) fn output_offset(&self) -> usize {
-        self.output_offset
-    }
-
-    #[inline]
-    pub(crate) fn output_count(&self) -> usize {
-        match &self.kind {
-            ComponentKind::Small(_) => 1,
-            ComponentKind::Large(component) => component.output_count(),
+    pub(crate) fn output_range(&self) -> (OutputStateId, u16) {
+        match self {
+            &Self::Small {
+                output_base,
+                output_atom_count,
+                ..
+            }
+            | &Self::Large {
+                output_base,
+                output_atom_count,
+                ..
+            } => (output_base, output_atom_count),
         }
     }
 
     #[inline]
     pub(crate) fn get_data(&mut self) -> ComponentData<'_> {
-        match &mut self.kind {
-            ComponentKind::Small(_) => ComponentData::None,
-            ComponentKind::Large(component) => component.get_data(),
+        match self {
+            Self::Small { .. } => ComponentData::None,
+            Self::Large { component, .. } => component.get_data(),
         }
     }
 
     #[inline]
     pub(crate) fn reset(&mut self) {
-        match &mut self.kind {
-            ComponentKind::Small(_) => {}
-            ComponentKind::Large(component) => component.reset(),
+        match self {
+            Self::Small { .. } => {}
+            Self::Large { component, .. } => component.reset(),
         }
     }
 
     #[inline]
     pub(crate) fn update(
         &mut self,
-        wire_widths: &WireWidthList,
         wire_states: &WireStateList,
-        outputs: &mut [LogicState],
+        output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        match &mut self.kind {
-            ComponentKind::Small(component) => {
-                component.update(wire_widths, wire_states, &mut outputs[0])
-            }
-            ComponentKind::Large(component) => component.update(wire_widths, wire_states, outputs),
+        match self {
+            &mut Self::Small {
+                ref mut component,
+                output_base,
+                ..
+            } => component.update(output_base, wire_states, output_states),
+            Self::Large { component, .. } => component.update(wire_states, output_states),
         }
     }
 }

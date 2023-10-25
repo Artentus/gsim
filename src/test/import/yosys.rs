@@ -106,8 +106,8 @@ fn program_counter() {
         enable: bool,
         reset: bool,
         clk: bool,
-        pc_next: LogicState,
-        pc_value: LogicState,
+        pc_next: SingleLogicState,
+        pc_value: SingleLogicState,
     }
 
     macro_rules! test_data {
@@ -160,27 +160,27 @@ fn program_counter() {
     for (i, test_data) in TEST_DATA.iter().enumerate() {
         sim.set_wire_base_drive(
             connections.inputs["data_in"],
-            LogicState::from_int(test_data.data_in),
+            SingleLogicState::from_int(test_data.data_in),
         );
         sim.set_wire_base_drive(
             connections.inputs["inc"],
-            LogicState::from_int(test_data.inc),
+            SingleLogicState::from_int(test_data.inc),
         );
         sim.set_wire_base_drive(
             connections.inputs["load"],
-            LogicState::from_bool(test_data.load),
+            SingleLogicState::from_bool(test_data.load),
         );
         sim.set_wire_base_drive(
             connections.inputs["enable"],
-            LogicState::from_bool(test_data.enable),
+            SingleLogicState::from_bool(test_data.enable),
         );
         sim.set_wire_base_drive(
             connections.inputs["reset"],
-            LogicState::from_bool(test_data.reset),
+            SingleLogicState::from_bool(test_data.reset),
         );
         sim.set_wire_base_drive(
             connections.inputs["clk"],
-            LogicState::from_bool(test_data.clk),
+            SingleLogicState::from_bool(test_data.clk),
         );
 
         match sim.run_sim(50) {
@@ -226,9 +226,9 @@ fn proc_mux() {
     );
 
     struct TestData {
-        data: LogicState,
-        select: [LogicState; 2],
-        output: LogicState,
+        data: SingleLogicState,
+        select: [SingleLogicState; 2],
+        output: SingleLogicState,
     }
 
     macro_rules! test_data {

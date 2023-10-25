@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use gsim::*;
+use std::num::NonZeroU8;
 
 fn generate_sim() -> Simulator {
     use rand::distributions::Uniform;
@@ -13,19 +14,19 @@ fn generate_sim() -> Simulator {
     let mut wires = Vec::new();
 
     for _ in 0..100 {
-        let wire = builder.add_wire(LogicWidth::MIN);
+        let wire = builder.add_wire(NonZeroU8::MIN).unwrap();
         let drive = match drive_dist.sample(&mut rng) {
             0 => LogicState::HIGH_Z,
             1 => LogicState::LOGIC_0,
             2 => LogicState::LOGIC_1,
             _ => unreachable!(),
         };
-        builder.set_wire_base_drive(wire, drive);
+        builder.set_wire_drive(wire, &drive);
         wires.push(wire);
     }
 
     for _ in 0..1000000 {
-        let output = builder.add_wire(LogicWidth::MIN);
+        let output = builder.add_wire(NonZeroU8::MIN).unwrap();
         match comp_dist.sample(&mut rng) {
             0 => {
                 let input_a = *wires.choose(&mut rng).unwrap();
