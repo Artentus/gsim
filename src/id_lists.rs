@@ -1,4 +1,4 @@
-use super::{Atom, Component, SafeDivCeil, Wire};
+use super::{AllocationSize, Atom, Component, SafeDivCeil, Wire};
 use std::num::NonZeroU8;
 use std::ops::{Index, IndexMut};
 use sync_unsafe_cell::SyncUnsafeCell;
@@ -97,6 +97,11 @@ macro_rules! def_id_list {
             }
 
             #[inline]
+            pub(crate) fn alloc_size(&self) -> AllocationSize {
+                AllocationSize(self.0.capacity() * std::mem::size_of::<$t>())
+            }
+
+            #[inline]
             pub(crate) fn push(&mut self, item: $t) -> Option<$id_name> {
                 let current_len = u32::try_from(self.0.len())
                     .ok()
@@ -173,13 +178,55 @@ def_id_type!(
     pub WireId
 );
 
+def_id_list!(WireList<WireId, Wire>);
+
+impl WireList {
+    #[inline]
+    pub(crate) fn wire_count(&self) -> usize {
+        self.0.len()
+    }
+}
+
 def_id_type!(
     /// A unique identifier for a component inside a simulation
     pub ComponentId
 );
 
-def_id_list!(WireList<WireId, Wire>);
 def_id_list!(ComponentList<ComponentId, Component>);
+
+impl ComponentList {
+    pub(crate) fn component_counts(&self) -> (usize, usize) {
+        let mut small_count = 0;
+        let mut large_count = 0;
+
+        for comp in self.0.iter() {
+            let comp = unsafe {
+                // SAFETY: since we have a shared reference to `self`, no mutable references exist
+                &*comp.get()
+            };
+
+            match comp {
+                Component::Small { .. } => small_count += 1,
+                Component::Large { .. } => large_count += 1,
+            }
+        }
+
+        (small_count, large_count)
+    }
+
+    pub(crate) fn large_alloc_size(&self) -> AllocationSize {
+        self.0
+            .iter()
+            .map(|comp| {
+                unsafe {
+                    // SAFETY: since we have a shared reference to `self`, no mutable references exist
+                    &*comp.get()
+                }
+            })
+            .map(Component::alloc_size)
+            .sum()
+    }
+}
 
 /// The same requirements as casting `&SyncUnsafeCell<T>` to `&T` apply.
 #[inline]
@@ -227,6 +274,21 @@ impl WireStateList {
             drives: Vec::new(),
             states: Vec::new(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn width_alloc_size(&self) -> AllocationSize {
+        AllocationSize(self.widths.capacity() * std::mem::size_of::<u8>())
+    }
+
+    #[inline]
+    pub(crate) fn drive_alloc_size(&self) -> AllocationSize {
+        AllocationSize(self.drives.capacity() * std::mem::size_of::<Atom>())
+    }
+
+    #[inline]
+    pub(crate) fn state_alloc_size(&self) -> AllocationSize {
+        AllocationSize(self.states.capacity() * std::mem::size_of::<Atom>())
     }
 
     #[inline]
@@ -340,6 +402,16 @@ impl OutputStateList {
             widths: Vec::new(),
             states: Vec::new(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn width_alloc_size(&self) -> AllocationSize {
+        AllocationSize(self.widths.capacity() * std::mem::size_of::<u8>())
+    }
+
+    #[inline]
+    pub(crate) fn state_alloc_size(&self) -> AllocationSize {
+        AllocationSize(self.states.capacity() * std::mem::size_of::<Atom>())
     }
 
     #[inline]

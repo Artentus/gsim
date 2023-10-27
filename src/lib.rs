@@ -56,6 +56,7 @@ use itertools::izip;
 use logic::*;
 use smallvec::{smallvec, SmallVec};
 use std::num::NonZeroU8;
+use std::ops::{Add, AddAssign};
 use std::sync::Mutex;
 
 pub use component::ComponentData;
@@ -110,6 +111,84 @@ impl SafeDivCeil for NonZeroU8 {
             Self::new_unchecked(self.get().div_ceil(rhs.get()))
         }
     }
+}
+
+/// The size of a memory allocation
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+pub struct AllocationSize(usize);
+
+impl Add for AllocationSize {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl AddAssign for AllocationSize {
+    #[inline]
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+impl std::iter::Sum for AllocationSize {
+    #[inline]
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(AllocationSize(0), Add::add)
+    }
+}
+
+impl std::fmt::Display for AllocationSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB"];
+        const UNIT_STEP: f64 = 1024.0;
+
+        let mut unit = 0;
+        let mut amount_in_unit = self.0 as f64;
+        while (unit < UNITS.len()) && (amount_in_unit >= UNIT_STEP) {
+            unit += 1;
+            amount_in_unit /= UNIT_STEP;
+        }
+
+        amount_in_unit = (amount_in_unit * 10.0).round() * 0.1;
+
+        if amount_in_unit.fract().abs() <= f64::EPSILON {
+            write!(f, "{:.0} {}", amount_in_unit, UNITS[unit])
+        } else {
+            write!(f, "{:.1} {}", amount_in_unit, UNITS[unit])
+        }
+    }
+}
+
+/// Memory usage statistics of a simulation
+#[derive(Debug)]
+pub struct SimulationStats {
+    /// The number of wires in the simulation
+    pub wire_count: usize,
+    /// The size of the allocation storing wires
+    pub wire_alloc_size: AllocationSize,
+    /// The size of the allocation storing wire widths
+    pub wire_width_alloc_size: AllocationSize,
+    /// The size of the allocation storing wire drives
+    pub wire_drive_alloc_size: AllocationSize,
+    /// The size of the allocation storing wire states
+    pub wire_state_alloc_size: AllocationSize,
+
+    /// The number of components stored inline in the simulation
+    pub small_component_count: usize,
+    /// The number of components stored out-of-line in the simulation
+    pub large_component_count: usize,
+    /// The size of the allocation storing components
+    pub component_alloc_size: AllocationSize,
+    /// The size of out-of-line components
+    pub large_component_alloc_size: AllocationSize,
+    /// The size of the allocation storing output widths
+    pub output_width_alloc_size: AllocationSize,
+    /// The size of the allocation storing output states
+    pub output_state_alloc_size: AllocationSize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -343,6 +422,25 @@ impl Simulator {
     /// Gets a components data
     pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
         self.components[component].get_data()
+    }
+
+    /// Collects statistics of the simulation
+    pub fn stats(&self) -> SimulationStats {
+        let (small_component_count, large_component_count) = self.components.component_counts();
+
+        SimulationStats {
+            wire_count: self.wires.wire_count(),
+            wire_alloc_size: self.wires.alloc_size(),
+            wire_width_alloc_size: self.wire_states.width_alloc_size(),
+            wire_drive_alloc_size: self.wire_states.drive_alloc_size(),
+            wire_state_alloc_size: self.wire_states.state_alloc_size(),
+            small_component_count,
+            large_component_count,
+            component_alloc_size: self.components.alloc_size(),
+            large_component_alloc_size: self.components.large_alloc_size(),
+            output_width_alloc_size: self.output_states.width_alloc_size(),
+            output_state_alloc_size: self.output_states.state_alloc_size(),
+        }
     }
 }
 
@@ -762,6 +860,12 @@ impl SimulatorBuilder {
     #[inline]
     pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
         self.sim.get_component_data(component)
+    }
+
+    /// Collects statistics of the simulation
+    #[inline]
+    pub fn stats(&self) -> SimulationStats {
+        self.sim.stats()
     }
 
     #[inline]

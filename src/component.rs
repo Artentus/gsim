@@ -417,6 +417,8 @@ pub enum ComponentData<'a> {
 }
 
 pub(crate) trait LargeComponent: Send + Sync {
+    fn alloc_size(&self) -> AllocationSize;
+
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::None
     }
@@ -457,6 +459,10 @@ macro_rules! wide_gate {
         }
 
         impl LargeComponent for $name {
+            fn alloc_size(&self) -> AllocationSize {
+                AllocationSize(std::mem::size_of::<$name>())
+            }
+
             fn update(
                 &mut self,
                 wire_states: &WireStateList,
@@ -508,6 +514,10 @@ macro_rules! wide_gate_inv {
         }
 
         impl LargeComponent for $name {
+            fn alloc_size(&self) -> AllocationSize {
+                AllocationSize(std::mem::size_of::<$name>())
+            }
+
             fn update(
                 &mut self,
                 wire_states: &WireStateList,
@@ -623,6 +633,10 @@ impl Adder {
 }
 
 impl LargeComponent for Adder {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
     fn update(
         &mut self,
         wire_states: &WireStateList,
@@ -776,6 +790,10 @@ impl Multiplexer {
 }
 
 impl LargeComponent for Multiplexer {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
     fn update(
         &mut self,
         wire_states: &WireStateList,
@@ -943,6 +961,10 @@ impl Register {
 }
 
 impl LargeComponent for Register {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::RegisterValue(MemoryCell {
             mem: &mut self.data,
@@ -1233,6 +1255,10 @@ impl Ram {
 }
 
 impl LargeComponent for Ram {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
     }
@@ -1339,6 +1365,10 @@ impl Rom {
 }
 
 impl LargeComponent for Rom {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
     }
@@ -1425,6 +1455,14 @@ impl Component {
             component: Box::new(component),
             output_base,
             output_atom_count,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn alloc_size(&self) -> AllocationSize {
+        match self {
+            Component::Small { .. } => AllocationSize(0),
+            Component::Large { component, .. } => component.alloc_size(),
         }
     }
 

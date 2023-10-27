@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use gsim::*;
 use std::num::NonZeroU8;
 
-fn generate_sim() -> Simulator {
+fn generate_sim(first: bool) -> Simulator {
     use rand::distributions::Uniform;
     use rand::prelude::*;
 
@@ -72,13 +72,52 @@ fn generate_sim() -> Simulator {
         wires.push(output);
     }
 
-    builder.build()
+    let sim = builder.build();
+
+    if first {
+        let stats = sim.stats();
+
+        println!();
+        println!();
+        println!("Wires: {} ({})", stats.wire_count, stats.wire_alloc_size);
+        println!("    Width alloc: {}", stats.wire_width_alloc_size);
+        println!("    Drive alloc: {}", stats.wire_drive_alloc_size);
+        println!("    State alloc: {}", stats.wire_state_alloc_size);
+        println!(
+            "Components: {} + {} ({} + {})",
+            stats.small_component_count,
+            stats.large_component_count,
+            stats.component_alloc_size,
+            stats.large_component_alloc_size
+        );
+        println!("    Width alloc: {}", stats.output_width_alloc_size);
+        println!("    State alloc: {}", stats.output_state_alloc_size);
+        println!(
+            "Total memory: {}",
+            stats.wire_alloc_size
+                + stats.wire_width_alloc_size
+                + stats.wire_drive_alloc_size
+                + stats.wire_state_alloc_size
+                + stats.component_alloc_size
+                + stats.large_component_alloc_size
+                + stats.output_width_alloc_size
+                + stats.output_state_alloc_size
+        );
+    }
+
+    sim
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
+    let mut first = true;
+
     c.bench_function("sim", |b| {
         b.iter_batched(
-            generate_sim,
+            || {
+                let sim = generate_sim(first);
+                first = false;
+                sim
+            },
             |mut sim| {
                 let result = sim.run_sim(u64::MAX);
                 assert!(matches!(result, SimulationRunResult::Ok));
