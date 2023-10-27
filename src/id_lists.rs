@@ -54,6 +54,20 @@ macro_rules! get_flatten_expect {
 
 const INVALID_ID: u32 = u32::MAX;
 
+pub(crate) trait Id: Copy + Eq {
+    /// An invalid ID
+    const INVALID: Self;
+
+    /// Checks whether this ID is invalid
+    #[inline]
+    fn is_invalid(self) -> bool {
+        self == Self::INVALID
+    }
+
+    fn to_u32(self) -> u32;
+    fn from_u32(val: u32) -> Self;
+}
+
 macro_rules! def_id_type {
     ($(#[$attr:meta])* $id_vis:vis $id_name:ident) => {
         $(#[$attr])*
@@ -63,22 +77,24 @@ macro_rules! def_id_type {
         assert_eq_size!($id_name, u32);
         assert_eq_align!($id_name, u32);
 
-        impl $id_name {
-            /// An invalid ID
-            pub const INVALID: Self = Self(INVALID_ID);
-
-            /// Checks whether this ID is invalid
-            #[inline]
-            #[allow(dead_code)]
-            pub const fn is_invalid(self) -> bool {
-                self.0 == INVALID_ID
-            }
-        }
-
         impl Default for $id_name {
             #[inline]
             fn default() -> Self {
                 Self::INVALID
+            }
+        }
+
+        impl Id for $id_name {
+            const INVALID: Self = Self(INVALID_ID);
+
+            #[inline]
+            fn to_u32(self) -> u32 {
+                self.0
+            }
+
+            #[inline]
+            fn from_u32(val: u32) -> Self {
+                Self(val)
             }
         }
     };

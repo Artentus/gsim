@@ -44,6 +44,7 @@ extern crate static_assertions;
 
 mod component;
 mod id_lists;
+mod id_vec;
 pub mod import;
 mod logic;
 
@@ -52,9 +53,10 @@ mod test;
 
 use component::*;
 use id_lists::*;
+use id_vec::IdVec;
 use itertools::izip;
 use logic::*;
-use smallvec::{smallvec, SmallVec};
+use smallvec::SmallVec;
 use std::num::NonZeroU8;
 use std::ops::{Add, AddAssign};
 use std::sync::Mutex;
@@ -198,11 +200,10 @@ enum WireUpdateResult {
     Conflict,
 }
 
-#[derive(Debug)]
 struct Wire {
     state: WireStateId,
-    drivers: inline_vec!(OutputStateId),
-    driving: inline_vec!(ComponentId),
+    drivers: IdVec<OutputStateId>,
+    driving: IdVec<ComponentId>,
 }
 
 impl Wire {
@@ -210,8 +211,8 @@ impl Wire {
     fn new(state: WireStateId) -> Self {
         Self {
             state,
-            drivers: smallvec![],
-            driving: smallvec![],
+            drivers: IdVec::new(),
+            driving: IdVec::new(),
         }
     }
 
@@ -220,7 +221,7 @@ impl Wire {
         // of a hashset is not actually worth it.
         // In particular, the lookup only occurs while building the graph, whereas during simulation, when speed
         // is important, reading a vector is much faster than reading a hashset.
-        if !self.driving.contains(&component) {
+        if !self.driving.contains(component) {
             self.driving.push(component);
         }
     }
@@ -278,7 +279,7 @@ impl Wire {
             let mask = LogicStorage::mask(width);
 
             let mut new_state = drive;
-            for &driver in &self.drivers {
+            for driver in self.drivers.iter() {
                 let output = output_states.get_state(driver)[i];
                 new_state = match combine(new_state, output, mask) {
                     Some(a) => a,
