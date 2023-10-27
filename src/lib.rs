@@ -52,6 +52,7 @@ mod test;
 
 use component::*;
 use id_lists::*;
+use itertools::izip;
 use logic::*;
 use smallvec::{smallvec, SmallVec};
 use std::num::NonZeroU8;
@@ -193,7 +194,7 @@ impl Wire {
 
         let mut changed = false;
         let mut total_width = width.get();
-        for (i, (drive, state)) in drive.iter().copied().zip(state).enumerate() {
+        for (i, (&drive, state)) in izip!(drive, state).enumerate() {
             let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
             let mask = LogicStorage::mask(width);
 
@@ -538,11 +539,10 @@ macro_rules! def_add_binary_gate {
 
             let wire_a = &self.sim.wires[input_a];
             let wire_b = &self.sim.wires[input_b];
-            let gate = SmallComponent::$gate {
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
                 input_a: wire_a.state,
                 input_b: wire_b.state,
-                output,
-            };
+            }, output);
             let id = self.add_small_component(gate, &[output_state])?;
 
             self.mark_driving(input_a, id);
@@ -567,10 +567,9 @@ macro_rules! def_add_unary_gate {
                 .ok_or(AddComponentError::TooManyComponents)?;
 
             let wire = &self.sim.wires[input];
-            let gate = SmallComponent::$gate {
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
                 input: wire.state,
-                output,
-            };
+            }, output);
             let id = self.add_small_component(gate, &[output_state])?;
 
             self.mark_driving(input, id);
@@ -601,11 +600,10 @@ macro_rules! def_add_wide_gate {
             let id = if inputs.len() == 2 {
                 let wire_a = &self.sim.wires[inputs[0]];
                 let wire_b = &self.sim.wires[inputs[1]];
-                let gate = SmallComponent::$gate {
+                let gate = SmallComponent::new(SmallComponentKind::$gate {
                     input_a: wire_a.state,
                     input_b: wire_b.state,
-                    output,
-                };
+                }, output);
                 self.add_small_component(gate, &[output_state])
             } else {
                 let inputs: SmallVec<_> = inputs
@@ -639,10 +637,9 @@ macro_rules! def_add_horizontal_gate {
                 .ok_or(AddComponentError::TooManyComponents)?;
 
             let wire = &self.sim.wires[input];
-            let gate = SmallComponent::$gate {
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
                 input: wire.state,
-                output,
-            };
+            }, output);
             let id = self.add_small_component(gate, &[output_state])?;
 
             self.mark_driving(input, id);
@@ -673,11 +670,10 @@ macro_rules! def_add_comparator {
 
             let wire_a = &self.sim.wires[input_a];
             let wire_b = &self.sim.wires[input_b];
-            let gate = SmallComponent::$gate {
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
                 input_a: wire_a.state,
                 input_b: wire_b.state,
-                output,
-            };
+            }, output);
             let id = self.add_small_component(gate, &[output_state])?;
 
             self.mark_driving(input_a, id);
@@ -976,11 +972,13 @@ impl SimulatorBuilder {
 
         let wire = &self.sim.wires[input];
         let wire_en = &self.sim.wires[enable];
-        let gate = SmallComponent::Buffer {
-            input: wire.state,
-            enable: wire_en.state,
+        let gate = SmallComponent::new(
+            SmallComponentKind::Buffer {
+                input: wire.state,
+                enable: wire_en.state,
+            },
             output,
-        };
+        );
         let id = self.add_small_component(gate, &[output_state])?;
 
         self.mark_driving(input, id);
@@ -1363,10 +1361,8 @@ impl SimulatorBuilder {
             .ok_or(AddComponentError::TooManyComponents)?;
 
         let wire = &self.sim.wires[input];
-        let extend = SmallComponent::ZeroExtend {
-            input: wire.state,
-            output,
-        };
+        let extend =
+            SmallComponent::new(SmallComponentKind::ZeroExtend { input: wire.state }, output);
         let id = self.add_small_component(extend, &[output_state])?;
 
         self.mark_driving(input, id);
@@ -1391,10 +1387,8 @@ impl SimulatorBuilder {
             .ok_or(AddComponentError::TooManyComponents)?;
 
         let wire = &self.sim.wires[input];
-        let extend = SmallComponent::SignExtend {
-            input: wire.state,
-            output,
-        };
+        let extend =
+            SmallComponent::new(SmallComponentKind::SignExtend { input: wire.state }, output);
         let id = self.add_small_component(extend, &[output_state])?;
 
         self.mark_driving(input, id);

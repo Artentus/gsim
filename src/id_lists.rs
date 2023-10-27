@@ -3,6 +3,55 @@ use std::num::NonZeroU8;
 use std::ops::{Index, IndexMut};
 use sync_unsafe_cell::SyncUnsafeCell;
 
+// SAFETY:
+// Accessing this data is on the hot path of the simulation,
+// so it is important to optimize it as much as possible.
+// Therefore in release mode we turn off all bounds checks
+// and assume our invariants hold. This is technically not
+// safe so proper testing in debug mode is required.
+
+#[cfg(not(debug_assertions))]
+macro_rules! get_expect {
+    ($s:expr, $i:expr, $err:literal $(,)?) => {
+        unsafe { $s.get_unchecked($i) }
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! get_expect {
+    ($s:expr, $i:expr, $err:literal $(,)?) => {
+        $s.get($i).expect($err)
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! get_mut_expect {
+    ($s:expr, $i:expr, $err:literal $(,)?) => {
+        unsafe { $s.get_unchecked_mut($i) }
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! get_mut_expect {
+    ($s:expr, $i:expr, $err:literal $(,)?) => {
+        $s.get_mut($i).expect($err)
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! get_flatten_expect {
+    ($s:expr, $i:expr, $err:literal $(,)?) => {
+        unsafe { $s.get_unchecked($i).unwrap_unchecked() }
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! get_flatten_expect {
+    ($s:expr, $i:expr, $err:literal $(,)?) => {
+        $s.get($i).copied().flatten().expect($err)
+    };
+}
+
 const INVALID_ID: u32 = u32::MAX;
 
 macro_rules! def_id_type {
@@ -218,11 +267,7 @@ impl WireStateList {
 
     #[inline]
     pub(crate) fn get_width(&self, id: WireStateId) -> NonZeroU8 {
-        self.widths
-            .get(id.0 as usize)
-            .copied()
-            .flatten()
-            .expect("invalid wire state ID")
+        get_flatten_expect!(self.widths, id.0 as usize, "invalid wire state ID")
     }
 
     #[inline]
@@ -232,9 +277,7 @@ impl WireStateList {
         let start = id.0 as usize;
         let end = start + (count.get() as usize);
 
-        self.drives
-            .get(start..end)
-            .expect("invalid wire state data layout")
+        get_expect!(self.drives, start..end, "invalid wire state data layout")
     }
 
     #[inline]
@@ -244,9 +287,7 @@ impl WireStateList {
         let start = id.0 as usize;
         let end = start + (count.get() as usize);
 
-        self.drives
-            .get_mut(start..end)
-            .expect("invalid wire state data layout")
+        get_mut_expect!(self.drives, start..end, "invalid wire state data layout")
     }
 
     #[inline]
@@ -256,10 +297,7 @@ impl WireStateList {
         let start = id.0 as usize;
         let end = start + (count.get() as usize);
 
-        let state = self
-            .states
-            .get(start..end)
-            .expect("invalid wire state data layout");
+        let state = get_expect!(self.states, start..end, "invalid wire state data layout");
 
         unsafe {
             // SAFETY:
@@ -280,15 +318,8 @@ impl WireStateList {
         let start = id.0 as usize;
         let end = start + (count.get() as usize);
 
-        let drive = self
-            .drives
-            .get(start..end)
-            .expect("invalid wire state data layout");
-
-        let state = self
-            .states
-            .get(start..end)
-            .expect("invalid wire state data layout");
+        let drive = get_expect!(self.drives, start..end, "invalid wire state data layout");
+        let state = get_expect!(self.states, start..end, "invalid wire state data layout");
         let state = unsafe { cell_slice_to_mut(state) };
 
         (width, drive, state)
@@ -346,11 +377,7 @@ impl OutputStateList {
 
     #[inline]
     pub(crate) fn get_width(&self, id: OutputStateId) -> NonZeroU8 {
-        self.widths
-            .get(id.0 as usize)
-            .copied()
-            .flatten()
-            .expect("invalid output state ID")
+        get_flatten_expect!(self.widths, id.0 as usize, "invalid output state ID")
     }
 
     #[inline]
@@ -360,10 +387,7 @@ impl OutputStateList {
         let start = id.0 as usize;
         let end = start + (count.get() as usize);
 
-        let state = self
-            .states
-            .get(start..end)
-            .expect("invalid output state data layout");
+        let state = get_expect!(self.states, start..end, "invalid output state data layout");
 
         unsafe {
             // SAFETY:
@@ -405,15 +429,8 @@ impl OutputStateList {
             "invalid output state slice length",
         );
 
-        let widths = self
-            .widths
-            .get(start..end)
-            .expect("invalid output state data layout");
-
-        let states = self
-            .states
-            .get(start..end)
-            .expect("invalid output state data layout");
+        let widths = get_expect!(self.widths, start..end, "invalid output state data layout");
+        let states = get_expect!(self.states, start..end, "invalid output state data layout");
         let states = unsafe { cell_slice_to_mut(states) };
 
         OutputStateSlice {
@@ -433,11 +450,11 @@ pub(crate) struct OutputStateSlice<'a> {
 impl OutputStateSlice<'_> {
     #[inline]
     pub(crate) fn get_width(&self, id: OutputStateId) -> NonZeroU8 {
-        self.widths
-            .get((id.0 as usize) - self.offset)
-            .copied()
-            .flatten()
-            .expect("invalid output state ID")
+        get_flatten_expect!(
+            self.widths,
+            (id.0 as usize) - self.offset,
+            "invalid output state ID",
+        )
     }
 
     #[inline]
@@ -447,10 +464,7 @@ impl OutputStateSlice<'_> {
         let start = (id.0 as usize) - self.offset;
         let end = start + (count.get() as usize);
 
-        let state = self
-            .states
-            .get_mut(start..end)
-            .expect("invalid output state data layout");
+        let state = get_mut_expect!(self.states, start..end, "invalid output state data layout");
 
         (width, state)
     }

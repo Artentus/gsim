@@ -1,4 +1,5 @@
 use crate::logic::{Atom, AtomOffset, AtomWidth, LogicBitState, LogicStorage};
+use crate::SafeDivCeil;
 use itertools::izip;
 use std::num::NonZeroU8;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
@@ -47,64 +48,180 @@ impl BitOrAssign for OpResult {
     }
 }
 
-trait Perform<'a>: IntoIterator<Item = &'a mut Atom> + Sized
-where
-    Self::IntoIter: Iterator + ExactSizeIterator,
-{
-    #[inline]
-    fn perform_no_input<'out, Op>(self, width: NonZeroU8, mut op: Op) -> Option<OpResult>
-    where
-        Op: FnMut(AtomWidth, Atom) -> Option<Atom>,
-    {
-        let mut result = OpResult::Unchanged;
+// SAFETY:
+// These functions are on the hot path of the simulation,
+// so it is important to optimize them as much as possible.
+// Therefore in release mode we turn off all bounds checks
+// and assume our invariants hold. This is technically not
+// safe so proper testing in debug mode is required.
 
-        let mut iter = self.into_iter();
-        while iter.len() > 1 {
-            let out = iter.next().unwrap();
-
-            let new = op(AtomWidth::MAX, *out)?;
-            if !out.eq(new, AtomWidth::MAX) {
-                *out = new;
-                result = OpResult::Changed;
-            }
-        }
-
-        let tail_width = AtomWidth::new(width.get() % Atom::BITS.get()).unwrap_or(AtomWidth::MAX);
-        let out = iter.next().unwrap();
-
-        let new = op(tail_width, *out)?;
-        if !out.eq(new, tail_width) {
-            *out = new;
-            result = OpResult::Changed;
-        }
-
-        Some(result)
-    }
-
-    #[inline]
-    fn perform<'out, Input, Op>(
-        self,
-        width: NonZeroU8,
-        input: Input,
-        mut op: Op,
-    ) -> Option<OpResult>
-    where
-        Input: IntoIterator,
-        Input::IntoIter: ExactSizeIterator,
-        Op: FnMut(AtomWidth, Atom, Input::Item) -> Option<Atom>,
-    {
-        let mut input = input.into_iter();
-        self.perform_no_input(width, |tail_width, out| {
-            op(tail_width, out, input.next().unwrap())
-        })
-    }
+#[cfg(not(debug_assertions))]
+macro_rules! get {
+    ($slice:expr, $i:expr) => {
+        unsafe { *$slice.get_unchecked($i) }
+    };
 }
 
-impl<'a, T> Perform<'a> for T
+#[cfg(debug_assertions)]
+macro_rules! get {
+    ($slice:expr, $i:expr) => {
+        $slice[$i]
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! get_mut {
+    ($slice:expr, $i:expr) => {
+        unsafe { $slice.get_unchecked_mut($i) }
+    };
+}
+
+#[cfg(debug_assertions)]
+macro_rules! get_mut {
+    ($slice:expr, $i:expr) => {
+        &mut $slice[$i]
+    };
+}
+
+#[inline]
+fn perform_3<Op>(
+    width: NonZeroU8,
+    out: &mut [Atom],
+    lhs: &[Atom],
+    rhs: &[Atom],
+    mut op: Op,
+) -> OpResult
 where
-    T: IntoIterator<Item = &'a mut Atom> + Sized,
-    T::IntoIter: Iterator + ExactSizeIterator,
+    Op: FnMut(AtomWidth, Atom, Atom) -> Atom,
 {
+    debug_assert_eq!(out.len(), width.safe_div_ceil(Atom::BITS).get() as usize);
+    debug_assert_eq!(out.len(), lhs.len());
+    debug_assert_eq!(out.len(), rhs.len());
+
+    let mut result = OpResult::Unchanged;
+
+    let mut i = 0;
+    let mut total_width = width.get();
+    while total_width >= Atom::BITS.get() {
+        let out = get_mut!(out, i);
+        let lhs = get!(lhs, i);
+        let rhs = get!(rhs, i);
+
+        let new = op(AtomWidth::MAX, lhs, rhs);
+        if !out.eq(new, AtomWidth::MAX) {
+            result = OpResult::Changed;
+        }
+        *out = new;
+
+        i += 1;
+        total_width -= Atom::BITS.get();
+    }
+
+    if total_width > 0 {
+        let last_out = get_mut!(out, i);
+        let last_lhs = get!(lhs, i);
+        let last_rhs = get!(rhs, i);
+
+        let last_width = unsafe {
+            // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
+            AtomWidth::new_unchecked(total_width)
+        };
+
+        let last_new = op(last_width, last_lhs, last_rhs);
+        if !last_out.eq(last_new, last_width) {
+            result = OpResult::Changed;
+        }
+        *last_out = last_new;
+    }
+
+    result
+}
+
+#[inline]
+fn perform_2<Op>(width: NonZeroU8, out: &mut [Atom], rhs: &[Atom], mut op: Op) -> OpResult
+where
+    Op: FnMut(AtomWidth, Atom, Atom) -> Atom,
+{
+    debug_assert_eq!(out.len(), width.safe_div_ceil(Atom::BITS).get() as usize);
+    debug_assert_eq!(out.len(), rhs.len());
+
+    let mut result = OpResult::Unchanged;
+
+    let mut i = 0;
+    let mut total_width = width.get();
+    while total_width >= Atom::BITS.get() {
+        let out = get_mut!(out, i);
+        let rhs = get!(rhs, i);
+
+        let new = op(AtomWidth::MAX, *out, rhs);
+        if !out.eq(new, AtomWidth::MAX) {
+            result = OpResult::Changed;
+        }
+        *out = new;
+
+        i += 1;
+        total_width -= Atom::BITS.get();
+    }
+
+    if total_width > 0 {
+        let last_out = get_mut!(out, i);
+        let last_rhs = get!(rhs, i);
+
+        let last_width = unsafe {
+            // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
+            AtomWidth::new_unchecked(total_width)
+        };
+
+        let last_new = op(last_width, *last_out, last_rhs);
+        if !last_out.eq(last_new, last_width) {
+            result = OpResult::Changed;
+        }
+        *last_out = last_new;
+    }
+
+    result
+}
+
+#[inline]
+fn perform_1<Op>(width: NonZeroU8, out: &mut [Atom], mut op: Op) -> OpResult
+where
+    Op: FnMut(AtomWidth, Atom) -> Atom,
+{
+    debug_assert_eq!(out.len(), width.safe_div_ceil(Atom::BITS).get() as usize);
+
+    let mut result = OpResult::Unchanged;
+
+    let mut i = 0;
+    let mut total_width = width.get();
+    while total_width >= Atom::BITS.get() {
+        let out = get_mut!(out, i);
+
+        let new = op(AtomWidth::MAX, *out);
+        if !out.eq(new, AtomWidth::MAX) {
+            result = OpResult::Changed;
+        }
+        *out = new;
+
+        i += 1;
+        total_width -= Atom::BITS.get();
+    }
+
+    if total_width > 0 {
+        let last_out = get_mut!(out, i);
+
+        let last_width = unsafe {
+            // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
+            AtomWidth::new_unchecked(total_width)
+        };
+
+        let last_new = op(last_width, *last_out);
+        if !last_out.eq(last_new, last_width) {
+            result = OpResult::Changed;
+        }
+        *last_out = last_new;
+    }
+
+    result
 }
 
 #[inline]
@@ -283,16 +400,12 @@ macro_rules! def_binary_op {
             lhs: &[Atom],
             rhs: &[Atom],
         ) -> OpResult {
-            out.perform(width, izip!(lhs, rhs), |_, _, (&a, &b)| {
-                Some($op_impl(a, b))
-            })
-            .unwrap()
+            perform_3(width, out, lhs, rhs, |_, a, b| $op_impl(a, b))
         }
 
         #[allow(dead_code)]
         pub(super) fn $name2(width: NonZeroU8, out: &mut [Atom], rhs: &[Atom]) -> OpResult {
-            out.perform(width, rhs, |_, a, &b| Some($op_impl(a, b)))
-                .unwrap()
+            perform_2(width, out, rhs, |_, a, b| $op_impl(a, b))
         }
     };
 }
@@ -322,13 +435,11 @@ fn logic_not_impl(v: Atom) -> Atom {
 macro_rules! def_unary_op {
     ($op_impl:ident -> $name2:ident, $name1:ident) => {
         pub(super) fn $name2(width: NonZeroU8, out: &mut [Atom], val: &[Atom]) -> OpResult {
-            out.perform(width, val, |_, _, &v| Some($op_impl(v)))
-                .unwrap()
+            perform_2(width, out, val, |_, _, v| $op_impl(v))
         }
 
         pub(super) fn $name1(width: NonZeroU8, out: &mut [Atom]) -> OpResult {
-            out.perform_no_input(width, |_, v| Some($op_impl(v)))
-                .unwrap()
+            perform_1(width, out, |_, v| $op_impl(v))
         }
     };
 }
@@ -342,19 +453,35 @@ pub(super) fn buffer(
     en: LogicBitState,
 ) -> OpResult {
     match en {
-        LogicBitState::Undefined => out.perform_no_input(width, |_, _| Some(Atom::UNDEFINED)),
-        LogicBitState::Logic1 => {
-            out.perform(width, val, |_, _, &val| Some(val.high_z_to_undefined()))
-        }
-        _ => out.perform_no_input(width, |_, _| Some(Atom::HIGH_Z)),
+        LogicBitState::Undefined => perform_1(width, out, |_, _| Atom::UNDEFINED),
+        LogicBitState::Logic1 => perform_2(width, out, val, |_, _, v| v.high_z_to_undefined()),
+        _ => perform_1(width, out, |_, _| Atom::HIGH_Z),
     }
-    .unwrap()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AddMode {
-    Add,
-    Subtract,
+#[inline]
+fn add_impl(width: AtomWidth, a: Atom, b: Atom, c: LogicBitState) -> (Atom, LogicBitState) {
+    let (c_in, c_valid) = c.to_bits();
+    let sum = (a.state.get() as u64) + (b.state.get() as u64) + (c_in as u64);
+
+    let valid_mask_a = a.valid.keep_trailing_ones();
+    let valid_mask_b = b.valid.keep_trailing_ones();
+    let valid_mask_c = match c_valid {
+        false => LogicStorage::ALL_ZERO,
+        true => LogicStorage::ALL_ONE,
+    };
+    let valid_mask = (valid_mask_a & valid_mask_b & valid_mask_c).get();
+
+    let c_valid = (valid_mask >> (width.get() - 1)) > 0;
+    let c_state = ((sum >> width.get()) > 0) | !c_valid;
+
+    (
+        Atom {
+            state: LogicStorage::new((sum as u32) | !valid_mask),
+            valid: LogicStorage::new(valid_mask),
+        },
+        LogicBitState::from_bits(c_state, c_valid),
+    )
 }
 
 pub(super) fn add(
@@ -364,43 +491,36 @@ pub(super) fn add(
     lhs: &[Atom],
     rhs: &[Atom],
     carry_in: LogicBitState,
-    mode: AddMode,
 ) -> OpResult {
-    if let Some(mut carry) = carry_in.to_bool() {
-        let result = out.perform(width, izip!(lhs, rhs), |width, _, (&lhs, &rhs)| {
-            if !lhs.is_valid(width) || !rhs.is_valid(width) {
-                return None;
-            }
+    let mut carry = carry_in;
+    let result = perform_3(width, out, lhs, rhs, |width, a, b| {
+        let sum;
+        (sum, carry) = add_impl(width, a, b, carry);
+        sum
+    });
 
-            let rhs_state = match mode {
-                AddMode::Add => rhs.state,
-                AddMode::Subtract => !rhs.state,
-            };
+    *carry_out = carry;
+    result
+}
 
-            let new;
-            (new, carry) = lhs.state.carrying_add(rhs_state, carry);
+pub(super) fn sub(
+    width: NonZeroU8,
+    out: &mut [Atom],
+    carry_out: &mut LogicBitState,
+    lhs: &[Atom],
+    rhs: &[Atom],
+    carry_in: LogicBitState,
+) -> OpResult {
+    let mut carry = carry_in;
+    let result = perform_3(width, out, lhs, rhs, |width, a, mut b| {
+        let sum;
+        b.state = !b.state;
+        (sum, carry) = add_impl(width, a, b, carry);
+        sum
+    });
 
-            *carry_out = if let Some(offset) = AtomOffset::new(width.get()) {
-                new.get_bit(offset)
-            } else {
-                carry
-            }
-            .into();
-
-            Some(Atom {
-                state: new,
-                valid: LogicStorage::ALL_ONE,
-            })
-        });
-
-        if let Some(result) = result {
-            return result;
-        }
-    }
-
-    *carry_out = LogicBitState::Undefined;
-    out.perform_no_input(width, |_, _| Some(Atom::UNDEFINED))
-        .unwrap()
+    *carry_out = carry;
+    result
 }
 
 //#[inline]

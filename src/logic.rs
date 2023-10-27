@@ -4,29 +4,24 @@ use crate::{inline_vec, SafeDivCeil};
 use std::num::NonZeroU8;
 use std::ops::*;
 
-/// An integer type of the same bit width as `LogicStorage`.
-pub(crate) type LogicSizeInteger = u32;
-
-type SignedLogicSizeInteger = i32;
-type DoubleLogicSizeInteger = u64;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub(crate) struct LogicStorage(LogicSizeInteger);
-assert_eq_size!(LogicStorage, LogicSizeInteger);
-assert_eq_align!(LogicStorage, LogicSizeInteger);
+pub(crate) struct LogicStorage(u32);
+assert_eq_size!(LogicStorage, u32);
+assert_eq_align!(LogicStorage, u32);
 
 impl LogicStorage {
     pub(crate) const ALL_ZERO: Self = Self(0);
     pub(crate) const ALL_ONE: Self = Self(!0);
 
     #[inline]
-    pub(crate) fn mask(width: AtomWidth) -> Self {
-        if width >= AtomWidth::MAX {
-            Self::ALL_ONE
-        } else {
-            Self((1 << width.get()) - 1)
-        }
+    pub(crate) const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    pub(crate) const fn mask(width: AtomWidth) -> Self {
+        Self(((1u64 << width.get()) - 1) as u32)
     }
 
     #[inline]
@@ -35,10 +30,15 @@ impl LogicStorage {
     }
 
     #[inline]
-    pub(crate) fn get(&self) -> LogicSizeInteger {
+    pub(crate) const fn get(&self) -> u32 {
         self.0
     }
 }
+
+const_assert_eq!(
+    LogicStorage::mask(AtomWidth::MAX).0,
+    LogicStorage::ALL_ONE.0
+);
 
 impl BitAnd for LogicStorage {
     type Output = Self;
@@ -221,74 +221,77 @@ impl ShrAssign<AtomOffset> for LogicStorage {
 impl LogicStorage {
     #[inline]
     pub(crate) fn ashr(self, rhs: AtomOffset) -> Self {
-        Self(((self.0 as SignedLogicSizeInteger) >> rhs.get()) as LogicSizeInteger)
+        Self(((self.0 as i32) >> rhs.get()) as u32)
     }
 
     #[inline]
     pub(crate) fn carrying_add(self, rhs: Self, c_in: bool) -> (Self, bool) {
         let (r1, c1) = self.0.overflowing_add(rhs.0);
-        let (r2, c2) = r1.overflowing_add(c_in as LogicSizeInteger);
+        let (r2, c2) = r1.overflowing_add(c_in as u32);
         (Self(r2), c1 | c2)
     }
 
     #[inline]
     pub(crate) fn widening_mul(self, rhs: Self, width: AtomWidth) -> (Self, Self) {
-        let result = (self.0 as DoubleLogicSizeInteger) * (rhs.0 as DoubleLogicSizeInteger);
-        (
-            Self(result as LogicSizeInteger),
-            Self((result >> width.get()) as LogicSizeInteger),
-        )
+        let result = (self.0 as u64) * (rhs.0 as u64);
+        (Self(result as u32), Self((result >> width.get()) as u32))
     }
 
     #[inline]
     pub(crate) fn lts(self, rhs: Self, width: AtomWidth) -> bool {
-        let lhs = self.0 as SignedLogicSizeInteger;
-        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let lhs = self.0 as i32;
+        let rhs = rhs.0 as i32;
         let shift_amount = Atom::BITS.get() - width.get();
         (lhs << shift_amount) < (rhs << shift_amount)
     }
 
     #[inline]
     pub(crate) fn gts(self, rhs: Self, width: AtomWidth) -> bool {
-        let lhs = self.0 as SignedLogicSizeInteger;
-        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let lhs = self.0 as i32;
+        let rhs = rhs.0 as i32;
         let shift_amount = Atom::BITS.get() - width.get();
         (lhs << shift_amount) > (rhs << shift_amount)
     }
 
     #[inline]
     pub(crate) fn les(self, rhs: Self, width: AtomWidth) -> bool {
-        let lhs = self.0 as SignedLogicSizeInteger;
-        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let lhs = self.0 as i32;
+        let rhs = rhs.0 as i32;
         let shift_amount = Atom::BITS.get() - width.get();
         (lhs << shift_amount) <= (rhs << shift_amount)
     }
 
     #[inline]
     pub(crate) fn ges(self, rhs: Self, width: AtomWidth) -> bool {
-        let lhs = self.0 as SignedLogicSizeInteger;
-        let rhs = rhs.0 as SignedLogicSizeInteger;
+        let lhs = self.0 as i32;
+        let rhs = rhs.0 as i32;
         let shift_amount = Atom::BITS.get() - width.get();
         (lhs << shift_amount) >= (rhs << shift_amount)
+    }
+
+    #[inline]
+    pub(crate) fn keep_trailing_ones(self) -> Self {
+        Self(((1u64 << self.0.trailing_ones()) - 1) as u32)
     }
 }
 
 /// The logic state of a single bit
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 pub enum LogicBitState {
     /// The high impedance state
-    HighZ,
+    HighZ = 0b00,
     /// An undefined logic level
-    Undefined,
+    Undefined = 0b01,
     /// The low logic level
-    Logic0,
+    Logic0 = 0b10,
     /// The high logic level
-    Logic1,
+    Logic1 = 0b11,
 }
 
 impl LogicBitState {
     #[inline]
-    const fn from_bits(state_bit: bool, valid_bit: bool) -> Self {
+    pub(crate) const fn from_bits(state_bit: bool, valid_bit: bool) -> Self {
         match (state_bit, valid_bit) {
             (false, false) => Self::HighZ,
             (true, false) => Self::Undefined,
@@ -298,13 +301,10 @@ impl LogicBitState {
     }
 
     #[inline]
-    const fn to_bits(self) -> (bool, bool) {
-        match self {
-            Self::HighZ => (false, false),
-            Self::Undefined => (true, false),
-            Self::Logic0 => (false, true),
-            Self::Logic1 => (true, true),
-        }
+    pub(crate) const fn to_bits(self) -> (bool, bool) {
+        let state = (self as u8) & 0x1;
+        let valid = (self as u8) >> 1;
+        (state > 0, valid > 0)
     }
 
     /// Creates a logic bit state representing a boolean value
@@ -491,7 +491,7 @@ impl Atom {
     #[inline]
     pub(crate) const fn from_bool(value: bool) -> Self {
         Self {
-            state: LogicStorage(value as LogicSizeInteger),
+            state: LogicStorage(value as u32),
             valid: LogicStorage::ALL_ONE,
         }
     }
@@ -501,8 +501,8 @@ impl Atom {
         let (state, valid) = value.to_bits();
 
         Self {
-            state: LogicStorage(state as LogicSizeInteger),
-            valid: LogicStorage(valid as LogicSizeInteger),
+            state: LogicStorage(state as u32),
+            valid: LogicStorage(valid as u32),
         }
     }
 
@@ -577,7 +577,7 @@ impl Atom {
     }
 
     #[inline]
-    pub(crate) const fn from_state_valid(state: LogicSizeInteger, valid: LogicSizeInteger) -> Self {
+    pub(crate) const fn from_state_valid(state: u32, valid: u32) -> Self {
         Self {
             state: LogicStorage(state),
             valid: LogicStorage(valid),
@@ -585,7 +585,7 @@ impl Atom {
     }
 
     #[inline]
-    pub(crate) const fn to_state_valid(self) -> (LogicSizeInteger, LogicSizeInteger) {
+    pub(crate) const fn to_state_valid(self) -> (u32, u32) {
         (self.state.0, self.valid.0)
     }
 
@@ -658,7 +658,7 @@ impl LogicState {
     /// Bits past the first one are implicitely assigned the value 0
     #[inline]
     pub const fn from_bool(value: bool) -> Self {
-        Self(LogicStateRepr::Int(LogicStorage(value as LogicSizeInteger)))
+        Self(LogicStateRepr::Int(LogicStorage(value as u32)))
     }
 
     /// Creates a new logic state from the given bits (most significant bit first)

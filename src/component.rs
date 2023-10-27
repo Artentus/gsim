@@ -7,545 +7,362 @@ use crate::*;
 use itertools::izip;
 use smallvec::smallvec;
 
-pub(crate) enum SmallComponent {
+pub(crate) enum SmallComponentKind {
     AndGate {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     OrGate {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     XorGate {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     NandGate {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     NorGate {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     XnorGate {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     NotGate {
         input: WireStateId,
-        output: WireId,
     },
     Buffer {
         input: WireStateId,
         enable: WireStateId,
-        output: WireId,
     },
     Slice {
         input: WireStateId,
         offset: u8,
-        output: WireId,
     },
     Merge {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     Add {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     Sub {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     Mul {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     Div {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     Rem {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     LeftShift {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     LogicalRightShift {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     ArithmeticRightShift {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     HorizontalAnd {
         input: WireStateId,
-        output: WireId,
     },
     HorizontalOr {
         input: WireStateId,
-        output: WireId,
     },
     HorizontalXor {
         input: WireStateId,
-        output: WireId,
     },
     HorizontalNand {
         input: WireStateId,
-        output: WireId,
     },
     HorizontalNor {
         input: WireStateId,
-        output: WireId,
     },
     HorizontalXnor {
         input: WireStateId,
-        output: WireId,
     },
     CompareEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareNotEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareLessThan {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareGreaterThan {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareLessThanOrEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareGreaterThanOrEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareLessThanSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareGreaterThanSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareLessThanOrEqualSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     CompareGreaterThanOrEqualSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-        output: WireId,
     },
     ZeroExtend {
         input: WireStateId,
-        output: WireId,
     },
     SignExtend {
         input: WireStateId,
-        output: WireId,
     },
 }
 
+pub(crate) struct SmallComponent {
+    kind: SmallComponentKind,
+    output: WireId,
+}
+
 impl SmallComponent {
+    #[inline]
+    pub(crate) fn new(kind: SmallComponentKind, output: WireId) -> Self {
+        Self { kind, output }
+    }
+
     fn update(
         &self,
         output_base: OutputStateId,
         wire_states: &WireStateList,
         mut output_states: OutputStateSlice<'_>,
     ) -> inline_vec!(WireId) {
-        match *self {
-            SmallComponent::AndGate {
-                input_a,
-                input_b,
-                output,
-            } => {
+        let result = match self.kind {
+            SmallComponentKind::AndGate { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_and_3(width, out, lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_and_3(width, out, lhs, rhs)
             }
-            SmallComponent::OrGate {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::OrGate { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_or_3(width, out, lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_or_3(width, out, lhs, rhs)
             }
-            SmallComponent::XorGate {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::XorGate { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_xor_3(width, out, lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_xor_3(width, out, lhs, rhs)
             }
-            SmallComponent::NandGate {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::NandGate { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_nand_3(width, out, lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_nand_3(width, out, lhs, rhs)
             }
-            SmallComponent::NorGate {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::NorGate { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_nor_3(width, out, lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_nor_3(width, out, lhs, rhs)
             }
-            SmallComponent::XnorGate {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::XnorGate { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_xnor_3(width, out, lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_xnor_3(width, out, lhs, rhs)
             }
-            SmallComponent::NotGate { input, output } => {
+            SmallComponentKind::NotGate { input } => {
                 let val = wire_states.get_state(input);
                 let (width, out) = output_states.get_data(output_base);
-                match logic_not_2(width, out, val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                logic_not_2(width, out, val)
             }
-            SmallComponent::Buffer {
-                input,
-                enable,
-                output,
-            } => {
+            SmallComponentKind::Buffer { input, enable } => {
                 let val = wire_states.get_state(input);
                 let en = wire_states.get_state(enable);
                 let (width, out) = output_states.get_data(output_base);
-                match buffer(width, out, val, en[0].get_bit_state(AtomOffset::MIN)) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                buffer(width, out, val, en[0].get_bit_state(AtomOffset::MIN))
             }
-            SmallComponent::Add {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::Add { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
 
-                match add(
+                add(
                     width,
                     out,
                     &mut LogicBitState::Undefined,
                     lhs,
                     rhs,
                     LogicBitState::Logic0,
-                    AddMode::Add,
-                ) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                )
             }
-            SmallComponent::Sub {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::Sub { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (width, out) = output_states.get_data(output_base);
 
-                match add(
+                sub(
                     width,
                     out,
                     &mut LogicBitState::Undefined,
                     lhs,
                     rhs,
                     LogicBitState::Logic1,
-                    AddMode::Subtract,
-                ) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                )
             }
-            SmallComponent::HorizontalAnd { input, output } => {
+            SmallComponentKind::HorizontalAnd { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (_, out) = output_states.get_data(output_base);
-                match horizontal_logic_and(width, &mut out[0], val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                horizontal_logic_and(width, &mut out[0], val)
             }
-            SmallComponent::HorizontalOr { input, output } => {
+            SmallComponentKind::HorizontalOr { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (_, out) = output_states.get_data(output_base);
-                match horizontal_logic_or(width, &mut out[0], val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                horizontal_logic_or(width, &mut out[0], val)
             }
-            SmallComponent::HorizontalXor { input, output } => {
+            SmallComponentKind::HorizontalXor { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (_, out) = output_states.get_data(output_base);
-                match horizontal_logic_xor(width, &mut out[0], val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                horizontal_logic_xor(width, &mut out[0], val)
             }
-            SmallComponent::HorizontalNand { input, output } => {
+            SmallComponentKind::HorizontalNand { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (_, out) = output_states.get_data(output_base);
-                match horizontal_logic_nand(width, &mut out[0], val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                horizontal_logic_nand(width, &mut out[0], val)
             }
-            SmallComponent::HorizontalNor { input, output } => {
+            SmallComponentKind::HorizontalNor { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (_, out) = output_states.get_data(output_base);
-                match horizontal_logic_nor(width, &mut out[0], val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                horizontal_logic_nor(width, &mut out[0], val)
             }
-            SmallComponent::HorizontalXnor { input, output } => {
+            SmallComponentKind::HorizontalXnor { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (_, out) = output_states.get_data(output_base);
-                match horizontal_logic_xnor(width, &mut out[0], val) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                horizontal_logic_xnor(width, &mut out[0], val)
             }
-            SmallComponent::CompareEqual {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareEqual { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match equal(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                equal(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareNotEqual {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareNotEqual { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match not_equal(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                not_equal(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareLessThan {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareLessThan { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match less_than(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                less_than(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareGreaterThan {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareGreaterThan { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match greater_than(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                greater_than(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareLessThanOrEqual {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareLessThanOrEqual { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match less_than_or_equal(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                less_than_or_equal(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareGreaterThanOrEqual {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareGreaterThanOrEqual { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match greater_than_or_equal(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                greater_than_or_equal(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareLessThanSigned {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareLessThanSigned { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match less_than_signed(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                less_than_signed(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareGreaterThanSigned {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareGreaterThanSigned { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match greater_than_signed(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                greater_than_signed(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareLessThanOrEqualSigned {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareLessThanOrEqualSigned { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match less_than_or_equal_signed(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                less_than_or_equal_signed(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::CompareGreaterThanOrEqualSigned {
-                input_a,
-                input_b,
-                output,
-            } => {
+            SmallComponentKind::CompareGreaterThanOrEqualSigned { input_a, input_b } => {
                 let width = wire_states.get_width(input_a);
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
                 let (_, out) = output_states.get_data(output_base);
-                match greater_than_or_equal_signed(width, &mut out[0], lhs, rhs) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                greater_than_or_equal_signed(width, &mut out[0], lhs, rhs)
             }
-            SmallComponent::ZeroExtend { input, output } => {
+            SmallComponentKind::ZeroExtend { input } => {
                 let val_width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (out_width, out) = output_states.get_data(output_base);
-                match zero_extend(val_width, out_width, val, out) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                zero_extend(val_width, out_width, val, out)
             }
-            SmallComponent::SignExtend { input, output } => {
+            SmallComponentKind::SignExtend { input } => {
                 let val_width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);
                 let (out_width, out) = output_states.get_data(output_base);
-                match sign_extend(val_width, out_width, val, out) {
-                    OpResult::Unchanged => smallvec![],
-                    OpResult::Changed => smallvec![output],
-                }
+                sign_extend(val_width, out_width, val, out)
             }
 
             _ => todo!(),
+        };
+
+        match result {
+            OpResult::Unchanged => smallvec![],
+            OpResult::Changed => smallvec![self.output],
         }
     }
 }
@@ -599,7 +416,7 @@ pub enum ComponentData<'a> {
     MemoryBlock(MemoryBlock<'a>),
 }
 
-pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
+pub(crate) trait LargeComponent: Send + Sync {
     fn get_data(&mut self) -> ComponentData<'_> {
         ComponentData::None
     }
@@ -615,7 +432,6 @@ pub(crate) trait LargeComponent: std::fmt::Debug + Send + Sync {
 
 macro_rules! wide_gate {
     ($name:ident, $op3:ident, $op2:ident) => {
-        #[derive(Debug)]
         pub(crate) struct $name {
             inputs: inline_vec!(WireStateId),
             output: OutputStateId,
@@ -667,7 +483,6 @@ macro_rules! wide_gate {
 
 macro_rules! wide_gate_inv {
     ($name:ident, $op3:ident, $op2:ident) => {
-        #[derive(Debug)]
         pub(crate) struct $name {
             inputs: inline_vec!(WireStateId),
             output: OutputStateId,
@@ -774,7 +589,6 @@ wide_gate_inv!(WideXnorGate, logic_xor_3, logic_xor_2);
 //    }
 //}
 
-#[derive(Debug)]
 pub(crate) struct Adder {
     input_a: WireStateId,
     input_b: WireStateId,
@@ -819,23 +633,23 @@ impl LargeComponent for Adder {
         let cin = wire_states.get_state(self.carry_in);
 
         let carry_in = cin[0].get_bit_state(AtomOffset::MIN);
+        let mut carry_out = LogicBitState::Undefined;
         let (width, out) = output_states.get_data(self.output);
 
-        let mut carry_out = LogicBitState::Undefined;
-        let add_result = add(width, out, &mut carry_out, lhs, rhs, carry_in, AddMode::Add);
-
-        let mut changed = match add_result {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
-        };
+        let sum_result = add(width, out, &mut carry_out, lhs, rhs, carry_in);
 
         let (_, cout) = output_states.get_data(self.carry_out);
-        if carry_out != cout[0].get_bit_state(AtomOffset::MIN) {
-            cout[0] = Atom::from_bit(carry_out);
-            changed.push(self.carry_out_wire);
-        }
+        let carry_result = cout[0].get_bit_state(AtomOffset::MIN) != carry_out;
+        cout[0] = carry_out.splat();
 
-        changed
+        match (sum_result, carry_result) {
+            (OpResult::Unchanged, false) => smallvec![],
+            (OpResult::Unchanged, true) => smallvec![self.carry_out_wire],
+            (OpResult::Changed, false) => smallvec![self.output_wire],
+            (OpResult::Changed, true) => {
+                smallvec![self.output_wire, self.carry_out_wire]
+            }
+        }
     }
 }
 
@@ -937,7 +751,6 @@ impl LargeComponent for Adder {
 //    }
 //}
 
-#[derive(Debug)]
 pub(crate) struct Multiplexer {
     inputs: inline_vec!(WireStateId),
     select: WireStateId,
@@ -1042,7 +855,7 @@ impl LargeComponent for Multiplexer {
 //                    break;
 //                }
 //                LogicBitState::Logic1 => {
-//                    new_output_state = Atom::from_int((i + 1) as LogicSizeInteger);
+//                    new_output_state = Atom::from_int((i + 1) as u32);
 //                    break;
 //                }
 //                LogicBitState::Logic0 => continue,
@@ -1059,7 +872,6 @@ impl LargeComponent for Multiplexer {
 //    }
 //}
 
-#[derive(Debug)]
 struct ClockTrigger {
     prev: Option<bool>,
     polarity: ClockPolarity,
@@ -1095,7 +907,6 @@ impl ClockTrigger {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct Register {
     data_in: WireStateId,
     data_out: OutputStateId,
@@ -1187,7 +998,6 @@ impl LargeComponent for Register {
     }
 }
 
-#[derive(Debug)]
 enum Memory {
     U8(Box<[[u8; 2]]>),
     U16(Box<[[u16; 2]]>),
@@ -1201,9 +1011,9 @@ enum Memory {
 impl Memory {
     #[allow(clippy::unnecessary_cast)]
     fn new(width: NonZeroU8, len: usize) -> Self {
-        const VALUE: (LogicSizeInteger, LogicSizeInteger) = Atom::UNDEFINED.to_state_valid();
-        const STATE: LogicSizeInteger = VALUE.0;
-        const VALID: LogicSizeInteger = VALUE.1;
+        const VALUE: (u32, u32) = Atom::UNDEFINED.to_state_valid();
+        const STATE: u32 = VALUE.0;
+        const VALID: u32 = VALUE.1;
 
         if width.get() <= 8 {
             let atoms = vec![[STATE as u8, VALID as u8]; len];
@@ -1239,15 +1049,15 @@ impl Memory {
         let (state, valid) = match self {
             Self::U8(atoms) => {
                 let [state, valid] = atoms[addr];
-                (state as LogicSizeInteger, valid as LogicSizeInteger)
+                (state as u32, valid as u32)
             }
             Self::U16(atoms) => {
                 let [state, valid] = atoms[addr];
-                (state as LogicSizeInteger, valid as LogicSizeInteger)
+                (state as u32, valid as u32)
             }
             Self::U32(atoms) => {
                 let [state, valid] = atoms[addr];
-                (state as LogicSizeInteger, valid as LogicSizeInteger)
+                (state as u32, valid as u32)
             }
             Self::Big { atom_width, atoms } => {
                 let start = addr * (atom_width.get() as usize);
@@ -1266,15 +1076,15 @@ impl Memory {
         let (state, valid) = match self {
             Self::U8(atoms) => {
                 let [state, valid] = atoms[addr];
-                (state as LogicSizeInteger, valid as LogicSizeInteger)
+                (state as u32, valid as u32)
             }
             Self::U16(atoms) => {
                 let [state, valid] = atoms[addr];
-                (state as LogicSizeInteger, valid as LogicSizeInteger)
+                (state as u32, valid as u32)
             }
             Self::U32(atoms) => {
                 let [state, valid] = atoms[addr];
-                (state as LogicSizeInteger, valid as LogicSizeInteger)
+                (state as u32, valid as u32)
             }
             Self::Big { atom_width, atoms } => {
                 let start = addr * (atom_width.get() as usize);
@@ -1316,9 +1126,9 @@ impl Memory {
 
     #[allow(clippy::unnecessary_cast)]
     fn clear(&mut self) {
-        const VALUE: (LogicSizeInteger, LogicSizeInteger) = Atom::UNDEFINED.to_state_valid();
-        const STATE: LogicSizeInteger = VALUE.0;
-        const VALID: LogicSizeInteger = VALUE.1;
+        const VALUE: (u32, u32) = Atom::UNDEFINED.to_state_valid();
+        const STATE: u32 = VALUE.0;
+        const VALID: u32 = VALUE.1;
 
         match self {
             Self::U8(atoms) => {
@@ -1381,7 +1191,6 @@ fn to_address(width: NonZeroU8, atoms: &[Atom]) -> Option<usize> {
     Some(addr)
 }
 
-#[derive(Debug)]
 pub(crate) struct Ram {
     write_addr: WireStateId,
     data_in: WireStateId,
@@ -1504,7 +1313,6 @@ impl LargeComponent for Ram {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct Rom {
     addr: WireStateId,
     data: OutputStateId,
