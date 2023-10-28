@@ -234,8 +234,43 @@ impl Wire {
         state: &mut [Atom],
         output_states: &OutputStateList,
     ) -> WireUpdateResult {
+        // SAFETY:
+        // These functions are on the hot path of the simulation,
+        // so it is important to optimize them as much as possible.
+        // Therefore in release mode we turn off all bounds checks
+        // and assume our invariants hold. This is technically not
+        // safe so proper testing in debug mode is required.
+
+        #[cfg(not(debug_assertions))]
+        macro_rules! get {
+            ($slice:expr, $i:expr) => {
+                unsafe { *$slice.get_unchecked($i) }
+            };
+        }
+
+        #[cfg(debug_assertions)]
+        macro_rules! get {
+            ($slice:expr, $i:expr) => {
+                $slice[$i]
+            };
+        }
+
+        #[cfg(not(debug_assertions))]
+        macro_rules! get_mut {
+            ($slice:expr, $i:expr) => {
+                unsafe { $slice.get_unchecked_mut($i) }
+            };
+        }
+
+        #[cfg(debug_assertions)]
+        macro_rules! get_mut {
+            ($slice:expr, $i:expr) => {
+                &mut $slice[$i]
+            };
+        }
+
         #[inline]
-        fn combine(a: Atom, b: Atom, mask: LogicStorage) -> Option<Atom> {
+        fn combine(a: Atom, b: Atom) -> (Atom, LogicStorage) {
             //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning | conflict
             // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------|----------
             //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    0    |    0    | High-Z    | no
@@ -255,50 +290,77 @@ impl Wire {
             //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    -    |    -    | -         | yes
             //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    -    |    -    | -         | yes
 
+            let result = Atom {
+                state: a.state | b.state,
+                valid: a.valid | b.valid,
+            };
+
             let conflict = {
                 (a.state & b.state)
                     | (a.state & b.valid)
                     | (a.valid & b.state)
                     | (a.valid & b.valid)
-            } & mask;
+            };
 
-            if conflict == LogicStorage::ALL_ZERO {
-                Some(Atom {
-                    state: a.state | b.state,
-                    valid: a.valid | b.valid,
-                })
-            } else {
-                None
+            (result, conflict)
+        }
+
+        const MAX_ATOM_COUNT: usize = NonZeroU8::MAX.get().div_ceil(Atom::BITS.get()) as usize;
+
+        let mut tmp_state = [Atom::UNDEFINED; MAX_ATOM_COUNT];
+        let tmp_state = get_mut!(tmp_state, ..drive.len());
+        tmp_state.copy_from_slice(drive);
+
+        let mut conflict = LogicStorage::ALL_ZERO;
+        for driver in self.drivers.iter() {
+            let driver = output_states.get_state(driver);
+            debug_assert_eq!(drive.len(), driver.len());
+
+            for (&driver, tmp_state) in izip!(driver, tmp_state.iter_mut()) {
+                let (new_state, new_conflict) = combine(*tmp_state, driver);
+                *tmp_state = new_state;
+                conflict |= new_conflict;
             }
         }
 
         let mut changed = false;
+        let mut i = 0;
         let mut total_width = width.get();
-        for (i, (&drive, state)) in izip!(drive, state).enumerate() {
-            let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
-            let mask = LogicStorage::mask(width);
+        while total_width >= Atom::BITS.get() {
+            let state = get_mut!(state, i);
+            let tmp_state = get!(tmp_state, i);
 
-            let mut new_state = drive;
-            for driver in self.drivers.iter() {
-                let output = output_states.get_state(driver)[i];
-                new_state = match combine(new_state, output, mask) {
-                    Some(a) => a,
-                    None => return WireUpdateResult::Conflict,
-                };
-            }
-
-            new_state.state &= mask;
-            new_state.valid &= mask;
-
-            if !state.eq(new_state, width) {
-                *state = new_state;
+            if !state.eq(tmp_state, AtomWidth::MAX) {
                 changed = true;
             }
+            *state = tmp_state;
 
-            total_width -= width.get();
+            i += 1;
+            total_width -= Atom::BITS.get();
         }
 
-        if changed {
+        if total_width > 0 {
+            let state = get_mut!(state, i);
+            let mut tmp_state = get!(tmp_state, i);
+
+            let last_width = unsafe {
+                // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
+                AtomWidth::new_unchecked(total_width)
+            };
+            let mask = LogicStorage::mask(last_width);
+
+            tmp_state.state &= mask;
+            tmp_state.valid &= mask;
+
+            if !state.eq(tmp_state, last_width) {
+                changed = true;
+            }
+            *state = tmp_state;
+        }
+
+        if conflict != LogicStorage::ALL_ZERO {
+            WireUpdateResult::Conflict
+        } else if changed {
             WireUpdateResult::Changed
         } else {
             WireUpdateResult::Unchanged
@@ -472,33 +534,43 @@ impl Simulator {
 
         let conflicts = Mutex::new(Vec::new());
 
-        let component_update_queue_iter = self
-            .wire_update_queue
-            .par_iter()
-            .with_min_len(100)
-            .copied()
-            .flat_map_iter(|wire_id| {
-                let wire = &self.wires[wire_id];
-                let (width, drive, state) = unsafe {
-                    // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                    self.wire_states.get_data_unsafe(wire.state)
-                };
+        let perform = |wire_id| {
+            let wire: &Wire = &self.wires[wire_id];
+            let (width, drive, state) = unsafe {
+                // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
+                self.wire_states.get_data_unsafe(wire.state)
+            };
 
-                match wire.update(width, drive, state, &self.output_states) {
-                    WireUpdateResult::Unchanged => [].as_slice(),
-                    WireUpdateResult::Changed => wire.driving.as_slice(),
-                    WireUpdateResult::Conflict => {
-                        // Locking here is ok because we are in the error path
-                        let mut conflict_list = conflicts.lock().expect("failed to aquire mutex");
-                        conflict_list.push(wire_id);
+            match wire.update(width, drive, state, &self.output_states) {
+                WireUpdateResult::Unchanged => [].as_slice(),
+                WireUpdateResult::Changed => wire.driving.as_slice(),
+                WireUpdateResult::Conflict => {
+                    // Locking here is ok because we are in the error path
+                    let mut conflict_list = conflicts.lock().expect("failed to aquire mutex");
+                    conflict_list.push(wire_id);
 
-                        [].as_slice()
-                    }
+                    [].as_slice()
                 }
-            });
+            }
+        };
 
-        self.component_update_queue
-            .par_extend(component_update_queue_iter);
+        if self.wire_update_queue.len() > 400 {
+            let component_update_queue_iter = self
+                .wire_update_queue
+                .par_iter()
+                .with_min_len(200)
+                .copied()
+                .flat_map_iter(perform);
+
+            self.component_update_queue
+                .par_extend(component_update_queue_iter);
+        } else {
+            let component_update_queue_iter =
+                self.wire_update_queue.iter().copied().flat_map(perform);
+
+            self.component_update_queue
+                .extend(component_update_queue_iter);
+        }
 
         let conflicts = conflicts
             .into_inner()
@@ -526,29 +598,41 @@ impl Simulator {
 
         self.wire_update_queue.clear();
 
-        let wire_update_queue_iter = self
-            .component_update_queue
-            .par_iter()
-            .with_min_len(100)
-            .copied()
-            .flat_map_iter(|component_id| {
-                let component = unsafe {
-                    // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                    self.components.get_unsafe(component_id)
-                };
+        let perform = |component_id| {
+            let component = unsafe {
+                // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
+                self.components.get_unsafe(component_id)
+            };
 
-                let (output_base, output_atom_count) = component.output_range();
-                let output_states = unsafe {
-                    // SAFETY: since the component is unique, so are the outputs
-                    self.output_states
-                        .get_slice_unsafe(output_base, output_atom_count)
-                };
+            let (output_base, output_atom_count) = component.output_range();
+            let output_states = unsafe {
+                // SAFETY: since the component is unique, so are the outputs
+                self.output_states
+                    .get_slice_unsafe(output_base, output_atom_count)
+            };
 
-                // `Component::update` returns all the wires that need to be inserted into the next update queue.
-                component.update(&self.wire_states, output_states)
-            });
+            // `Component::update` returns all the wires that need to be inserted into the next update queue.
+            component.update(&self.wire_states, output_states)
+        };
 
-        self.wire_update_queue.par_extend(wire_update_queue_iter);
+        if self.component_update_queue.len() > 400 {
+            let wire_update_queue_iter = self
+                .component_update_queue
+                .par_iter()
+                .with_min_len(200)
+                .copied()
+                .flat_map_iter(perform);
+
+            self.wire_update_queue.par_extend(wire_update_queue_iter);
+        } else {
+            let wire_update_queue_iter = self
+                .component_update_queue
+                .iter()
+                .copied()
+                .flat_map(perform);
+
+            self.wire_update_queue.extend(wire_update_queue_iter);
+        }
 
         if self.wire_update_queue.is_empty() {
             SimulationStepResult::Unchanged
