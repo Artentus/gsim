@@ -525,11 +525,6 @@ impl Simulator {
     fn update_wires(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
 
-        // Make sure the wire update queue contains no duplicates,
-        // otherwise all our safety guarantees do not hold.
-        self.wire_update_queue.par_sort_unstable();
-        self.wire_update_queue.dedup();
-
         self.component_update_queue.clear();
 
         let conflicts = Mutex::new(Vec::new());
@@ -572,6 +567,11 @@ impl Simulator {
                 .extend(component_update_queue_iter);
         }
 
+        // Make sure the component update queue contains no duplicates,
+        // otherwise all our safety guarantees do not hold.
+        self.component_update_queue.par_sort_unstable();
+        self.component_update_queue.dedup();
+
         let conflicts = conflicts
             .into_inner()
             .expect("failed to aquire mutex")
@@ -590,11 +590,6 @@ impl Simulator {
 
     fn update_components(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
-
-        // Make sure the component update queue contains no duplicates,
-        // otherwise all our safety guarantees do not hold.
-        self.component_update_queue.par_sort_unstable();
-        self.component_update_queue.dedup();
 
         self.wire_update_queue.clear();
 
@@ -633,6 +628,11 @@ impl Simulator {
 
             self.wire_update_queue.extend(wire_update_queue_iter);
         }
+
+        // Make sure the wire update queue contains no duplicates,
+        // otherwise all our safety guarantees do not hold.
+        self.wire_update_queue.par_sort_unstable();
+        self.wire_update_queue.dedup();
 
         if self.wire_update_queue.is_empty() {
             SimulationStepResult::Unchanged
