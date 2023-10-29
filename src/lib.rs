@@ -115,6 +115,21 @@ impl SafeDivCeil for NonZeroU8 {
     }
 }
 
+trait CLog2 {
+    type Output;
+
+    fn clog2(self) -> Self::Output;
+}
+
+impl CLog2 for NonZeroU8 {
+    type Output = u8;
+
+    #[inline]
+    fn clog2(self) -> Self::Output {
+        (self.ilog2() as u8) + ((!self.is_power_of_two()) as u8)
+    }
+}
+
 /// The size of a memory allocation
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -807,6 +822,44 @@ macro_rules! def_add_wide_gate {
     };
 }
 
+macro_rules! def_add_shifter {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(
+            &mut self,
+            input_a: WireId,
+            input_b: WireId,
+            output: WireId,
+        ) -> AddComponentResult {
+            let width = self.check_wire_widths_match(&[input_a, output])?;
+            let Some(shamnt_width) = NonZeroU8::new(width.clog2()) else {
+                return Err(AddComponentError::WireWidthIncompatible);
+            };
+            self.check_wire_width_eq(input_b, shamnt_width)?;
+
+            let output_state = self
+                .sim
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire_a = &self.sim.wires[input_a];
+            let wire_b = &self.sim.wires[input_b];
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
+                input_a: wire_a.state,
+                input_b: wire_b.state,
+            }, output);
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input_a, id);
+            self.mark_driving(input_b, id);
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
+}
+
 macro_rules! def_add_horizontal_gate {
     ($(#[$attr:meta])* $name:ident, $gate:ident) => {
         $(#[$attr])*
@@ -1118,24 +1171,24 @@ impl SimulatorBuilder {
     //    add_rem,
     //    Rem
     //);
-    //
-    //def_add_binary_gate!(
-    //    /// Adds a `Left Shift` component to the simulation
-    //    add_left_shift,
-    //    LeftShift
-    //);
-    //
-    //def_add_binary_gate!(
-    //    /// Adds a `Logical Right Shift` component to the simulation
-    //    add_logical_right_shift,
-    //    LogicalRightShift
-    //);
-    //
-    //def_add_binary_gate!(
-    //    /// Adds an `Arithmetic Right Shift` component to the simulation
-    //    add_arithmetic_right_shift,
-    //    ArithmeticRightShift
-    //);
+
+    def_add_shifter!(
+        /// Adds a `Left Shift` component to the simulation
+        add_left_shift,
+        LeftShift
+    );
+
+    def_add_shifter!(
+        /// Adds a `Logical Right Shift` component to the simulation
+        add_logical_right_shift,
+        LogicalRightShift
+    );
+
+    def_add_shifter!(
+        /// Adds an `Arithmetic Right Shift` component to the simulation
+        add_arithmetic_right_shift,
+        ArithmeticRightShift
+    );
 
     def_add_unary_gate!(
         /// Adds a `NOT Gate` component to the simulation

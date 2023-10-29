@@ -238,6 +238,27 @@ impl SmallComponent {
                     LogicBitState::Logic1,
                 )
             }
+            SmallComponentKind::LeftShift { input_a, input_b } => {
+                let val = wire_states.get_state(input_a);
+                let shamnt_width = wire_states.get_width(input_b);
+                let shamnt = wire_states.get_state(input_b)[0];
+                let (width, out) = output_states.get_data(output_base);
+                shl(width, shamnt_width, out, val, shamnt)
+            }
+            SmallComponentKind::LogicalRightShift { input_a, input_b } => {
+                let val = wire_states.get_state(input_a);
+                let shamnt_width = wire_states.get_width(input_b);
+                let shamnt = wire_states.get_state(input_b)[0];
+                let (width, out) = output_states.get_data(output_base);
+                lshr(width, shamnt_width, out, val, shamnt)
+            }
+            SmallComponentKind::ArithmeticRightShift { input_a, input_b } => {
+                let val = wire_states.get_state(input_a);
+                let shamnt_width = wire_states.get_width(input_b);
+                let shamnt = wire_states.get_state(input_b)[0];
+                let (width, out) = output_states.get_data(output_base);
+                ashr(width, shamnt_width, out, val, shamnt)
+            }
             SmallComponentKind::HorizontalAnd { input } => {
                 let width = wire_states.get_width(input);
                 let val = wire_states.get_state(input);

@@ -225,6 +225,22 @@ impl LogicStorage {
     }
 
     #[inline]
+    pub(crate) fn widening_shl(self, shamnt: AtomOffset) -> (Self, Self) {
+        let full = (self.0 as u64) << shamnt.get();
+        let low = full as u32;
+        let high = (full >> 32) as u32;
+        (Self(low), Self(high))
+    }
+
+    #[inline]
+    pub(crate) fn widening_shr(self, shamnt: AtomOffset) -> (Self, Self) {
+        let full = ((self.0 as u64) << 32) >> shamnt.get();
+        let high = (full >> 32) as u32;
+        let low = full as u32;
+        (Self(high), Self(low))
+    }
+
+    #[inline]
     pub(crate) fn carrying_add(self, rhs: Self, c_in: bool) -> (Self, bool) {
         let (r1, c1) = self.0.overflowing_add(rhs.0);
         let (r2, c2) = r1.overflowing_add(c_in as u32);

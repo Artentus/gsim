@@ -1003,191 +1003,191 @@ fn buffer() {
 //
 //    test_binary_gate(SimulatorBuilder::add_rem, WIDTH_32, TEST_DATA, 2);
 //}
-//
-//#[test]
-//fn left_shift() {
-//    const TEST_DATA_32: &[BinaryGateTestData] = binary_gate_test_data!(
-//        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-//        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-//        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-//        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-//        (HIGH_Z, 0) -> UNDEFINED,
-//        (UNDEFINED, 0) -> UNDEFINED,
-//        (0, HIGH_Z) -> UNDEFINED,
-//        (0, UNDEFINED) -> UNDEFINED,
-//
-//        (1, 0) -> 1,
-//        (1, 1) -> 2,
-//        (1, 2) -> 4,
-//        (1, 31) -> 0x80000000,
-//
-//        (1, 32) -> 0,
-//        (1, 33) -> 0,
-//        (1, 63) -> 0,
-//        (1, 64) -> 0,
-//
-//        (0x55, 0) -> 0x55,
-//        (0x55, 1) -> 0xAA,
-//    );
-//
-//    test_binary_gate(SimulatorBuilder::add_left_shift, WIDTH_32, TEST_DATA_32, 2);
-//
-//    const TEST_DATA_16: &[BinaryGateTestData] = binary_gate_test_data!(
-//        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-//        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-//        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-//        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-//        (HIGH_Z, 0) -> UNDEFINED,
-//        (UNDEFINED, 0) -> UNDEFINED,
-//        (0, HIGH_Z) -> UNDEFINED,
-//        (0, UNDEFINED) -> UNDEFINED,
-//
-//        (1, 0) -> 1,
-//        (1, 1) -> 2,
-//        (1, 2) -> 4,
-//        (1, 15) -> 0x8000,
-//
-//        (1, 16) -> 0,
-//        (1, 17) -> 0,
-//        (1, 31) -> 0,
-//        (1, 32) -> 0,
-//
-//        (0x55, 0) -> 0x55,
-//        (0x55, 1) -> 0xAA,
-//    );
-//
-//    test_binary_gate(SimulatorBuilder::add_left_shift, WIDTH_16, TEST_DATA_16, 2);
-//}
-//
-//#[test]
-//fn logical_right_shift() {
-//    const TEST_DATA_32: &[BinaryGateTestData] = binary_gate_test_data!(
-//        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-//        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-//        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-//        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-//        (HIGH_Z, 0) -> UNDEFINED,
-//        (UNDEFINED, 0) -> UNDEFINED,
-//        (0, HIGH_Z) -> UNDEFINED,
-//        (0, UNDEFINED) -> UNDEFINED,
-//
-//        (0x80000000, 0) -> 0x80000000,
-//        (0x80000000, 1) -> 0x40000000,
-//        (0x80000000, 2) -> 0x20000000,
-//        (0x80000000, 31) -> 1,
-//
-//        (0x80000000, 32) -> 0,
-//        (0x80000000, 33) -> 0,
-//        (0x80000000, 63) -> 0,
-//        (0x80000000, 64) -> 0,
-//
-//        (0xAA, 0) -> 0xAA,
-//        (0xAA, 1) -> 0x55,
-//    );
-//
-//    test_binary_gate(
-//        SimulatorBuilder::add_logical_right_shift,
-//        WIDTH_32,
-//        TEST_DATA_32,
-//        2,
-//    );
-//
-//    const TEST_DATA_16: &[BinaryGateTestData] = binary_gate_test_data!(
-//        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-//        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-//        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-//        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-//        (HIGH_Z, 0) -> UNDEFINED,
-//        (UNDEFINED, 0) -> UNDEFINED,
-//        (0, HIGH_Z) -> UNDEFINED,
-//        (0, UNDEFINED) -> UNDEFINED,
-//
-//        (0x8000, 0) -> 0x8000,
-//        (0x8000, 1) -> 0x4000,
-//        (0x8000, 2) -> 0x2000,
-//        (0x8000, 15) -> 1,
-//
-//        (0x8000, 16) -> 0,
-//        (0x8000, 17) -> 0,
-//        (0x8000, 31) -> 0,
-//        (0x8000, 32) -> 0,
-//
-//        (0xAA, 0) -> 0xAA,
-//        (0xAA, 1) -> 0x55,
-//    );
-//
-//    test_binary_gate(
-//        SimulatorBuilder::add_logical_right_shift,
-//        WIDTH_16,
-//        TEST_DATA_16,
-//        2,
-//    );
-//}
-//
-//#[test]
-//fn arithmetic_right_shift() {
-//    const TEST_DATA_32: &[BinaryGateTestData] = binary_gate_test_data!(
-//        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-//        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-//        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-//        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-//        (HIGH_Z, 0) -> UNDEFINED,
-//        (UNDEFINED, 0) -> UNDEFINED,
-//        (0, HIGH_Z) -> UNDEFINED,
-//        (0, UNDEFINED) -> UNDEFINED,
-//
-//        (0x80000000, 0) -> 0x80000000,
-//        (0x80000000, 1) -> 0xC0000000,
-//        (0x80000000, 2) -> 0xE0000000,
-//        (0x80000000, 31) -> 0xFFFFFFFF,
-//
-//        (0x80000000, 32) -> 0,
-//        (0x80000000, 33) -> 0,
-//        (0x80000000, 63) -> 0,
-//        (0x80000000, 64) -> 0,
-//
-//        (0xAA, 0) -> 0xAA,
-//        (0xAA, 1) -> 0x55,
-//    );
-//
-//    test_binary_gate(
-//        SimulatorBuilder::add_arithmetic_right_shift,
-//        WIDTH_32,
-//        TEST_DATA_32,
-//        2,
-//    );
-//
-//    const TEST_DATA_16: &[BinaryGateTestData] = binary_gate_test_data!(
-//        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-//        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-//        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-//        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-//        (HIGH_Z, 0) -> UNDEFINED,
-//        (UNDEFINED, 0) -> UNDEFINED,
-//        (0, HIGH_Z) -> UNDEFINED,
-//        (0, UNDEFINED) -> UNDEFINED,
-//
-//        (0x8000, 0) -> 0x8000,
-//        (0x8000, 1) -> 0xC000,
-//        (0x8000, 2) -> 0xE000,
-//        (0x8000, 15) -> 0xFFFF,
-//
-//        (0x8000, 16) -> 0,
-//        (0x8000, 17) -> 0,
-//        (0x8000, 31) -> 0,
-//        (0x8000, 32) -> 0,
-//
-//        (0xAA, 0) -> 0xAA,
-//        (0xAA, 1) -> 0x55,
-//    );
-//
-//    test_binary_gate(
-//        SimulatorBuilder::add_arithmetic_right_shift,
-//        WIDTH_16,
-//        TEST_DATA_16,
-//        2,
-//    );
-//}
+
+#[test]
+fn left_shift() {
+    const TEST_DATA_32: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (1, 0) -> 1,
+        (1, 1) -> 2,
+        (1, 2) -> 4,
+        (1, 31) -> 0x80000000,
+
+        (1, 32) -> 1,
+        (1, 33) -> 2,
+        (1, 63) -> 0x80000000,
+        (1, 64) -> 1,
+
+        (0x55, 0) -> 0x55,
+        (0x55, 1) -> 0xAA,
+    );
+
+    test_shifter(SimulatorBuilder::add_left_shift, WIDTH_32, TEST_DATA_32, 2);
+
+    const TEST_DATA_16: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (1, 0) -> 1,
+        (1, 1) -> 2,
+        (1, 2) -> 4,
+        (1, 15) -> 0x8000,
+
+        (1, 16) -> 1,
+        (1, 17) -> 2,
+        (1, 31) -> 0x8000,
+        (1, 32) -> 1,
+
+        (0x55, 0) -> 0x55,
+        (0x55, 1) -> 0xAA,
+    );
+
+    test_shifter(SimulatorBuilder::add_left_shift, WIDTH_16, TEST_DATA_16, 2);
+}
+
+#[test]
+fn logical_right_shift() {
+    const TEST_DATA_32: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0x80000000, 0) -> 0x80000000,
+        (0x80000000, 1) -> 0x40000000,
+        (0x80000000, 2) -> 0x20000000,
+        (0x80000000, 31) -> 1,
+
+        (0x80000000, 32) -> 0x80000000,
+        (0x80000000, 33) -> 0x40000000,
+        (0x80000000, 63) -> 1,
+        (0x80000000, 64) -> 0x80000000,
+
+        (0xAA, 0) -> 0xAA,
+        (0xAA, 1) -> 0x55,
+    );
+
+    test_shifter(
+        SimulatorBuilder::add_logical_right_shift,
+        WIDTH_32,
+        TEST_DATA_32,
+        2,
+    );
+
+    const TEST_DATA_16: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0x8000, 0) -> 0x8000,
+        (0x8000, 1) -> 0x4000,
+        (0x8000, 2) -> 0x2000,
+        (0x8000, 15) -> 1,
+
+        (0x8000, 16) -> 0x8000,
+        (0x8000, 17) -> 0x4000,
+        (0x8000, 31) -> 1,
+        (0x8000, 32) -> 0x8000,
+
+        (0xAA, 0) -> 0xAA,
+        (0xAA, 1) -> 0x55,
+    );
+
+    test_shifter(
+        SimulatorBuilder::add_logical_right_shift,
+        WIDTH_16,
+        TEST_DATA_16,
+        2,
+    );
+}
+
+#[test]
+fn arithmetic_right_shift() {
+    const TEST_DATA_32: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0x80000000, 0) -> 0x80000000,
+        (0x80000000, 1) -> 0xC0000000,
+        (0x80000000, 2) -> 0xE0000000,
+        (0x80000000, 31) -> 0xFFFFFFFF,
+
+        (0x80000000, 32) -> 0x80000000,
+        (0x80000000, 33) -> 0xC0000000,
+        (0x80000000, 63) -> 0xFFFFFFFF,
+        (0x80000000, 64) -> 0x80000000,
+
+        (0xAA, 0) -> 0xAA,
+        (0xAA, 1) -> 0x55,
+    );
+
+    test_shifter(
+        SimulatorBuilder::add_arithmetic_right_shift,
+        WIDTH_32,
+        TEST_DATA_32,
+        2,
+    );
+
+    const TEST_DATA_16: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0x8000, 0) -> 0x8000,
+        (0x8000, 1) -> 0xC000,
+        (0x8000, 2) -> 0xE000,
+        (0x8000, 15) -> 0xFFFF,
+
+        (0x8000, 16) -> 0x8000,
+        (0x8000, 17) -> 0xC000,
+        (0x8000, 31) -> 0xFFFF,
+        (0x8000, 32) -> 0x8000,
+
+        (0xAA, 0) -> 0xAA,
+        (0xAA, 1) -> 0x55,
+    );
+
+    test_shifter(
+        SimulatorBuilder::add_arithmetic_right_shift,
+        WIDTH_16,
+        TEST_DATA_16,
+        2,
+    );
+}
 
 #[test]
 fn adder() {
