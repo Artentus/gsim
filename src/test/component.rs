@@ -762,98 +762,98 @@ fn buffer() {
     }
 }
 
-//#[test]
-//fn slice() {
-//    struct TestData {
-//        input: LogicState,
-//        offset: usize,
-//        output: LogicState,
-//    }
-//
-//    macro_rules! test_data {
-//        ($(([$($i:tt),+], $offset:literal) -> [$($o:tt),+]),* $(,)?) => {
-//            &[
-//                $(
-//                    TestData {
-//                        input: bits!($($i),+),
-//                        offset: $offset,
-//                        output: bits!($($o),+),
-//                    },
-//                )*
-//            ]
-//        };
-//    }
-//
-//    const TEST_DATA: &[TestData] = test_data!(
-//        ([Z, Z], 0) -> [Z],
-//        ([X, Z], 0) -> [Z],
-//        ([0, Z], 0) -> [Z],
-//        ([1, Z], 0) -> [Z],
-//
-//        ([Z, X], 0) -> [X],
-//        ([X, X], 0) -> [X],
-//        ([0, X], 0) -> [X],
-//        ([1, X], 0) -> [X],
-//
-//        ([Z, 0], 0) -> [0],
-//        ([X, 0], 0) -> [0],
-//        ([0, 0], 0) -> [0],
-//        ([1, 0], 0) -> [0],
-//
-//        ([Z, 1], 0) -> [1],
-//        ([X, 1], 0) -> [1],
-//        ([0, 1], 0) -> [1],
-//        ([1, 1], 0) -> [1],
-//
-//        ([Z, Z], 1) -> [Z],
-//        ([X, Z], 1) -> [X],
-//        ([0, Z], 1) -> [0],
-//        ([1, Z], 1) -> [1],
-//
-//        ([Z, X], 1) -> [Z],
-//        ([X, X], 1) -> [X],
-//        ([0, X], 1) -> [0],
-//        ([1, X], 1) -> [1],
-//
-//        ([Z, 0], 1) -> [Z],
-//        ([X, 0], 1) -> [X],
-//        ([0, 0], 1) -> [0],
-//        ([1, 0], 1) -> [1],
-//
-//        ([Z, 1], 1) -> [Z],
-//        ([X, 1], 1) -> [X],
-//        ([0, 1], 1) -> [0],
-//        ([1, 1], 1) -> [1],
-//    );
-//
-//    for (i, test_data) in TEST_DATA.iter().enumerate() {
-//        let mut builder = SimulatorBuilder::default();
-//
-//        let input = builder.add_wire(WIDTH_2);
-//        let output = builder.add_wire(WIDTH_1);
-//        let _gate = builder.add_slice(input, test_data.offset, output).unwrap();
-//
-//        let mut sim = builder.build();
-//
-//        sim.set_wire_base_drive(input, &test_data.input);
-//
-//        match sim.run_sim(2) {
-//            SimulationRunResult::Ok => {}
-//            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-//            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-//        }
-//
-//        let output_state = sim.get_wire_state(output);
-//
-//        assert!(
-//            output_state.eq(&test_data.output, WIDTH_1),
-//            "[TEST {i}]  expected: {}  actual: {}",
-//            test_data.output.display_string(WIDTH_1),
-//            output_state.display_string(WIDTH_1),
-//        );
-//    }
-//}
-//
+#[test]
+fn slice() {
+    struct TestData {
+        input: LogicState,
+        offset: u8,
+        output: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(([$($i:tt),+], $offset:literal) -> [$($o:tt),+]),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        input: bits!($($i),+),
+                        offset: $offset,
+                        output: bits!($($o),+),
+                    },
+                )*
+            ]
+        };
+    }
+
+    let test_data = test_data!(
+        //([Z, Z], 0) -> [Z],
+        //([X, Z], 0) -> [Z],
+        //([0, Z], 0) -> [Z],
+        //([1, Z], 0) -> [Z],
+
+        //([Z, X], 0) -> [X],
+        //([X, X], 0) -> [X],
+        //([0, X], 0) -> [X],
+        //([1, X], 0) -> [X],
+
+        //([Z, 0], 0) -> [0],
+        //([X, 0], 0) -> [0],
+        //([0, 0], 0) -> [0],
+        //([1, 0], 0) -> [0],
+
+        //([Z, 1], 0) -> [1],
+        //([X, 1], 0) -> [1],
+        //([0, 1], 0) -> [1],
+        //([1, 1], 0) -> [1],
+
+        ([Z, Z], 1) -> [Z],
+        ([X, Z], 1) -> [X],
+        ([0, Z], 1) -> [0],
+        ([1, Z], 1) -> [1],
+
+        ([Z, X], 1) -> [Z],
+        ([X, X], 1) -> [X],
+        ([0, X], 1) -> [0],
+        ([1, X], 1) -> [1],
+
+        ([Z, 0], 1) -> [Z],
+        ([X, 0], 1) -> [X],
+        ([0, 0], 1) -> [0],
+        ([1, 0], 1) -> [1],
+
+        ([Z, 1], 1) -> [Z],
+        ([X, 1], 1) -> [X],
+        ([0, 1], 1) -> [0],
+        ([1, 1], 1) -> [1],
+    );
+
+    for (i, test_data) in test_data.iter().enumerate() {
+        let mut builder = SimulatorBuilder::default();
+
+        let input = builder.add_wire(WIDTH_2).unwrap();
+        let output = builder.add_wire(WIDTH_1).unwrap();
+        let _gate = builder.add_slice(input, test_data.offset, output).unwrap();
+
+        let mut sim = builder.build();
+
+        sim.set_wire_drive(input, &test_data.input);
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+
+        assert!(
+            output_state.eq(&test_data.output, WIDTH_1),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(WIDTH_1),
+            output_state.display_string(WIDTH_1),
+        );
+    }
+}
+
 //#[test]
 //fn merge() {
 //    macro_rules! test_data {

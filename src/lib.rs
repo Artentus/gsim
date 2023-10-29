@@ -1230,37 +1230,41 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
-    ///// Adds a `Slice` component to the simulation
-    //pub fn add_slice(
-    //    &mut self,
-    //    input: WireId,
-    //    offset: usize,
-    //    output: WireId,
-    //) -> AddComponentResult {
-    //    let input_wire_width = self.get_wire_width(input);
-    //    let output_wire_width = self.get_wire_width(output);
-    //
-    //    if output_wire_width > input_wire_width {
-    //        return Err(AddComponentError::WireWidthIncompatible);
-    //    }
-    //
-    //    if (offset + output_wire_width.get()) > input_wire_width.get() {
-    //        return Err(AddComponentError::OffsetOutOfRange);
-    //    }
-    //
-    //    let slice = SmallComponent::Slice {
-    //        input,
-    //        offset,
-    //        output,
-    //    };
-    //    let (output_offset, id) = self.add_small_component(slice);
-    //
-    //    self.mark_driving(input, id);
-    //    self.mark_driver(output, output_offset);
-    //
-    //    Ok(id)
-    //}
-    //
+    /// Adds a `Slice` component to the simulation
+    pub fn add_slice(&mut self, input: WireId, offset: u8, output: WireId) -> AddComponentResult {
+        let input_width = self.get_wire_width(input);
+        let output_width = self.get_wire_width(output);
+
+        if output_width > input_width {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        if ((offset as usize) + (output_width.get() as usize)) > (input_width.get() as usize) {
+            return Err(AddComponentError::OffsetOutOfRange);
+        }
+
+        let output_state = self
+            .sim
+            .output_states
+            .push(output_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
+
+        let wire = &self.sim.wires[input];
+        let gate = SmallComponent::new(
+            SmallComponentKind::Slice {
+                input: wire.state,
+                offset,
+            },
+            output,
+        );
+        let id = self.add_small_component(gate, &[output_state])?;
+
+        self.mark_driving(input, id);
+        self.mark_driver(output, output_state);
+
+        Ok(id)
+    }
+
     ///// Adds a `Merge` component to the simulation
     //pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
     //    if inputs.len() < 2 {

@@ -655,7 +655,7 @@ struct ShlIter<'a> {
 
 impl<'a> ShlIter<'a> {
     #[inline]
-    fn new(_width: NonZeroU8, val: &'a [Atom], shamnt: usize) -> Self {
+    fn new(val: &'a [Atom], shamnt: usize) -> Self {
         let atom_shift = shamnt / (Atom::BITS.get() as usize);
         let bit_shift = unsafe {
             // SAFETY: <anything> % 32 = [0..31]
@@ -679,8 +679,7 @@ impl Iterator for ShlIter<'_> {
         if self.atom_shift > 0 {
             self.atom_shift -= 1;
             Some(Atom::LOGIC_0)
-        } else if let Some(&next) = self.iter.next() {
-            let next = next.high_z_to_undefined();
+        } else if let Some(next) = self.iter.next().copied().map(Atom::high_z_to_undefined) {
             let (low_state, high_state) = next.state.widening_shl(self.bit_shift);
             let (low_valid, high_valid) = next.valid.widening_shl(self.bit_shift);
             let carry = self.carry.unwrap_or(Atom {
@@ -712,7 +711,9 @@ pub(super) fn shl(
     val: &[Atom],
     shamnt: Atom,
 ) -> OpResult {
-    perform_shift(width, shamnt_width, out, val, shamnt, ShlIter::new)
+    perform_shift(width, shamnt_width, out, val, shamnt, |_, val, shamnt| {
+        ShlIter::new(val, shamnt)
+    })
 }
 
 struct MaskingIter<Iter: Iterator<Item = Atom>> {
@@ -863,6 +864,99 @@ pub(super) fn ashr(
         shamnt,
         ShrIter::new_arithmetic,
     )
+}
+
+struct SliceShiftIter<'a> {
+    iter: std::iter::Skip<std::slice::Iter<'a, Atom>>,
+    bit_shift: AtomOffset,
+    current: Atom,
+}
+
+impl<'a> SliceShiftIter<'a> {
+    #[inline]
+    fn new(val: &'a [Atom], shamnt: usize) -> Self {
+        let atom_shift = shamnt / (Atom::BITS.get() as usize);
+        let bit_shift = unsafe {
+            // SAFETY: <anything> % 32 = [0..31]
+            AtomOffset::new_unchecked((shamnt % (Atom::BITS.get() as usize)) as u8)
+        };
+
+        let mut iter = val.iter().skip(atom_shift);
+        let current = iter.next().copied().unwrap_or(Atom::UNDEFINED);
+        let current = Atom {
+            state: current.state >> bit_shift,
+            valid: current.valid >> bit_shift,
+        };
+
+        Self {
+            iter,
+            bit_shift,
+            current,
+        }
+    }
+}
+
+impl Iterator for SliceShiftIter<'_> {
+    type Item = Atom;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.current;
+        let next = self.iter.next().copied().unwrap_or(Atom::UNDEFINED);
+
+        let (high_state, low_state) = next.state.widening_shr(self.bit_shift);
+        let (high_valid, low_valid) = next.valid.widening_shr(self.bit_shift);
+
+        self.current = Atom {
+            state: high_state,
+            valid: high_valid,
+        };
+
+        Some(Atom {
+            state: current.state | low_state,
+            valid: current.valid | low_valid,
+        })
+    }
+}
+
+pub(super) fn slice(width: NonZeroU8, out: &mut [Atom], val: &[Atom], offset: u8) -> OpResult {
+    debug_assert_eq!(out.len(), width.safe_div_ceil(Atom::BITS).get() as usize);
+    debug_assert!(out.len() <= val.len());
+
+    let mut result = OpResult::Unchanged;
+
+    let mut i = 0;
+    let mut total_width = width.get();
+    let mut val_iter = SliceShiftIter::new(val, offset as usize);
+    while total_width >= Atom::BITS.get() {
+        let out = get_mut!(out, i);
+        let val = val_iter.next().unwrap();
+
+        if !out.eq(val, AtomWidth::MAX) {
+            result = OpResult::Changed;
+        }
+        *out = val;
+
+        i += 1;
+        total_width -= Atom::BITS.get();
+    }
+
+    if total_width > 0 {
+        let last_out = get_mut!(out, i);
+        let last_val = val_iter.next().unwrap();
+
+        let last_width = unsafe {
+            // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
+            AtomWidth::new_unchecked(total_width)
+        };
+
+        if !last_out.eq(last_val, last_width) {
+            result = OpResult::Changed;
+        }
+        *last_out = last_val;
+    }
+
+    result
 }
 
 #[inline]

@@ -210,6 +210,11 @@ impl SmallComponent {
                 let (width, out) = output_states.get_data(output_base);
                 buffer(width, out, val, en[0].get_bit_state(AtomOffset::MIN))
             }
+            SmallComponentKind::Slice { input, offset } => {
+                let val = wire_states.get_state(input);
+                let (width, out) = output_states.get_data(output_base);
+                slice(width, out, val, offset)
+            }
             SmallComponentKind::Add { input_a, input_b } => {
                 let lhs = wire_states.get_state(input_a);
                 let rhs = wire_states.get_state(input_b);
