@@ -356,16 +356,12 @@ impl Wire {
 
         if total_width > 0 {
             let state = get_mut!(state, i);
-            let mut tmp_state = get!(tmp_state, i);
+            let tmp_state = get!(tmp_state, i);
 
             let last_width = unsafe {
                 // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
                 AtomWidth::new_unchecked(total_width)
             };
-            let mask = LogicStorage::mask(last_width);
-
-            tmp_state.state &= mask;
-            tmp_state.valid &= mask;
 
             if !state.eq(tmp_state, last_width) {
                 changed = true;
@@ -1154,24 +1150,6 @@ impl SimulatorBuilder {
         Sub
     );
 
-    //def_add_binary_gate!(
-    //    /// Adds a `MUL` component to the simulation
-    //    add_mul,
-    //    Mul
-    //);
-    //
-    //def_add_binary_gate!(
-    //    /// Adds a `DIV` component to the simulation
-    //    add_div,
-    //    Div
-    //);
-    //
-    //def_add_binary_gate!(
-    //    /// Adds a `REM` component to the simulation
-    //    add_rem,
-    //    Rem
-    //);
-
     def_add_shifter!(
         /// Adds a `Left Shift` component to the simulation
         add_left_shift,
@@ -1265,48 +1243,43 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
-    ///// Adds a `Merge` component to the simulation
-    //pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
-    //    if inputs.len() < 2 {
-    //        return Err(AddComponentError::TooFewInputs);
-    //    }
-    //
-    //    let input_wire_widths: Vec<_> = inputs
-    //        .iter()
-    //        .map(|&input| self.get_wire_width(input))
-    //        .collect();
-    //    let output_wire_width = self.get_wire_width(output);
-    //
-    //    let total_input_width = input_wire_widths
-    //        .iter()
-    //        .copied()
-    //        .map(NonZeroU8::get)
-    //        .try_fold(0, u8::checked_add)
-    //        .ok_or(AddComponentError::WireWidthIncompatible)?;
-    //    if total_input_width != output_wire_width.get() {
-    //        return Err(AddComponentError::WireWidthIncompatible);
-    //    }
-    //
-    //    let (output_offset, id) = if inputs.len() == 2 {
-    //        // Small gate optimization
-    //        let merge = SmallComponent::Merge {
-    //            input_a: inputs[0],
-    //            input_b: inputs[1],
-    //            output,
-    //        };
-    //        self.add_small_component(merge)
-    //    } else {
-    //        let merge = WideMerge::new(inputs, output);
-    //        self.add_large_component(merge)
-    //    };
-    //
-    //    for &input in inputs {
-    //        self.mark_driving(input, id);
-    //    }
-    //    self.mark_driver(output, output_offset);
-    //
-    //    Ok(id)
-    //}
+    /// Adds a `Merge` component to the simulation
+    pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
+        if inputs.len() < 1 {
+            return Err(AddComponentError::TooFewInputs);
+        }
+
+        let output_width = self.get_wire_width(output);
+        let total_input_width = inputs
+            .iter()
+            .map(|&input| self.get_wire_width(input))
+            .map(NonZeroU8::get)
+            .try_fold(0, u8::checked_add)
+            .ok_or(AddComponentError::WireWidthIncompatible)?;
+        if total_input_width != output_width.get() {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let output_state = self
+            .sim
+            .output_states
+            .push(output_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
+
+        let input_states: SmallVec<_> = inputs
+            .iter()
+            .map(|&input| self.sim.wires[input].state)
+            .collect();
+        let gate = Merge::new(input_states, output_state, output);
+        let id = self.add_large_component(gate, &[output_state])?;
+
+        for &input in inputs {
+            self.mark_driving(input, id);
+        }
+        self.mark_driver(output, output_state);
+
+        Ok(id)
+    }
 
     /// Adds an `Adder` component to the simulation
     pub fn add_adder(

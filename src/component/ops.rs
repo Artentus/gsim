@@ -959,6 +959,110 @@ pub(super) fn slice(width: NonZeroU8, out: &mut [Atom], val: &[Atom], offset: u8
     result
 }
 
+struct MergeShiftIter<'a> {
+    iter: MaskingIter<std::iter::Copied<std::slice::Iter<'a, Atom>>>,
+    atom_shift: usize,
+    bit_shift: AtomOffset,
+    carry: Atom,
+}
+
+impl<'a> MergeShiftIter<'a> {
+    #[inline]
+    fn new(width: NonZeroU8, val: &'a [Atom], shamnt: usize) -> Self {
+        let atom_shift = shamnt / (Atom::BITS.get() as usize);
+        let bit_shift = unsafe {
+            // SAFETY: <anything> % 32 = [0..31]
+            AtomOffset::new_unchecked((shamnt % (Atom::BITS.get() as usize)) as u8)
+        };
+
+        Self {
+            iter: MaskingIter::new(width, Atom::HIGH_Z, val.iter().copied()),
+            atom_shift,
+            bit_shift,
+            carry: Atom::HIGH_Z,
+        }
+    }
+}
+
+impl Iterator for MergeShiftIter<'_> {
+    type Item = Atom;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.atom_shift > 0 {
+            self.atom_shift -= 1;
+            Some(Atom::HIGH_Z)
+        } else {
+            let next = self.iter.next().unwrap();
+            let (low_state, high_state) = next.state.widening_shl(self.bit_shift);
+            let (low_valid, high_valid) = next.valid.widening_shl(self.bit_shift);
+            let carry = self.carry;
+
+            self.carry = Atom {
+                state: high_state,
+                valid: high_valid,
+            };
+
+            Some(Atom {
+                state: low_state | carry.state,
+                valid: low_valid | carry.valid,
+            })
+        }
+    }
+}
+
+pub(super) fn merge_one(dst: &mut [Atom], src_width: NonZeroU8, src: &[Atom], shamnt: usize) {
+    debug_assert_eq!(
+        src.len(),
+        src_width.safe_div_ceil(Atom::BITS).get() as usize
+    );
+    debug_assert!(dst.len() >= src.len());
+
+    let src_iter = MergeShiftIter::new(src_width, src, shamnt);
+    for (dst, src) in izip!(dst, src_iter) {
+        dst.state |= src.state;
+        dst.valid |= src.valid;
+    }
+}
+
+pub(super) fn copy(width: NonZeroU8, dst: &mut [Atom], src: &[Atom]) -> OpResult {
+    debug_assert_eq!(src.len(), width.safe_div_ceil(Atom::BITS).get() as usize);
+    debug_assert_eq!(dst.len(), src.len());
+
+    let mut result = OpResult::Unchanged;
+    let mut i = 0;
+    let mut total_width = width.get();
+    while total_width >= Atom::BITS.get() {
+        let dst = get_mut!(dst, i);
+        let src = get!(src, i);
+
+        if !dst.eq(src, AtomWidth::MAX) {
+            result = OpResult::Changed;
+        }
+        *dst = src;
+
+        i += 1;
+        total_width -= Atom::BITS.get();
+    }
+
+    if total_width > 0 {
+        let dst = get_mut!(dst, i);
+        let src = get!(src, i);
+
+        let last_width = unsafe {
+            // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
+            AtomWidth::new_unchecked(total_width)
+        };
+
+        if !dst.eq(src, last_width) {
+            result = OpResult::Changed;
+        }
+        *dst = src;
+    }
+
+    result
+}
+
 #[inline]
 fn reduce_atom<Op>(mut val: Atom, mut op: Op) -> Atom
 where

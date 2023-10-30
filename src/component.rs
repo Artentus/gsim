@@ -43,27 +43,11 @@ pub(crate) enum SmallComponentKind {
         input: WireStateId,
         offset: u8,
     },
-    Merge {
-        input_a: WireStateId,
-        input_b: WireStateId,
-    },
     Add {
         input_a: WireStateId,
         input_b: WireStateId,
     },
     Sub {
-        input_a: WireStateId,
-        input_b: WireStateId,
-    },
-    Mul {
-        input_a: WireStateId,
-        input_b: WireStateId,
-    },
-    Div {
-        input_a: WireStateId,
-        input_b: WireStateId,
-    },
-    Rem {
         input_a: WireStateId,
         input_b: WireStateId,
     },
@@ -382,8 +366,6 @@ impl SmallComponent {
                 let (out_width, out) = output_states.get_data(output_base);
                 sign_extend(val_width, out_width, val, out)
             }
-
-            _ => todo!(),
         };
 
         match result {
@@ -577,53 +559,61 @@ wide_gate_inv!(WideNandGate, logic_and_3, logic_and_2);
 wide_gate_inv!(WideNorGate, logic_or_3, logic_or_2);
 wide_gate_inv!(WideXnorGate, logic_xor_3, logic_xor_2);
 
-//#[derive(Debug)]
-//pub(crate) struct WideMerge {
-//    inputs: inline_vec!(WireStateId),
-//    output: WireStateId,
-//}
-//
-//impl WideMerge {
-//    #[inline]
-//    pub(crate) fn new(inputs: &[WireStateId], output: WireStateId) -> Self {
-//        Self {
-//            inputs: inputs.into(),
-//            output,
-//        }
-//    }
-//}
-//
-//impl LargeComponent for WideMerge {
-//    fn update(
-//        &mut self,
-//        wire_widths: &WireWidthList,
-//        wire_states: &WireStateList,
-//        outputs: &mut [Atom],
-//    ) -> inline_vec!(WireId) {
-//        let mut new_output_state = Atom::HIGH_Z;
-//        let mut offset = 0;
-//        for input in self.inputs.iter().copied() {
-//            let input_state = wire_states[input];
-//            let input_width = wire_widths[input];
-//
-//            let input_mask = LogicStorage::mask(input_width);
-//            let input_offset = AtomOffset::new(offset).expect("invalid merge offset");
-//
-//            new_output_state.state |= (input_state.state & input_mask) << input_offset;
-//            new_output_state.valid |= (input_state.valid & input_mask) << input_offset;
-//
-//            offset += input_width.get();
-//        }
-//
-//        let output_width = wire_widths[self.output];
-//        if !new_output_state.eq(outputs[0], output_width) {
-//            outputs[0] = new_output_state;
-//            smallvec![self.output]
-//        } else {
-//            smallvec![]
-//        }
-//    }
-//}
+#[derive(Debug)]
+pub(crate) struct Merge {
+    inputs: inline_vec!(WireStateId),
+    output: OutputStateId,
+    output_wire: WireId,
+}
+
+impl Merge {
+    #[inline]
+    pub(crate) fn new(
+        inputs: impl Into<inline_vec!(WireStateId)>,
+        output: OutputStateId,
+        output_wire: WireId,
+    ) -> Self {
+        let inputs = inputs.into();
+        debug_assert!(inputs.len() >= 1);
+
+        Self {
+            inputs,
+            output,
+            output_wire,
+        }
+    }
+}
+
+impl LargeComponent for Merge {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
+    fn update(
+        &mut self,
+        wire_states: &WireStateList,
+        mut output_states: OutputStateSlice<'_>,
+    ) -> inline_vec!(WireId) {
+        let (out_width, out) = output_states.get_data(self.output);
+
+        const MAX_ATOM_COUNT: usize = NonZeroU8::MAX.get().div_ceil(Atom::BITS.get()) as usize;
+        let mut tmp_state = [Atom::HIGH_Z; MAX_ATOM_COUNT];
+        let tmp_state = &mut tmp_state[..out.len()];
+
+        let mut shamnt = 0;
+        for &input in &self.inputs {
+            let width = wire_states.get_width(input);
+            let val = wire_states.get_state(input);
+            merge_one(tmp_state, width, val, shamnt);
+            shamnt += width.get() as usize;
+        }
+
+        match copy(out_width, out, tmp_state) {
+            OpResult::Unchanged => smallvec![],
+            OpResult::Changed => smallvec![self.output_wire],
+        }
+    }
+}
 
 pub(crate) struct Adder {
     input_a: WireStateId,
