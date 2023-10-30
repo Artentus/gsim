@@ -194,22 +194,25 @@ struct Port {
 struct Cell<'a> {
     #[serde(rename = "type", deserialize_with = "cell_type")]
     cell_type: CellType,
-    #[serde(default)]
+    #[serde(default, borrow)]
     parameters: HashMap<&'a str, &'a str>,
+    #[serde(borrow)]
     port_directions: HashMap<&'a str, PortDirection>,
+    #[serde(borrow)]
     connections: IndexMap<&'a str, Bits>,
 }
 
 #[derive(Deserialize)]
 struct Module<'a> {
+    #[serde(borrow)]
     ports: IndexMap<&'a str, Port>,
-    #[serde(default)]
+    #[serde(default, borrow)]
     cells: IndexMap<&'a str, Cell<'a>>,
 }
 
 #[derive(Deserialize)]
 struct Netlist<'a> {
-    #[serde(rename = "modules", deserialize_with = "single_from_map")]
+    #[serde(borrow, rename = "modules", deserialize_with = "single_from_map")]
     module: (&'a str, Module<'a>),
 }
 
@@ -303,12 +306,6 @@ impl YosysModuleImporter {
             module_name: netlist.module.0.into(),
             module: PreprocModule::create(netlist.module.1),
         }
-    }
-
-    /// Creates a Yosys module importer from a reader containing JSON data
-    pub fn from_json_reader<R: std::io::Read>(reader: R) -> serde_json::Result<Self> {
-        let netlist: Netlist = serde_json::from_reader(reader)?;
-        Ok(Self::preprocess(netlist))
     }
 
     /// Creates a Yosys module importer from a slice containing JSON data
@@ -478,33 +475,21 @@ impl ModuleImporter for YosysModuleImporter {
                         for (i, bit) in port.bits.iter().copied().enumerate() {
                             if let Signal::Net(id) = bit {
                                 let wire = get_wire_for_net_id(id, builder, &mut net_map)?;
-
-                                builder
-                                    .add_slice(
-                                        port_wire[i / (MAX_LOGIC_WIDTH as usize)],
-                                        LogicOffset::new((i % (MAX_LOGIC_WIDTH as usize)) as u8)
-                                            .unwrap(),
-                                        wire,
-                                    )
-                                    .unwrap();
+                                builder.add_slice(port_wire, i as u8, wire).unwrap();
                             }
                         }
 
                         connections.inputs.insert(Rc::clone(port_name), port_wire);
                     }
                     PortDirection::Output => {
-                        port.bits
-                            .chunks(MAX_LOGIC_WIDTH as usize)
-                            .enumerate()
-                            .for_each(|(i, chunk)| {
-                                let wires: Vec<_> = chunk
-                                    .iter()
-                                    .copied()
-                                    .map(|bit| get_wire_for_bit(bit, builder, &mut net_map))
-                                    .collect();
+                        let wires = port
+                            .bits
+                            .iter()
+                            .copied()
+                            .map(|bit| get_wire_for_bit(bit, builder, &mut net_map))
+                            .collect::<Result<Vec<_>, _>>()?;
 
-                                builder.add_merge(&wires, port_wire[i]).unwrap();
-                            });
+                        builder.add_merge(&wires, port_wire).unwrap();
 
                         connections.outputs.insert(Rc::clone(port_name), port_wire);
                     }
@@ -558,18 +543,14 @@ impl ModuleImporter for YosysModuleImporter {
 
                     match port_direction {
                         PortDirection::Input => {
-                            port.bits
-                                .chunks(MAX_LOGIC_WIDTH as usize)
-                                .enumerate()
-                                .for_each(|(i, chunk)| {
-                                    let wires: Vec<_> = chunk
-                                        .iter()
-                                        .copied()
-                                        .map(|bit| get_wire_for_bit(bit, builder, &mut net_map))
-                                        .collect();
+                            let wires = port
+                                .bits
+                                .iter()
+                                .copied()
+                                .map(|bit| get_wire_for_bit(bit, builder, &mut net_map))
+                                .collect::<Result<Vec<_>, _>>()?;
 
-                                    builder.add_merge(&wires, port_wire[i]).unwrap();
-                                });
+                            builder.add_merge(&wires, port_wire).unwrap();
 
                             input_ports.insert(Rc::clone(port_name), port_wire);
                         }
@@ -577,17 +558,7 @@ impl ModuleImporter for YosysModuleImporter {
                             for (i, bit) in port.bits.iter().copied().enumerate() {
                                 if let Signal::Net(id) = bit {
                                     let wire = get_wire_for_net_id(id, builder, &mut net_map)?;
-
-                                    builder
-                                        .add_slice(
-                                            port_wire[i / (MAX_LOGIC_WIDTH as usize)],
-                                            LogicOffset::new(
-                                                (i % (MAX_LOGIC_WIDTH as usize)) as u8,
-                                            )
-                                            .unwrap(),
-                                            wire,
-                                        )
-                                        .unwrap();
+                                    builder.add_slice(port_wire, i as u8, wire).unwrap();
                                 }
                             }
 
@@ -889,92 +860,92 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: Rc::clone(cell_name),
                         })?;
                 }
-                CellType::Pmux => {
-                    if input_ports.len() != 3 {
-                        return Err(YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        });
-                    }
+                //CellType::Pmux => {
+                //    if input_ports.len() != 3 {
+                //        return Err(YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        });
+                //    }
 
-                    if output_ports.len() != 1 {
-                        return Err(YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        });
-                    }
+                //    if output_ports.len() != 1 {
+                //        return Err(YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        });
+                //    }
 
-                    let input_a = *input_ports.get("A").ok_or_else(|| {
-                        YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        }
-                    })?;
+                //    let input_a = *input_ports.get("A").ok_or_else(|| {
+                //        YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        }
+                //    })?;
 
-                    let input_b = *input_ports.get("B").ok_or_else(|| {
-                        YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        }
-                    })?;
+                //    let input_b = *input_ports.get("B").ok_or_else(|| {
+                //        YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        }
+                //    })?;
 
-                    let select = *input_ports.get("S").ok_or_else(|| {
-                        YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        }
-                    })?;
+                //    let select = *input_ports.get("S").ok_or_else(|| {
+                //        YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        }
+                //    })?;
 
-                    let input_count = builder.get_wire_width(select).get() as usize;
-                    let input_width = builder.get_wire_width(input_a);
+                //    let input_count = builder.get_wire_width(select).get() as usize;
+                //    let input_width = builder.get_wire_width(input_a);
 
-                    let mut decoder_inputs = Vec::with_capacity(input_count);
-                    let mut mux_inputs = Vec::with_capacity(input_count + 1);
-                    mux_inputs.push(input_a);
+                //    let mut decoder_inputs = Vec::with_capacity(input_count);
+                //    let mut mux_inputs = Vec::with_capacity(input_count + 1);
+                //    mux_inputs.push(input_a);
 
-                    for i in 0..input_count {
-                        let select_bi = builder
-                            .add_wire(NonZeroU8::MIN)
-                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                        decoder_inputs.push(select_bi);
-                        builder
-                            .add_slice(
-                                select[i / (MAX_LOGIC_WIDTH as usize)],
-                                LogicOffset::new((i % (MAX_LOGIC_WIDTH as usize)) as u8).unwrap(),
-                                select_bi,
-                            )
-                            .unwrap();
+                //    for i in 0..input_count {
+                //        let select_bi = builder
+                //            .add_wire(NonZeroU8::MIN)
+                //            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                //        decoder_inputs.push(select_bi);
+                //        builder
+                //            .add_slice(
+                //                select[i / (MAX_LOGIC_WIDTH as usize)],
+                //                LogicOffset::new((i % (MAX_LOGIC_WIDTH as usize)) as u8).unwrap(),
+                //                select_bi,
+                //            )
+                //            .unwrap();
 
-                        let offset = i * (input_width.get() as usize);
-                        let input_bi = builder
-                            .add_wire(input_width)
-                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                        builder.add_slice(input_b, offset, &input_bi).map_err(|_| {
-                            YosysModuleImportError::InvalidCellPorts {
-                                cell_name: Rc::clone(cell_name),
-                            }
-                        })?;
+                //        let offset = i * (input_width.get() as usize);
+                //        let input_bi = builder
+                //            .add_wire(input_width)
+                //            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                //        builder.add_slice(input_b, offset, &input_bi).map_err(|_| {
+                //            YosysModuleImportError::InvalidCellPorts {
+                //                cell_name: Rc::clone(cell_name),
+                //            }
+                //        })?;
 
-                        mux_inputs.push(input_bi);
-                    }
+                //        mux_inputs.push(input_bi);
+                //    }
 
-                    while !mux_inputs.len().is_power_of_two() {
-                        mux_inputs.push(input_a);
-                    }
+                //    while !mux_inputs.len().is_power_of_two() {
+                //        mux_inputs.push(input_a);
+                //    }
 
-                    let mux_select_width =
-                        NonZeroU8::new((usize::BITS - decoder_inputs.len().leading_zeros()) as u8)
-                            .unwrap();
-                    let mux_select = builder
-                        .add_wire(mux_select_width)
-                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder
-                        .add_priority_decoder(&decoder_inputs, mux_select)
-                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        })?;
+                //    let mux_select_width =
+                //        NonZeroU8::new((usize::BITS - decoder_inputs.len().leading_zeros()) as u8)
+                //            .unwrap();
+                //    let mux_select = builder
+                //        .add_wire(mux_select_width)
+                //        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                //    builder
+                //        .add_priority_decoder(&decoder_inputs, mux_select)
+                //        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        })?;
 
-                    builder
-                        .add_multiplexer(&mux_inputs, mux_select, output_ports[0])
-                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        })?;
-                }
+                //    builder
+                //        .add_multiplexer(&mux_inputs, mux_select, output_ports[0])
+                //        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                //            cell_name: Rc::clone(cell_name),
+                //        })?;
+                //}
                 CellType::TriBuf => {
                     if input_ports.len() != 2 {
                         return Err(YosysModuleImportError::InvalidCellPorts {

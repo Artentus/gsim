@@ -2,7 +2,7 @@ use crate::*;
 use std::num::NonZeroU8;
 
 mod component;
-//mod import;
+mod import;
 
 macro_rules! logic_state {
     ($state:ident) => {

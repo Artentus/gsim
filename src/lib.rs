@@ -1688,14 +1688,14 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
-    ///// Imports a module into this circuit
-    //#[inline]
-    //pub fn import_module<T: import::ModuleImporter>(
-    //    &mut self,
-    //    importer: &T,
-    //) -> Result<import::ModuleConnections, T::Error> {
-    //    importer.import_into(self)
-    //}
+    /// Imports a module into this circuit
+    #[inline]
+    pub fn import_module<T: import::ModuleImporter>(
+        &mut self,
+        importer: &T,
+    ) -> Result<import::ModuleConnections, T::Error> {
+        importer.import_into(self)
+    }
 
     /// Creates the simulator
     pub fn build(mut self) -> Simulator {
