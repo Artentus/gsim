@@ -731,17 +731,24 @@ impl LogicState {
         let head_width = (width.get() % Atom::BITS.get()) as usize;
         let list_len = (width.get().div_ceil(Atom::BITS.get())) as usize;
 
-        let head_str = &s.as_bytes()[..head_width];
-        let tail_str = &s.as_bytes()[head_width..];
-
         let mut list = smallvec::smallvec![Atom::HIGH_Z; list_len];
-        let head = Atom::parse(head_str)?;
-        list[list_len - 1] = head;
+        let mut i = list_len;
 
+        if head_width > 0 {
+            let head_str = &s.as_bytes()[..head_width];
+            let head = Atom::parse(head_str)?;
+
+            i -= 1;
+            list[i] = head;
+        }
+
+        let tail_str = &s.as_bytes()[head_width..];
         let mut chunks = tail_str.chunks_exact(Atom::BITS.get() as usize);
-        for (i, item_bits) in chunks.by_ref().enumerate() {
+        for item_bits in chunks.by_ref() {
             let item = Atom::parse(item_bits)?;
-            list[list_len - 2 - i] = item;
+
+            i -= 1;
+            list[i] = item;
         }
         debug_assert_eq!(chunks.remainder().len(), 0);
 
