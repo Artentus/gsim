@@ -36,14 +36,12 @@ const EVAL_MAX_STEPS_ARG: &str = "max-steps";
 
 fn main() {
     let args = Args::parse();
-    let file = std::fs::File::open(args.input).unwrap();
-    let reader = std::io::BufReader::new(file);
+    let json = std::fs::read_to_string(args.input).unwrap();
 
     let mut builder = SimulatorBuilder::default();
     let ports = match args.format {
         Format::Yosys => {
-            let importer =
-                gsim::import::yosys::YosysModuleImporter::from_json_reader(reader).unwrap();
+            let importer = gsim::import::yosys::YosysModuleImporter::from_json_str(&json).unwrap();
             builder.import_module(&importer).unwrap()
         }
     };
@@ -169,11 +167,11 @@ fn drive(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     };
 
     let new_state = if new_state.starts_with('d') {
-        LogicSizeInteger::from_str_radix(&new_state[1..], 10)
+        u32::from_str_radix(&new_state[1..], 10)
             .ok()
             .map(LogicState::from_int)
     } else if new_state.starts_with('h') {
-        LogicSizeInteger::from_str_radix(&new_state[1..], 16)
+        u32::from_str_radix(&new_state[1..], 16)
             .ok()
             .map(LogicState::from_int)
     } else {
