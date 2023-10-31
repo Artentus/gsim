@@ -1,4 +1,4 @@
-use crate::id_lists::Id;
+use crate::id_lists::{Id, IdInternal};
 use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 
@@ -38,14 +38,14 @@ fn alloc_new<T: Id>(existing: &[T], new: T) -> HeapIdVec<T> {
 }
 
 #[repr(C)]
-pub(crate) union IdVec<T: Id> {
+pub(crate) union IdVec<T: IdInternal> {
     /// SAFETY: __never__ write to this field to not invalidate the data
     len: u32,
     inline: ManuallyDrop<InlineIdVec<T>>,
     heap: ManuallyDrop<HeapIdVec<T>>,
 }
 
-impl<T: Id> IdVec<T> {
+impl<T: IdInternal> IdVec<T> {
     #[inline]
     pub(crate) fn new() -> Self {
         Self {
@@ -140,7 +140,7 @@ impl<T: Id> IdVec<T> {
     }
 }
 
-impl<T: Id> Drop for IdVec<T> {
+impl<T: IdInternal> Drop for IdVec<T> {
     fn drop(&mut self) {
         if self.len() > INLINE_CAPACITY {
             unsafe {
@@ -151,5 +151,5 @@ impl<T: Id> Drop for IdVec<T> {
     }
 }
 
-unsafe impl<T: Id> Send for IdVec<T> {}
-unsafe impl<T: Id> Sync for IdVec<T> {}
+unsafe impl<T: IdInternal> Send for IdVec<T> {}
+unsafe impl<T: IdInternal> Sync for IdVec<T> {}

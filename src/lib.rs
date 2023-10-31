@@ -62,7 +62,7 @@ use std::ops::{Add, AddAssign};
 use std::sync::Mutex;
 
 pub use component::ComponentData;
-pub use id_lists::{ComponentId, WireId};
+pub use id_lists::{ComponentId, Id, WireId};
 pub use logic::{LogicBitState, LogicState};
 
 const fn const_max(a: usize, b: usize) -> usize {

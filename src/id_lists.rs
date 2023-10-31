@@ -54,7 +54,8 @@ macro_rules! get_flatten_expect {
 
 const INVALID_ID: u32 = u32::MAX;
 
-pub(crate) trait Id: Copy + Eq {
+/// An ID type
+pub trait Id: Default + Copy + Eq {
     /// An invalid ID
     const INVALID: Self;
 
@@ -63,7 +64,9 @@ pub(crate) trait Id: Copy + Eq {
     fn is_invalid(self) -> bool {
         self == Self::INVALID
     }
+}
 
+pub(crate) trait IdInternal: Id {
     fn to_u32(self) -> u32;
     fn from_u32(val: u32) -> Self;
 }
@@ -86,7 +89,9 @@ macro_rules! def_id_type {
 
         impl Id for $id_name {
             const INVALID: Self = Self(INVALID_ID);
+        }
 
+        impl IdInternal for $id_name {
             #[inline]
             fn to_u32(self) -> u32 {
                 self.0
