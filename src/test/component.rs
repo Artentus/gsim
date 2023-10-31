@@ -1421,155 +1421,154 @@ fn multiplexer() {
     }
 }
 
-//#[test]
-//fn priority_decoder() {
-//    struct TestData {
-//        inputs: &'static [LogicState],
-//        output: LogicState,
-//    }
-//
-//    macro_rules! test_data {
-//        ($([$($i:tt),+ $(,)?] -> $o:tt),* $(,)?) => {
-//            &[
-//                $(
-//                    TestData {
-//                        inputs: &[$(logic_state!($i)),+],
-//                        output: logic_state!($o),
-//                    },
-//                )*
-//            ]
-//        };
-//    }
-//
-//    const TEST_DATA: &[TestData] = test_data!(
-//        [HIGH_Z] -> UNDEFINED,
-//        [UNDEFINED] -> UNDEFINED,
-//        [0] -> 0,
-//        [1] -> 1,
-//
-//        [HIGH_Z, HIGH_Z] -> UNDEFINED,
-//        [HIGH_Z, UNDEFINED] -> UNDEFINED,
-//        [HIGH_Z, 0] -> UNDEFINED,
-//        [HIGH_Z, 1] -> UNDEFINED,
-//
-//        [UNDEFINED, HIGH_Z] -> UNDEFINED,
-//        [UNDEFINED, UNDEFINED] -> UNDEFINED,
-//        [UNDEFINED, 0] -> UNDEFINED,
-//        [UNDEFINED, 1] -> UNDEFINED,
-//
-//        [0, HIGH_Z] -> UNDEFINED,
-//        [0, UNDEFINED] -> UNDEFINED,
-//        [0, 0] -> 0,
-//        [0, 1] -> 2,
-//
-//        [1, HIGH_Z] -> 1,
-//        [1, UNDEFINED] -> 1,
-//        [1, 0] -> 1,
-//        [1, 1] -> 1,
-//
-//        [HIGH_Z, HIGH_Z, HIGH_Z] -> UNDEFINED,
-//        [HIGH_Z, HIGH_Z, UNDEFINED] -> UNDEFINED,
-//        [HIGH_Z, HIGH_Z, 0] -> UNDEFINED,
-//        [HIGH_Z, HIGH_Z, 1] -> UNDEFINED,
-//        [HIGH_Z, UNDEFINED, HIGH_Z] -> UNDEFINED,
-//        [HIGH_Z, UNDEFINED, UNDEFINED] -> UNDEFINED,
-//        [HIGH_Z, UNDEFINED, 0] -> UNDEFINED,
-//        [HIGH_Z, UNDEFINED, 1] -> UNDEFINED,
-//        [HIGH_Z, 0, HIGH_Z] -> UNDEFINED,
-//        [HIGH_Z, 0, UNDEFINED] -> UNDEFINED,
-//        [HIGH_Z, 0, 0] -> UNDEFINED,
-//        [HIGH_Z, 0, 1] -> UNDEFINED,
-//        [HIGH_Z, 1, HIGH_Z] -> UNDEFINED,
-//        [HIGH_Z, 1, UNDEFINED] -> UNDEFINED,
-//        [HIGH_Z, 1, 0] -> UNDEFINED,
-//        [HIGH_Z, 1, 1] -> UNDEFINED,
-//
-//        [UNDEFINED, HIGH_Z, HIGH_Z] -> UNDEFINED,
-//        [UNDEFINED, HIGH_Z, UNDEFINED] -> UNDEFINED,
-//        [UNDEFINED, HIGH_Z, 0] -> UNDEFINED,
-//        [UNDEFINED, HIGH_Z, 1] -> UNDEFINED,
-//        [UNDEFINED, UNDEFINED, HIGH_Z] -> UNDEFINED,
-//        [UNDEFINED, UNDEFINED, UNDEFINED] -> UNDEFINED,
-//        [UNDEFINED, UNDEFINED, 0] -> UNDEFINED,
-//        [UNDEFINED, UNDEFINED, 1] -> UNDEFINED,
-//        [UNDEFINED, 0, HIGH_Z] -> UNDEFINED,
-//        [UNDEFINED, 0, UNDEFINED] -> UNDEFINED,
-//        [UNDEFINED, 0, 0] -> UNDEFINED,
-//        [UNDEFINED, 0, 1] -> UNDEFINED,
-//        [UNDEFINED, 1, HIGH_Z] -> UNDEFINED,
-//        [UNDEFINED, 1, UNDEFINED] -> UNDEFINED,
-//        [UNDEFINED, 1, 0] -> UNDEFINED,
-//        [UNDEFINED, 1, 1] -> UNDEFINED,
-//
-//        [0, HIGH_Z, HIGH_Z] -> UNDEFINED,
-//        [0, HIGH_Z, UNDEFINED] -> UNDEFINED,
-//        [0, HIGH_Z, 0] -> UNDEFINED,
-//        [0, HIGH_Z, 1] -> UNDEFINED,
-//        [0, UNDEFINED, HIGH_Z] -> UNDEFINED,
-//        [0, UNDEFINED, UNDEFINED] -> UNDEFINED,
-//        [0, UNDEFINED, 0] -> UNDEFINED,
-//        [0, UNDEFINED, 1] -> UNDEFINED,
-//        [0, 0, HIGH_Z] -> UNDEFINED,
-//        [0, 0, UNDEFINED] -> UNDEFINED,
-//        [0, 0, 0] -> 0,
-//        [0, 0, 1] -> 3,
-//        [0, 1, HIGH_Z] -> 2,
-//        [0, 1, UNDEFINED] -> 2,
-//        [0, 1, 0] -> 2,
-//        [0, 1, 1] -> 2,
-//
-//        [1, HIGH_Z, HIGH_Z] -> 1,
-//        [1, HIGH_Z, UNDEFINED] -> 1,
-//        [1, HIGH_Z, 0] -> 1,
-//        [1, HIGH_Z, 1] -> 1,
-//        [1, UNDEFINED, HIGH_Z] -> 1,
-//        [1, UNDEFINED, UNDEFINED] -> 1,
-//        [1, UNDEFINED, 0] -> 1,
-//        [1, UNDEFINED, 1] -> 1,
-//        [1, 0, HIGH_Z] -> 1,
-//        [1, 0, UNDEFINED] -> 1,
-//        [1, 0, 0] -> 1,
-//        [1, 0, 1] -> 1,
-//        [1, 1, HIGH_Z] -> 1,
-//        [1, 1, UNDEFINED] -> 1,
-//        [1, 1, 0] -> 1,
-//        [1, 1, 1] -> 1,
-//    );
-//
-//    for (i, test_data) in TEST_DATA.iter().enumerate() {
-//        let mut builder = SimulatorBuilder::default();
-//
-//        let inputs: Vec<_> = test_data
-//            .inputs
-//            .iter()
-//            .map(|drive| {
-//                let wire = builder.add_wire(WIDTH_1);
-//                builder.set_wire_base_drive(wire, drive);
-//                wire
-//            })
-//            .collect();
-//        let output_width =
-//            NonZeroUsize::new((usize::BITS - inputs.len().leading_zeros()) as usize).unwrap();
-//        let output = builder.add_wire(output_width);
-//        let _decoder = builder.add_priority_decoder(&inputs, output).unwrap();
-//
-//        let mut sim = builder.build();
-//        match sim.run_sim(2) {
-//            SimulationRunResult::Ok => {}
-//            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-//            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-//        }
-//
-//        let output_state = sim.get_wire_state(output);
-//
-//        assert!(
-//            output_state.eq(&test_data.output, output_width),
-//            "[TEST {i}]  expected: {}  actual: {}",
-//            test_data.output.display_string(output_width),
-//            output_state.display_string(output_width),
-//        );
-//    }
-//}
+#[test]
+fn priority_decoder() {
+    struct TestData {
+        inputs: &'static [LogicState],
+        output: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($([$($i:tt),+ $(,)?] -> $o:tt),* $(,)?) => {
+            &[
+                $(
+                    TestData {
+                        inputs: &[$(logic_state!($i)),+],
+                        output: logic_state!($o),
+                    },
+                )*
+            ]
+        };
+    }
+
+    const TEST_DATA: &[TestData] = test_data!(
+        [HIGH_Z] -> UNDEFINED,
+        [UNDEFINED] -> UNDEFINED,
+        [0] -> 0,
+        [1] -> 1,
+
+        [HIGH_Z, HIGH_Z] -> UNDEFINED,
+        [HIGH_Z, UNDEFINED] -> UNDEFINED,
+        [HIGH_Z, 0] -> UNDEFINED,
+        [HIGH_Z, 1] -> UNDEFINED,
+
+        [UNDEFINED, HIGH_Z] -> UNDEFINED,
+        [UNDEFINED, UNDEFINED] -> UNDEFINED,
+        [UNDEFINED, 0] -> UNDEFINED,
+        [UNDEFINED, 1] -> UNDEFINED,
+
+        [0, HIGH_Z] -> UNDEFINED,
+        [0, UNDEFINED] -> UNDEFINED,
+        [0, 0] -> 0,
+        [0, 1] -> 2,
+
+        [1, HIGH_Z] -> 1,
+        [1, UNDEFINED] -> 1,
+        [1, 0] -> 1,
+        [1, 1] -> 1,
+
+        [HIGH_Z, HIGH_Z, HIGH_Z] -> UNDEFINED,
+        [HIGH_Z, HIGH_Z, UNDEFINED] -> UNDEFINED,
+        [HIGH_Z, HIGH_Z, 0] -> UNDEFINED,
+        [HIGH_Z, HIGH_Z, 1] -> UNDEFINED,
+        [HIGH_Z, UNDEFINED, HIGH_Z] -> UNDEFINED,
+        [HIGH_Z, UNDEFINED, UNDEFINED] -> UNDEFINED,
+        [HIGH_Z, UNDEFINED, 0] -> UNDEFINED,
+        [HIGH_Z, UNDEFINED, 1] -> UNDEFINED,
+        [HIGH_Z, 0, HIGH_Z] -> UNDEFINED,
+        [HIGH_Z, 0, UNDEFINED] -> UNDEFINED,
+        [HIGH_Z, 0, 0] -> UNDEFINED,
+        [HIGH_Z, 0, 1] -> UNDEFINED,
+        [HIGH_Z, 1, HIGH_Z] -> UNDEFINED,
+        [HIGH_Z, 1, UNDEFINED] -> UNDEFINED,
+        [HIGH_Z, 1, 0] -> UNDEFINED,
+        [HIGH_Z, 1, 1] -> UNDEFINED,
+
+        [UNDEFINED, HIGH_Z, HIGH_Z] -> UNDEFINED,
+        [UNDEFINED, HIGH_Z, UNDEFINED] -> UNDEFINED,
+        [UNDEFINED, HIGH_Z, 0] -> UNDEFINED,
+        [UNDEFINED, HIGH_Z, 1] -> UNDEFINED,
+        [UNDEFINED, UNDEFINED, HIGH_Z] -> UNDEFINED,
+        [UNDEFINED, UNDEFINED, UNDEFINED] -> UNDEFINED,
+        [UNDEFINED, UNDEFINED, 0] -> UNDEFINED,
+        [UNDEFINED, UNDEFINED, 1] -> UNDEFINED,
+        [UNDEFINED, 0, HIGH_Z] -> UNDEFINED,
+        [UNDEFINED, 0, UNDEFINED] -> UNDEFINED,
+        [UNDEFINED, 0, 0] -> UNDEFINED,
+        [UNDEFINED, 0, 1] -> UNDEFINED,
+        [UNDEFINED, 1, HIGH_Z] -> UNDEFINED,
+        [UNDEFINED, 1, UNDEFINED] -> UNDEFINED,
+        [UNDEFINED, 1, 0] -> UNDEFINED,
+        [UNDEFINED, 1, 1] -> UNDEFINED,
+
+        [0, HIGH_Z, HIGH_Z] -> UNDEFINED,
+        [0, HIGH_Z, UNDEFINED] -> UNDEFINED,
+        [0, HIGH_Z, 0] -> UNDEFINED,
+        [0, HIGH_Z, 1] -> UNDEFINED,
+        [0, UNDEFINED, HIGH_Z] -> UNDEFINED,
+        [0, UNDEFINED, UNDEFINED] -> UNDEFINED,
+        [0, UNDEFINED, 0] -> UNDEFINED,
+        [0, UNDEFINED, 1] -> UNDEFINED,
+        [0, 0, HIGH_Z] -> UNDEFINED,
+        [0, 0, UNDEFINED] -> UNDEFINED,
+        [0, 0, 0] -> 0,
+        [0, 0, 1] -> 3,
+        [0, 1, HIGH_Z] -> 2,
+        [0, 1, UNDEFINED] -> 2,
+        [0, 1, 0] -> 2,
+        [0, 1, 1] -> 2,
+
+        [1, HIGH_Z, HIGH_Z] -> 1,
+        [1, HIGH_Z, UNDEFINED] -> 1,
+        [1, HIGH_Z, 0] -> 1,
+        [1, HIGH_Z, 1] -> 1,
+        [1, UNDEFINED, HIGH_Z] -> 1,
+        [1, UNDEFINED, UNDEFINED] -> 1,
+        [1, UNDEFINED, 0] -> 1,
+        [1, UNDEFINED, 1] -> 1,
+        [1, 0, HIGH_Z] -> 1,
+        [1, 0, UNDEFINED] -> 1,
+        [1, 0, 0] -> 1,
+        [1, 0, 1] -> 1,
+        [1, 1, HIGH_Z] -> 1,
+        [1, 1, UNDEFINED] -> 1,
+        [1, 1, 0] -> 1,
+        [1, 1, 1] -> 1,
+    );
+
+    for (i, test_data) in TEST_DATA.iter().enumerate() {
+        let mut builder = SimulatorBuilder::default();
+
+        let inputs: Vec<_> = test_data
+            .inputs
+            .iter()
+            .map(|drive| {
+                let wire = builder.add_wire(WIDTH_1).unwrap();
+                builder.set_wire_drive(wire, drive);
+                wire
+            })
+            .collect();
+        let output_width = NonZeroU8::new((inputs.len() + 1).clog2() as u8).unwrap();
+        let output = builder.add_wire(output_width).unwrap();
+        let _decoder = builder.add_priority_decoder(&inputs, output).unwrap();
+
+        let mut sim = builder.build();
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(output);
+
+        assert!(
+            output_state.eq(&test_data.output, output_width),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(output_width),
+            output_state.display_string(output_width),
+        );
+    }
+}
 
 #[test]
 fn register() {

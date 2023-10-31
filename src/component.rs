@@ -759,54 +759,63 @@ impl LargeComponent for Multiplexer {
     }
 }
 
-//#[derive(Debug)]
-//pub(crate) struct PriorityDecoder {
-//    inputs: inline_vec!(WireStateId),
-//    output: WireStateId,
-//}
-//
-//impl PriorityDecoder {
-//    #[inline]
-//    pub(crate) fn new(inputs: &[WireStateId], output: WireStateId) -> Self {
-//        Self {
-//            inputs: inputs.into(),
-//            output,
-//        }
-//    }
-//}
-//
-//impl LargeComponent for PriorityDecoder {
-//    fn update(
-//        &mut self,
-//        wire_widths: &WireWidthList,
-//        wire_states: &WireStateList,
-//        outputs: &mut [Atom],
-//    ) -> inline_vec!(WireId) {
-//        let mut new_output_state = Atom::LOGIC_0;
-//
-//        for (i, input) in self.inputs.iter().copied().enumerate() {
-//            match wire_states[input].get_bit_state(AtomOffset::MIN) {
-//                LogicBitState::HighZ | LogicBitState::Undefined => {
-//                    new_output_state = Atom::UNDEFINED;
-//                    break;
-//                }
-//                LogicBitState::Logic1 => {
-//                    new_output_state = Atom::from_int((i + 1) as u32);
-//                    break;
-//                }
-//                LogicBitState::Logic0 => continue,
-//            }
-//        }
-//
-//        let output_width = wire_widths[self.output];
-//        if !new_output_state.eq(outputs[0], output_width) {
-//            outputs[0] = new_output_state;
-//            smallvec![self.output]
-//        } else {
-//            smallvec![]
-//        }
-//    }
-//}
+#[derive(Debug)]
+pub(crate) struct PriorityDecoder {
+    inputs: inline_vec!(WireStateId),
+    output: OutputStateId,
+    output_wire: WireId,
+}
+
+impl PriorityDecoder {
+    #[inline]
+    pub(crate) fn new(
+        inputs: impl Into<inline_vec!(WireStateId)>,
+        output: OutputStateId,
+        output_wire: WireId,
+    ) -> Self {
+        Self {
+            inputs: inputs.into(),
+            output,
+            output_wire,
+        }
+    }
+}
+
+impl LargeComponent for PriorityDecoder {
+    fn alloc_size(&self) -> AllocationSize {
+        AllocationSize(std::mem::size_of::<Self>())
+    }
+
+    fn update(
+        &mut self,
+        wire_states: &WireStateList,
+        mut output_states: OutputStateSlice<'_>,
+    ) -> inline_vec!(WireId) {
+        let mut new_output_state = Atom::LOGIC_0;
+
+        for (i, input) in self.inputs.iter().copied().enumerate() {
+            match wire_states.get_state(input)[0].get_bit_state(AtomOffset::MIN) {
+                LogicBitState::HighZ | LogicBitState::Undefined => {
+                    new_output_state = Atom::UNDEFINED;
+                    break;
+                }
+                LogicBitState::Logic1 => {
+                    new_output_state = Atom::from_int((i + 1) as u32);
+                    break;
+                }
+                LogicBitState::Logic0 => continue,
+            }
+        }
+
+        let (width, out) = output_states.get_data(self.output);
+        if !out[0].eq(new_output_state, AtomWidth::new(width.get()).unwrap()) {
+            out[0] = new_output_state;
+            smallvec![self.output_wire]
+        } else {
+            smallvec![]
+        }
+    }
+}
 
 struct ClockTrigger {
     prev: Option<bool>,

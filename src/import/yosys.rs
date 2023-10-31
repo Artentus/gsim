@@ -401,6 +401,147 @@ pub enum YosysModuleImportError {
     },
 }
 
+fn add_wire(
+    bits: &Bits,
+    direction: BusDirection,
+    builder: &mut crate::SimulatorBuilder,
+) -> Result<WireId, YosysModuleImportError> {
+    let bus_width = u8::try_from(bits.len())
+        .and_then(NonZeroU8::try_from)
+        .map_err(|_| YosysModuleImportError::UnsupportedWireWidth {
+            wire_width: bits.len(),
+        })?;
+
+    let mut drive = vec![LogicBitState::HighZ; bits.len()];
+    for (i, &bit) in bits.iter().enumerate() {
+        if let Signal::Value(value) = bit {
+            match direction {
+                BusDirection::Read => drive[i] = value,
+                BusDirection::Write => panic!("illegal file format"),
+            }
+        }
+    }
+
+    let bus_wire = builder
+        .add_wire(bus_width)
+        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+    builder.set_wire_drive(bus_wire, &LogicState::from_bits(&drive));
+
+    Ok(bus_wire)
+}
+
+#[derive(Default, Clone, Copy)]
+struct NetMapping {
+    wire: WireId,
+    offset: u8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BusDirection {
+    Read,
+    Write,
+}
+
+struct WireMap {
+    const_high_z: WireId,
+    const_undefined: WireId,
+    const_0: WireId,
+    const_1: WireId,
+    bus_map: HashMap<Bits, WireId>,
+    net_map: Vec<NetMapping>,
+}
+
+impl WireMap {
+    fn get_bus_wire(
+        &mut self,
+        bits: &Bits,
+        direction: BusDirection,
+        builder: &mut crate::SimulatorBuilder,
+    ) -> Result<WireId, YosysModuleImportError> {
+        if let Some(&wire) = self.bus_map.get(bits) {
+            Ok(wire)
+        } else {
+            let all_nets_invalid = bits
+                .iter()
+                .filter_map(|&bit| match bit {
+                    Signal::Value(_) => None,
+                    Signal::Net(net_id) => Some(net_id),
+                })
+                .all(|net_id| {
+                    let mapping = self.net_map[net_id];
+                    mapping.wire.is_invalid()
+                });
+
+            if all_nets_invalid {
+                let bus_wire = add_wire(bits, direction, builder)?;
+
+                self.bus_map.insert(bits.clone(), bus_wire);
+                for (offset, &bit) in bits.iter().enumerate() {
+                    if let Signal::Net(net_id) = bit {
+                        self.net_map[net_id] = NetMapping {
+                            wire: bus_wire,
+                            offset: offset as u8,
+                        }
+                    }
+                }
+
+                Ok(bus_wire)
+            } else {
+                let all_nets_valid = bits
+                    .iter()
+                    .filter_map(|&bit| match bit {
+                        Signal::Value(_) => None,
+                        Signal::Net(net_id) => Some(net_id),
+                    })
+                    .all(|net_id| {
+                        let mapping = self.net_map[net_id];
+                        !mapping.wire.is_invalid()
+                    });
+
+                if all_nets_valid {
+                    let bus_wire = add_wire(bits, direction, builder)?;
+
+                    match direction {
+                        BusDirection::Read => {
+                            let mut bit_wires = Vec::new();
+                            for &bit in bits {
+                                let bit_wire = match bit {
+                                    Signal::Value(LogicBitState::HighZ) => self.const_high_z,
+                                    Signal::Value(LogicBitState::Undefined) => self.const_undefined,
+                                    Signal::Value(LogicBitState::Logic0) => self.const_0,
+                                    Signal::Value(LogicBitState::Logic1) => self.const_1,
+                                    Signal::Net(net_id) => {
+                                        let output = builder
+                                            .add_wire(NonZeroU8::MIN)
+                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                                        builder
+                                            .add_slice(
+                                                self.net_map[net_id].wire,
+                                                self.net_map[net_id].offset,
+                                                output,
+                                            )
+                                            .unwrap();
+                                        output
+                                    }
+                                };
+
+                                bit_wires.push(bit_wire);
+                            }
+
+                            builder.add_merge(&bit_wires, bus_wire).unwrap();
+                        }
+                        BusDirection::Write => todo!(),
+                    }
+
+                    Ok(bus_wire)
+                } else {
+                    todo!()
+                }
+            }
+        }
+    }
+}
+
 impl ModuleImporter for YosysModuleImporter {
     type Error = YosysModuleImportError;
 
@@ -413,85 +554,47 @@ impl ModuleImporter for YosysModuleImporter {
         &self,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<ModuleConnections, Self::Error> {
-        #[derive(Default, Clone, Copy)]
-        struct NetMapping {
-            wire: WireId,
-            offset: u8,
-        }
+        let const_high_z = builder
+            .add_wire(NonZeroU8::MIN)
+            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+        builder.set_wire_drive(const_high_z, &LogicState::HIGH_Z);
+
+        let const_undefined = builder
+            .add_wire(NonZeroU8::MIN)
+            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+        builder.set_wire_drive(const_undefined, &LogicState::UNDEFINED);
+
+        let const_0 = builder
+            .add_wire(NonZeroU8::MIN)
+            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+        builder.set_wire_drive(const_0, &LogicState::LOGIC_0);
+
+        let const_1 = builder
+            .add_wire(NonZeroU8::MIN)
+            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+        builder.set_wire_drive(const_1, &LogicState::LOGIC_1);
 
         let max_net_id = self.module.max_net_id();
-        let mut bus_map = HashMap::<Bits, WireId>::new();
-        let mut net_map = vec![NetMapping::default(); max_net_id + 1];
-
-        #[derive(Clone, Copy, PartialEq, Eq)]
-        enum BusDirection {
-            Read,
-            Write,
-        }
-
-        let mut get_bus_wire = |bits: &Bits,
-                                direction: BusDirection,
-                                builder: &mut crate::SimulatorBuilder|
-         -> Result<WireId, YosysModuleImportError> {
-            if let Some(&wire) = bus_map.get(bits) {
-                Ok(wire)
-            } else {
-                let all_nets_invalid = bits
-                    .iter()
-                    .filter_map(|&bit| match bit {
-                        Signal::Value(_) => None,
-                        Signal::Net(net_id) => Some(net_id),
-                    })
-                    .all(|net_id| {
-                        let mapping = net_map[net_id];
-                        mapping.wire.is_invalid()
-                    });
-
-                if all_nets_invalid {
-                    let bus_width = u8::try_from(bits.len())
-                        .and_then(NonZeroU8::try_from)
-                        .map_err(|_| YosysModuleImportError::UnsupportedWireWidth {
-                            wire_width: bits.len(),
-                        })?;
-
-                    let mut drive = vec![LogicBitState::HighZ; bits.len()];
-                    for (i, &bit) in bits.iter().enumerate() {
-                        if let Signal::Value(value) = bit {
-                            drive[i] = value;
-                        }
-                    }
-
-                    let bus_wire = builder
-                        .add_wire(bus_width)
-                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.set_wire_drive(bus_wire, &LogicState::from_bits(&drive));
-
-                    bus_map.insert(bits.clone(), bus_wire);
-                    for (offset, &bit) in bits.iter().enumerate() {
-                        if let Signal::Net(net_id) = bit {
-                            net_map[net_id] = NetMapping {
-                                wire: bus_wire,
-                                offset: offset as u8,
-                            }
-                        }
-                    }
-
-                    Ok(bus_wire)
-                } else {
-                    todo!()
-                }
-            }
+        let mut wire_map = WireMap {
+            const_high_z,
+            const_undefined,
+            const_0,
+            const_1,
+            bus_map: HashMap::new(),
+            net_map: vec![NetMapping::default(); max_net_id + 1],
         };
 
         let mut connections = ModuleConnections::default();
         for (port_name, port) in &self.module.ports {
             match port.direction {
                 PortDirection::Input => {
-                    let port_wire = get_bus_wire(&port.bits, BusDirection::Write, builder)?;
+                    let port_wire =
+                        wire_map.get_bus_wire(&port.bits, BusDirection::Write, builder)?;
                     connections.inputs.insert(Rc::clone(port_name), port_wire);
                 }
                 PortDirection::Output => {
-                    let port_wire = get_bus_wire(&port.bits, BusDirection::Read, builder)?;
+                    let port_wire =
+                        wire_map.get_bus_wire(&port.bits, BusDirection::Read, builder)?;
                     connections.outputs.insert(Rc::clone(port_name), port_wire);
                 }
                 PortDirection::InOut => {
@@ -515,11 +618,13 @@ impl ModuleImporter for YosysModuleImporter {
 
                 match port_direction {
                     PortDirection::Input => {
-                        let port_wire = get_bus_wire(&port.bits, BusDirection::Read, builder)?;
+                        let port_wire =
+                            wire_map.get_bus_wire(&port.bits, BusDirection::Read, builder)?;
                         input_ports.insert(Rc::clone(port_name), port_wire);
                     }
                     PortDirection::Output => {
-                        let port_wire = get_bus_wire(&port.bits, BusDirection::Write, builder)?;
+                        let port_wire =
+                            wire_map.get_bus_wire(&port.bits, BusDirection::Write, builder)?;
                         output_ports.insert(Rc::clone(port_name), port_wire);
                     }
                     PortDirection::InOut => {
@@ -871,92 +976,92 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: Rc::clone(cell_name),
                         })?;
                 }
-                //CellType::Pmux => {
-                //    if input_ports.len() != 3 {
-                //        return Err(YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        });
-                //    }
+                CellType::Pmux => {
+                    if input_ports.len() != 3 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        });
+                    }
 
-                //    if output_ports.len() != 1 {
-                //        return Err(YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        });
-                //    }
+                    if output_ports.len() != 1 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        });
+                    }
 
-                //    let input_a = *input_ports.get("A").ok_or_else(|| {
-                //        YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        }
-                //    })?;
+                    let input_a = *input_ports.get("A").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        }
+                    })?;
 
-                //    let input_b = *input_ports.get("B").ok_or_else(|| {
-                //        YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        }
-                //    })?;
+                    let input_b = *input_ports.get("B").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        }
+                    })?;
 
-                //    let select = *input_ports.get("S").ok_or_else(|| {
-                //        YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        }
-                //    })?;
+                    let select = *input_ports.get("S").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        }
+                    })?;
 
-                //    let input_count = builder.get_wire_width(select).get() as usize;
-                //    let input_width = builder.get_wire_width(input_a);
+                    let output = *output_ports.get("Y").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        }
+                    })?;
 
-                //    let mut decoder_inputs = Vec::with_capacity(input_count);
-                //    let mut mux_inputs = Vec::with_capacity(input_count + 1);
-                //    mux_inputs.push(input_a);
+                    let input_count = builder.get_wire_width(select).get() as usize;
+                    let input_width = builder.get_wire_width(input_a);
 
-                //    for i in 0..input_count {
-                //        let select_bi = builder
-                //            .add_wire(NonZeroU8::MIN)
-                //            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                //        decoder_inputs.push(select_bi);
-                //        builder
-                //            .add_slice(
-                //                select[i / (MAX_LOGIC_WIDTH as usize)],
-                //                LogicOffset::new((i % (MAX_LOGIC_WIDTH as usize)) as u8).unwrap(),
-                //                select_bi,
-                //            )
-                //            .unwrap();
+                    let mut decoder_inputs = Vec::with_capacity(input_count);
+                    let mut mux_inputs = Vec::with_capacity(input_count + 1);
+                    mux_inputs.push(input_a);
 
-                //        let offset = i * (input_width.get() as usize);
-                //        let input_bi = builder
-                //            .add_wire(input_width)
-                //            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                //        builder.add_slice(input_b, offset, &input_bi).map_err(|_| {
-                //            YosysModuleImportError::InvalidCellPorts {
-                //                cell_name: Rc::clone(cell_name),
-                //            }
-                //        })?;
+                    for i in 0..input_count {
+                        let select_bi = builder
+                            .add_wire(NonZeroU8::MIN)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                        decoder_inputs.push(select_bi);
+                        builder.add_slice(select, i as u8, select_bi).unwrap();
 
-                //        mux_inputs.push(input_bi);
-                //    }
+                        let offset = (i * (input_width.get() as usize)) as u8;
+                        let input_bi = builder
+                            .add_wire(input_width)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                        builder.add_slice(input_b, offset, input_bi).map_err(|_| {
+                            YosysModuleImportError::InvalidCellPorts {
+                                cell_name: Rc::clone(cell_name),
+                            }
+                        })?;
 
-                //    while !mux_inputs.len().is_power_of_two() {
-                //        mux_inputs.push(input_a);
-                //    }
+                        mux_inputs.push(input_bi);
+                    }
 
-                //    let mux_select_width =
-                //        NonZeroU8::new((usize::BITS - decoder_inputs.len().leading_zeros()) as u8)
-                //            .unwrap();
-                //    let mux_select = builder
-                //        .add_wire(mux_select_width)
-                //        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                //    builder
-                //        .add_priority_decoder(&decoder_inputs, mux_select)
-                //        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        })?;
+                    while !mux_inputs.len().is_power_of_two() {
+                        mux_inputs.push(input_a);
+                    }
 
-                //    builder
-                //        .add_multiplexer(&mux_inputs, mux_select, output_ports[0])
-                //        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                //            cell_name: Rc::clone(cell_name),
-                //        })?;
-                //}
+                    let mux_select_width =
+                        NonZeroU8::new((usize::BITS - decoder_inputs.len().leading_zeros()) as u8)
+                            .unwrap();
+                    let mux_select = builder
+                        .add_wire(mux_select_width)
+                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                    builder
+                        .add_priority_decoder(&decoder_inputs, mux_select)
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        })?;
+
+                    builder
+                        .add_multiplexer(&mux_inputs, mux_select, output)
+                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Rc::clone(cell_name),
+                        })?;
+                }
                 CellType::TriBuf => {
                     if input_ports.len() != 2 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
@@ -1024,11 +1129,6 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: Rc::clone(cell_name),
                         }
                     })?;
-
-                    let const_1 = builder
-                        .add_wire(NonZeroU8::MIN)
-                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.set_wire_drive(const_1, &LogicState::from_bool(true));
 
                     builder
                         .add_register(
@@ -1150,11 +1250,6 @@ impl ModuleImporter for YosysModuleImporter {
                         .map_err(|_| YosysModuleImportError::InvalidCellPorts {
                             cell_name: Rc::clone(cell_name),
                         })?;
-
-                    let const_1 = builder
-                        .add_wire(NonZeroU8::MIN)
-                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.set_wire_drive(const_1, &LogicState::from_bool(true));
 
                     builder
                         .add_register(

@@ -130,6 +130,15 @@ impl CLog2 for NonZeroU8 {
     }
 }
 
+impl CLog2 for usize {
+    type Output = u32;
+
+    #[inline]
+    fn clog2(self) -> Self::Output {
+        self.ilog2() + ((!self.is_power_of_two()) as u32)
+    }
+}
+
 /// The size of a memory allocation
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -1329,27 +1338,6 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
-    ///// Adds a `Multiplier` component to the simulation
-    //pub fn add_multiplier(
-    //    &mut self,
-    //    input_a: WireId,
-    //    input_b: WireId,
-    //    output_low: WireId,
-    //    output_high: WireId,
-    //) -> AddComponentResult {
-    //    self.check_wire_widths_match(&[input_a, input_b, output_low, output_high])?;
-    //
-    //    let multiplier = Multiplier::new(input_a, input_b, output_low, output_high);
-    //    let (output_offset, id) = self.add_large_component(multiplier);
-    //
-    //    self.mark_driving(input_a, id);
-    //    self.mark_driving(input_b, id);
-    //    self.mark_driver(output_low, output_offset);
-    //    self.mark_driver(output_high, output_offset + output_low.count().get());
-    //
-    //    Ok(id)
-    //}
-
     /// Adds a `Multiplexer` component to the simulation
     pub fn add_multiplexer(
         &mut self,
@@ -1397,35 +1385,46 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
-    ///// Adds a `Priority Decoder` component to the simulation
-    //pub fn add_priority_decoder(
-    //    &mut self,
-    //    inputs: &[WireId],
-    //    output: WireId,
-    //) -> AddComponentResult {
-    //    for &input in inputs {
-    //        let input_width = self.get_wire_width(input);
-    //        if input_width.get() != 1 {
-    //            return Err(AddComponentError::WireWidthIncompatible);
-    //        }
-    //    }
-    //
-    //    let output_width = self.get_wire_width(output);
-    //    let expected_width = (usize::BITS - inputs.len().leading_zeros()) as usize;
-    //    if output_width.get() != expected_width {
-    //        return Err(AddComponentError::WireWidthIncompatible);
-    //    }
-    //
-    //    let decoder = PriorityDecoder::new(inputs, output);
-    //    let (output_offset, id) = self.add_large_component(decoder);
-    //
-    //    for &input in inputs {
-    //        self.mark_driving(input, id);
-    //    }
-    //    self.mark_driver(output, output_offset);
-    //
-    //    Ok(id)
-    //}
+    /// Adds a `Priority Decoder` component to the simulation
+    pub fn add_priority_decoder(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> AddComponentResult {
+        if inputs.len() < 1 {
+            return Err(AddComponentError::TooFewInputs);
+        }
+
+        for &input in inputs {
+            self.check_wire_width_eq(input, NonZeroU8::MIN)?;
+        }
+
+        let output_width = self.get_wire_width(output);
+        let expected_width = (inputs.len() + 1).clog2();
+        if (output_width.get() as u32) != expected_width {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let output_state = self
+            .sim
+            .output_states
+            .push(output_width)
+            .ok_or(AddComponentError::TooManyComponents)?;
+
+        let wires: SmallVec<_> = inputs
+            .iter()
+            .map(|&input| self.sim.wires[input].state)
+            .collect();
+        let decoder = PriorityDecoder::new(wires, output_state, output);
+        let id = self.add_large_component(decoder, &[output_state])?;
+
+        for &input in inputs {
+            self.mark_driving(input, id);
+        }
+        self.mark_driver(output, output_state);
+
+        Ok(id)
+    }
 
     /// Adds a `Register` component to the simulation
     pub fn add_register(
