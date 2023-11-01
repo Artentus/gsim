@@ -348,6 +348,8 @@ impl YosysModuleImporter {
 pub enum YosysModuleImportError {
     /// The simulators resource limit was reached while constructing the module
     ResourceLimitReached,
+    /// The imported net graph is incoherent
+    IncoherentGraph,
     /// The module has an `inout` port
     InOutPort {
         /// The name of the `inout` port
@@ -401,6 +403,7 @@ pub enum YosysModuleImportError {
 fn add_wire(
     bits: &Bits,
     direction: BusDirection,
+    set_drive: bool,
     builder: &mut crate::SimulatorBuilder,
 ) -> Result<WireId, YosysModuleImportError> {
     let bus_width = u8::try_from(bits.len())
@@ -409,20 +412,23 @@ fn add_wire(
             wire_width: bits.len(),
         })?;
 
-    let mut drive = vec![LogicBitState::HighZ; bits.len()];
-    for (i, &bit) in bits.iter().enumerate() {
-        if let Signal::Value(value) = bit {
-            match direction {
-                BusDirection::Read => drive[i] = value,
-                BusDirection::Write => panic!("illegal file format"),
-            }
-        }
-    }
-
     let bus_wire = builder
         .add_wire(bus_width)
         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-    builder.set_wire_drive(bus_wire, &LogicState::from_bits(&drive));
+
+    if set_drive {
+        let mut drive = vec![LogicBitState::HighZ; bits.len()];
+        for (i, &bit) in bits.iter().enumerate() {
+            if let Signal::Value(value) = bit {
+                match direction {
+                    BusDirection::Read => drive[i] = value,
+                    BusDirection::Write => panic!("illegal file format"),
+                }
+            }
+        }
+
+        builder.set_wire_drive(bus_wire, &LogicState::from_bits(&drive));
+    }
 
     Ok(bus_wire)
 }
@@ -439,6 +445,12 @@ enum BusDirection {
     Write,
 }
 
+struct WireFixup {
+    bus_wire: WireId,
+    direction: BusDirection,
+    bits: Bits,
+}
+
 struct WireMap {
     const_high_z: WireId,
     const_undefined: WireId,
@@ -446,6 +458,7 @@ struct WireMap {
     const_1: WireId,
     bus_map: HashMap<Bits, WireId>,
     net_map: Vec<NetMapping>,
+    fixups: Vec<WireFixup>,
 }
 
 impl WireMap {
@@ -470,7 +483,7 @@ impl WireMap {
                 });
 
             if all_nets_invalid {
-                let bus_wire = add_wire(bits, direction, builder)?;
+                let bus_wire = add_wire(bits, direction, true, builder)?;
 
                 self.bus_map.insert(bits.clone(), bus_wire);
                 for (offset, &bit) in bits.iter().enumerate() {
@@ -484,58 +497,74 @@ impl WireMap {
 
                 Ok(bus_wire)
             } else {
-                let all_nets_valid = bits
-                    .iter()
-                    .filter_map(|&bit| match bit {
-                        Signal::Value(_) => None,
-                        Signal::Net(net_id) => Some(net_id),
-                    })
-                    .all(|net_id| {
-                        let mapping = self.net_map[net_id];
-                        !mapping.wire.is_invalid()
-                    });
+                let bus_wire = add_wire(bits, direction, false, builder)?;
 
-                if all_nets_valid {
-                    let bus_wire = add_wire(bits, direction, builder)?;
+                self.fixups.push(WireFixup {
+                    bus_wire,
+                    direction,
+                    bits: bits.clone(),
+                });
 
-                    match direction {
-                        BusDirection::Read => {
-                            let mut bit_wires = Vec::new();
-                            for &bit in bits {
-                                let bit_wire = match bit {
-                                    Signal::Value(LogicBitState::HighZ) => self.const_high_z,
-                                    Signal::Value(LogicBitState::Undefined) => self.const_undefined,
-                                    Signal::Value(LogicBitState::Logic0) => self.const_0,
-                                    Signal::Value(LogicBitState::Logic1) => self.const_1,
-                                    Signal::Net(net_id) => {
-                                        let output = builder
-                                            .add_wire(NonZeroU8::MIN)
-                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                                        builder
-                                            .add_slice(
-                                                self.net_map[net_id].wire,
-                                                self.net_map[net_id].offset,
-                                                output,
-                                            )
-                                            .unwrap();
-                                        output
-                                    }
-                                };
-
-                                bit_wires.push(bit_wire);
-                            }
-
-                            builder.add_merge(&bit_wires, bus_wire).unwrap();
-                        }
-                        BusDirection::Write => todo!(),
-                    }
-
-                    Ok(bus_wire)
-                } else {
-                    todo!()
-                }
+                Ok(bus_wire)
             }
         }
+    }
+
+    fn perform_fixups(
+        &mut self,
+        builder: &mut crate::SimulatorBuilder,
+    ) -> Result<(), YosysModuleImportError> {
+        for fixup in self.fixups.drain(..) {
+            let all_nets_valid = fixup
+                .bits
+                .iter()
+                .filter_map(|&bit| match bit {
+                    Signal::Value(_) => None,
+                    Signal::Net(net_id) => Some(net_id),
+                })
+                .all(|net_id| {
+                    let mapping = self.net_map[net_id];
+                    !mapping.wire.is_invalid()
+                });
+
+            if all_nets_valid {
+                match fixup.direction {
+                    BusDirection::Read => {
+                        let mut bit_wires = Vec::new();
+                        for bit in fixup.bits {
+                            let bit_wire = match bit {
+                                Signal::Value(LogicBitState::HighZ) => self.const_high_z,
+                                Signal::Value(LogicBitState::Undefined) => self.const_undefined,
+                                Signal::Value(LogicBitState::Logic0) => self.const_0,
+                                Signal::Value(LogicBitState::Logic1) => self.const_1,
+                                Signal::Net(net_id) => {
+                                    let output = builder
+                                        .add_wire(NonZeroU8::MIN)
+                                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                                    builder
+                                        .add_slice(
+                                            self.net_map[net_id].wire,
+                                            self.net_map[net_id].offset,
+                                            output,
+                                        )
+                                        .unwrap();
+                                    output
+                                }
+                            };
+
+                            bit_wires.push(bit_wire);
+                        }
+
+                        builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
+                    }
+                    BusDirection::Write => todo!(),
+                }
+            } else {
+                return Err(YosysModuleImportError::IncoherentGraph);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -579,6 +608,7 @@ impl ModuleImporter for YosysModuleImporter {
             const_1,
             bus_map: HashMap::new(),
             net_map: vec![NetMapping::default(); max_net_id + 1],
+            fixups: Vec::new(),
         };
 
         let mut connections = ModuleConnections::default();
@@ -1448,6 +1478,8 @@ impl ModuleImporter for YosysModuleImporter {
                 }
             }
         }
+
+        wire_map.perform_fixups(builder)?;
 
         Ok(connections)
     }
