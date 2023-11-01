@@ -528,6 +528,7 @@ impl WireMap {
                 });
 
             if all_nets_valid {
+                // TODO: if multiple bits connect to the same bus wire we can use one split/merge for all of them
                 match fixup.direction {
                     BusDirection::Read => {
                         let mut bit_wires = Vec::new();
@@ -557,7 +558,28 @@ impl WireMap {
 
                         builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
                     }
-                    BusDirection::Write => todo!(),
+                    BusDirection::Write => {
+                        for (i, bit) in fixup.bits.into_iter().enumerate() {
+                            match bit {
+                                Signal::Value(_) => todo!(),
+                                Signal::Net(net_id) => {
+                                    let bit_wire = builder
+                                        .add_wire(NonZeroU8::MIN)
+                                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                                    builder
+                                        .add_slice(fixup.bus_wire, i as u8, bit_wire)
+                                        .unwrap();
+
+                                    let mapping = self.net_map[net_id];
+                                    let target_width = builder.get_wire_width(mapping.wire);
+                                    let mut target_bits =
+                                        vec![self.const_high_z; target_width.get() as usize];
+                                    target_bits[mapping.offset as usize] = bit_wire;
+                                    builder.add_merge(&target_bits, mapping.wire).unwrap();
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
                 return Err(YosysModuleImportError::IncoherentGraph);
