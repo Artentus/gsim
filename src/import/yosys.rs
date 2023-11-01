@@ -136,14 +136,14 @@ impl From<String> for CellType {
     }
 }
 
-fn single_from_map<'de, D, T>(deserializer: D) -> Result<(&'de str, T), D::Error>
+fn single_from_map<'de, D, T>(deserializer: D) -> Result<(String, T), D::Error>
 where
     D: serde::Deserializer<'de>,
     T: serde::Deserialize<'de>,
 {
     use serde::de::Error;
 
-    let map = HashMap::<&'de str, T>::deserialize(deserializer)?;
+    let map = HashMap::<String, T>::deserialize(deserializer)?;
     if map.len() == 1 {
         Ok(map.into_iter().next().unwrap())
     } else {
@@ -191,29 +191,26 @@ struct Port {
 }
 
 #[derive(Deserialize)]
-struct Cell<'a> {
+struct Cell {
     #[serde(rename = "type", deserialize_with = "cell_type")]
     cell_type: CellType,
-    #[serde(default, borrow)]
-    parameters: HashMap<&'a str, &'a str>,
-    #[serde(borrow)]
-    port_directions: HashMap<&'a str, PortDirection>,
-    #[serde(borrow)]
-    connections: HashMap<&'a str, Bits>,
+    #[serde(default)]
+    parameters: HashMap<String, String>,
+    port_directions: HashMap<String, PortDirection>,
+    connections: HashMap<String, Bits>,
 }
 
 #[derive(Deserialize)]
-struct Module<'a> {
-    #[serde(borrow)]
-    ports: HashMap<&'a str, Port>,
-    #[serde(default, borrow)]
-    cells: HashMap<&'a str, Cell<'a>>,
+struct Module {
+    ports: HashMap<String, Port>,
+    #[serde(default)]
+    cells: HashMap<String, Cell>,
 }
 
 #[derive(Deserialize)]
-struct Netlist<'a> {
-    #[serde(borrow, rename = "modules", deserialize_with = "single_from_map")]
-    module: (&'a str, Module<'a>),
+struct Netlist {
+    #[serde(rename = "modules", deserialize_with = "single_from_map")]
+    module: (String, Module),
 }
 
 struct PreprocCellPort {
@@ -230,7 +227,7 @@ struct PreprocCell {
 }
 
 impl PreprocCell {
-    fn create(mut cell: Cell<'_>) -> Self {
+    fn create(mut cell: Cell) -> Self {
         let ports = cell
             .connections
             .into_iter()
@@ -241,11 +238,11 @@ impl PreprocCell {
                     signed: cell
                         .parameters
                         .remove(format!("{name}_SIGNED").as_str())
-                        .map(|v| u32::from_str_radix(v, 2).unwrap() > 0),
+                        .map(|v| u32::from_str_radix(&v, 2).unwrap() > 0),
                     polarity: cell
                         .parameters
                         .remove(format!("{name}_POLARITY").as_str())
-                        .map(|v| match u32::from_str_radix(v, 2).unwrap() {
+                        .map(|v| match u32::from_str_radix(&v, 2).unwrap() {
                             0 => ClockPolarity::Falling,
                             _ => ClockPolarity::Rising,
                         }),
@@ -258,7 +255,7 @@ impl PreprocCell {
         let parameters = cell
             .parameters
             .into_iter()
-            .map(|(k, v)| (k.into(), LogicState::parse(v).unwrap()))
+            .map(|(k, v)| (k.into(), LogicState::parse(&v).unwrap()))
             .collect();
 
         Self {
@@ -275,7 +272,7 @@ struct PreprocModule {
 }
 
 impl PreprocModule {
-    fn create(module: Module<'_>) -> Self {
+    fn create(module: Module) -> Self {
         Self {
             ports: module
                 .ports
