@@ -805,7 +805,8 @@ impl ModuleImporter for YosysModuleImporter {
 
                     let a_width = builder.get_wire_width(input_a);
                     let b_width = builder.get_wire_width(input_b);
-                    let max_width = a_width.max(b_width);
+                    let o_width = builder.get_wire_width(output);
+                    let max_width = a_width.max(b_width).max(o_width);
 
                     let input_a = if a_width < max_width {
                         let a_ext = builder
@@ -879,7 +880,8 @@ impl ModuleImporter for YosysModuleImporter {
 
                     let a_width = builder.get_wire_width(input_a);
                     let b_width = builder.get_wire_width(input_b);
-                    let max_width = a_width.max(b_width);
+                    let o_width = builder.get_wire_width(output);
+                    let max_width = a_width.max(b_width).max(o_width);
 
                     let input_a = if a_width < max_width {
                         let a_ext = builder
