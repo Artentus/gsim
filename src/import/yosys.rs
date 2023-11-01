@@ -348,8 +348,6 @@ impl YosysModuleImporter {
 pub enum YosysModuleImportError {
     /// The simulators resource limit was reached while constructing the module
     ResourceLimitReached,
-    /// The imported net graph is incoherent
-    IncoherentGraph,
     /// The module has an `inout` port
     InOutPort {
         /// The name of the `inout` port
@@ -436,7 +434,8 @@ fn add_wire(
 #[derive(Default, Clone, Copy)]
 struct NetMapping {
     wire: WireId,
-    offset: u8,
+    /// None means it is the only bit in the bus
+    offset: Option<u8>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -469,6 +468,7 @@ impl WireMap {
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<WireId, YosysModuleImportError> {
         if let Some(&wire) = self.bus_map.get(bits) {
+            // We have already seen this exact bus
             Ok(wire)
         } else {
             let all_nets_invalid = bits
@@ -483,20 +483,32 @@ impl WireMap {
                 });
 
             if all_nets_invalid {
+                // None of the wires are part of a bus yet, so we create a new one
                 let bus_wire = add_wire(bits, direction, true, builder)?;
 
                 self.bus_map.insert(bits.clone(), bus_wire);
-                for (offset, &bit) in bits.iter().enumerate() {
-                    if let Signal::Net(net_id) = bit {
+                if let &[single_bit] = bits.as_slice() {
+                    if let Signal::Net(net_id) = single_bit {
                         self.net_map[net_id] = NetMapping {
                             wire: bus_wire,
-                            offset: offset as u8,
+                            offset: None,
+                        }
+                    }
+                } else {
+                    for (offset, &bit) in bits.iter().enumerate() {
+                        if let Signal::Net(net_id) = bit {
+                            self.net_map[net_id] = NetMapping {
+                                wire: bus_wire,
+                                offset: Some(offset as u8),
+                            }
                         }
                     }
                 }
 
                 Ok(bus_wire)
             } else {
+                // Some of the wires are already part of a bus, so we
+                // create a dummy bus and postpone the connection
                 let bus_wire = add_wire(bits, direction, false, builder)?;
 
                 self.fixups.push(WireFixup {
@@ -514,55 +526,74 @@ impl WireMap {
         &mut self,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<(), YosysModuleImportError> {
-        for fixup in self.fixups.drain(..) {
-            let all_nets_valid = fixup
-                .bits
-                .iter()
-                .filter_map(|&bit| match bit {
-                    Signal::Value(_) => None,
-                    Signal::Net(net_id) => Some(net_id),
-                })
-                .all(|net_id| {
-                    let mapping = self.net_map[net_id];
-                    !mapping.wire.is_invalid()
-                });
+        impl WireMap {
+            fn get_mapping(
+                &mut self,
+                net_id: NetId,
+                builder: &mut crate::SimulatorBuilder,
+            ) -> Result<NetMapping, YosysModuleImportError> {
+                let mapping = &mut self.net_map[net_id];
+                if mapping.wire.is_invalid() {
+                    // At this point, if a wire has no mapping yet, we didn't
+                    // find a bus containing it, so we add it individually
+                    mapping.wire = builder
+                        .add_wire(NonZeroU8::MIN)
+                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                    mapping.offset = None;
+                }
+                Ok(*mapping)
+            }
 
-            if all_nets_valid {
-                // TODO: if multiple bits connect to the same bus wire we can use one split/merge for all of them
-                match fixup.direction {
-                    BusDirection::Read => {
-                        let mut bit_wires = Vec::new();
-                        for bit in fixup.bits {
-                            let bit_wire = match bit {
-                                Signal::Value(LogicBitState::HighZ) => self.const_high_z,
-                                Signal::Value(LogicBitState::Undefined) => self.const_undefined,
-                                Signal::Value(LogicBitState::Logic0) => self.const_0,
-                                Signal::Value(LogicBitState::Logic1) => self.const_1,
-                                Signal::Net(net_id) => {
-                                    let output = builder
-                                        .add_wire(NonZeroU8::MIN)
-                                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                                    builder
-                                        .add_slice(
-                                            self.net_map[net_id].wire,
-                                            self.net_map[net_id].offset,
-                                            output,
-                                        )
-                                        .unwrap();
-                                    output
-                                }
-                            };
+            fn get_bit(
+                &mut self,
+                net_id: NetId,
+                builder: &mut crate::SimulatorBuilder,
+            ) -> Result<WireId, YosysModuleImportError> {
+                let mapping = self.get_mapping(net_id, builder)?;
 
-                            bit_wires.push(bit_wire);
-                        }
+                if let Some(offset) = mapping.offset {
+                    let output = builder
+                        .add_wire(NonZeroU8::MIN)
+                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
 
-                        builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
+                    builder.add_slice(mapping.wire, offset, output).unwrap();
+
+                    Ok(output)
+                } else {
+                    // If the bit is the only one in the bus we don't have to slice
+                    Ok(mapping.wire)
+                }
+            }
+        }
+
+        let mut fixups = Vec::new();
+        std::mem::swap(&mut fixups, &mut self.fixups);
+        for fixup in fixups {
+            // TODO: if multiple bits connect to the same bus wire we can use one split/merge for all of them
+            match fixup.direction {
+                BusDirection::Read => {
+                    let mut bit_wires = Vec::new();
+                    for bit in fixup.bits {
+                        let bit_wire = match bit {
+                            Signal::Value(LogicBitState::HighZ) => self.const_high_z,
+                            Signal::Value(LogicBitState::Undefined) => self.const_undefined,
+                            Signal::Value(LogicBitState::Logic0) => self.const_0,
+                            Signal::Value(LogicBitState::Logic1) => self.const_1,
+                            Signal::Net(net_id) => self.get_bit(net_id, builder)?,
+                        };
+
+                        bit_wires.push(bit_wire);
                     }
-                    BusDirection::Write => {
-                        for (i, bit) in fixup.bits.into_iter().enumerate() {
-                            match bit {
-                                Signal::Value(_) => todo!(),
-                                Signal::Net(net_id) => {
+
+                    builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
+                }
+                BusDirection::Write => {
+                    for (i, bit) in fixup.bits.into_iter().enumerate() {
+                        match bit {
+                            Signal::Value(_) => todo!(),
+                            Signal::Net(net_id) => {
+                                let mapping = self.get_mapping(net_id, builder)?;
+                                if let Some(offset) = mapping.offset {
                                     let bit_wire = builder
                                         .add_wire(NonZeroU8::MIN)
                                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
@@ -574,15 +605,18 @@ impl WireMap {
                                     let target_width = builder.get_wire_width(mapping.wire);
                                     let mut target_bits =
                                         vec![self.const_high_z; target_width.get() as usize];
-                                    target_bits[mapping.offset as usize] = bit_wire;
+                                    target_bits[offset as usize] = bit_wire;
                                     builder.add_merge(&target_bits, mapping.wire).unwrap();
+                                } else {
+                                    // If the bit is the only one in the bus we can drive directly
+                                    builder
+                                        .add_slice(fixup.bus_wire, i as u8, mapping.wire)
+                                        .unwrap();
                                 }
                             }
                         }
                     }
                 }
-            } else {
-                return Err(YosysModuleImportError::IncoherentGraph);
             }
         }
 
