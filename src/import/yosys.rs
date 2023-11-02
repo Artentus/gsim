@@ -697,8 +697,7 @@ impl WireMap {
                                         self.const_high_z(builder)?;
                                         target_width.get() as usize
                                     ];
-                                    target_bits[(target_width.get() - offset - 1) as usize] =
-                                        bit_wire;
+                                    target_bits[offset as usize] = bit_wire;
                                     builder.add_merge(&target_bits, mapping.wire).unwrap();
                                 } else {
                                     // If the bit is the only one in the bus we can drive directly
