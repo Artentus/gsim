@@ -549,7 +549,11 @@ impl Simulator {
 
     /// Writes the simulation graph into a Graphviz DOT file
     #[cfg(feature = "dot-export")]
-    pub fn write_dot<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+    pub fn write_dot<W: std::io::Write>(
+        &self,
+        mut writer: W,
+        show_wire_states: bool,
+    ) -> std::io::Result<()> {
         writeln!(writer, "digraph {{")?;
 
         let mut wire_drivers = ahash::AHashMap::<WireId, Vec<ComponentId>>::new();
@@ -625,11 +629,20 @@ impl Simulator {
                 write!(writer, "}}")?;
             }
 
-            writeln!(
-                writer,
-                "[label=\"[{}]\"];",
-                self.wire_states.get_width(wire.state)
-            )?;
+            if show_wire_states {
+                writeln!(
+                    writer,
+                    "[label=\"{}\"];",
+                    self.get_wire_drive(wire_id)
+                        .display_string(self.wire_states.get_width(wire.state)),
+                )?;
+            } else {
+                writeln!(
+                    writer,
+                    "[label=\"[{}]\"];",
+                    self.wire_states.get_width(wire.state),
+                )?;
+            }
         }
 
         writeln!(writer, "}}")
@@ -1135,8 +1148,12 @@ impl SimulatorBuilder {
     /// Writes the simulation graph into a Graphviz DOT file
     #[inline]
     #[cfg(feature = "dot-export")]
-    pub fn write_dot<W: std::io::Write>(&self, writer: W) -> std::io::Result<()> {
-        self.sim.write_dot(writer)
+    pub fn write_dot<W: std::io::Write>(
+        &self,
+        writer: W,
+        show_wire_states: bool,
+    ) -> std::io::Result<()> {
+        self.sim.write_dot(writer, show_wire_states)
     }
 
     #[inline]
