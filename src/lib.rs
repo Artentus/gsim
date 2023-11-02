@@ -720,9 +720,7 @@ impl Simulator {
             .into_boxed_slice();
 
         if !conflicts.is_empty() {
-            SimulationStepResult::Err(SimulationErrors {
-                conflicts: Vec::new().into_boxed_slice(),
-            })
+            SimulationStepResult::Err(SimulationErrors { conflicts })
         } else if self.component_update_queue.is_empty() {
             SimulationStepResult::Unchanged
         } else {
