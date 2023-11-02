@@ -414,7 +414,7 @@ fn add_wire(
 
     if set_drive {
         let mut drive = vec![LogicBitState::HighZ; bits.len()];
-        for (i, &bit) in bits.iter().enumerate() {
+        for (i, &bit) in bits.iter().rev().enumerate() {
             if let Signal::Value(value) = bit {
                 match direction {
                     BusDirection::Read => drive[i] = value,
@@ -697,7 +697,8 @@ impl WireMap {
                                         self.const_high_z(builder)?;
                                         target_width.get() as usize
                                     ];
-                                    target_bits[offset as usize] = bit_wire;
+                                    target_bits[(target_width.get() - offset - 1) as usize] =
+                                        bit_wire;
                                     builder.add_merge(&target_bits, mapping.wire).unwrap();
                                 } else {
                                     // If the bit is the only one in the bus we can drive directly
