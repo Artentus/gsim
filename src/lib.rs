@@ -556,6 +556,47 @@ impl Simulator {
     ) -> std::io::Result<()> {
         writeln!(writer, "digraph {{")?;
 
+        for wire_id in self.wires.ids() {
+            let wire = &self.wires[wire_id];
+            let width = self.wire_states.get_width(wire.state);
+
+            if show_wire_states {
+                if let Some(name) = self.wire_names.get(&wire_id) {
+                    writeln!(
+                        writer,
+                        "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
+                        wire_id.to_u32(),
+                        name,
+                        self.get_wire_state(wire_id).display_string(width),
+                    )?;
+                } else {
+                    writeln!(
+                        writer,
+                        "    W{}[label=\"{}\" shape=\"diamond\"];",
+                        wire_id.to_u32(),
+                        self.get_wire_state(wire_id).display_string(width),
+                    )?;
+                }
+            } else {
+                if let Some(name) = self.wire_names.get(&wire_id) {
+                    writeln!(
+                        writer,
+                        "    W{}[label=\"{} [{}]\" shape=\"diamond\"];",
+                        wire_id.to_u32(),
+                        name,
+                        width,
+                    )?;
+                } else {
+                    writeln!(
+                        writer,
+                        "    W{}[label=\"[{}]\" shape=\"diamond\"];",
+                        wire_id.to_u32(),
+                        width,
+                    )?;
+                }
+            }
+        }
+
         let mut wire_drivers = ahash::AHashMap::<WireId, Vec<ComponentId>>::new();
         for component_id in self.components.ids() {
             let component = &self.components[component_id];
@@ -571,78 +612,26 @@ impl Simulator {
 
             writeln!(
                 writer,
-                "    N{}[label=\"{}\" shape=\"box\"];",
+                "    C{}[label=\"{}\" shape=\"box\"];",
                 component_id.to_u32(),
                 name,
             )?;
         }
 
-        let mut output_count = 0u32;
-        let mut input_count = 0u32;
         for wire_id in self.wires.ids() {
             let wire = &self.wires[wire_id];
 
-            if wire.driving.len() == 0 {
-                let name = self
-                    .wire_names
-                    .get(&wire_id)
-                    .map(|name| &**name)
-                    .unwrap_or("Out");
-
-                writeln!(
-                    writer,
-                    "    O{output_count}[label=\"{name}\" shape=\"circle\"];"
-                )?;
+            write!(writer, "    {{ ")?;
+            for &driver in wire_drivers.get(&wire_id).map(Vec::as_slice).unwrap_or(&[]) {
+                write!(writer, "C{} ", driver.to_u32())?;
             }
+            writeln!(writer, "}} -> W{};", wire_id.to_u32())?;
 
-            if let Some(drivers) = wire_drivers.get(&wire_id) {
-                write!(writer, "    {{ ")?;
-                for &driver in drivers {
-                    write!(writer, "N{} ", driver.to_u32())?;
-                }
-                write!(writer, "}}")?;
-            } else {
-                let name = self
-                    .wire_names
-                    .get(&wire_id)
-                    .map(|name| &**name)
-                    .unwrap_or("In");
-
-                writeln!(
-                    writer,
-                    "    I{input_count}[label=\"{name}\" shape=\"circle\"];"
-                )?;
-                write!(writer, "    I{input_count}")?;
-                input_count += 1;
+            write!(writer, "W{} -> {{ ", wire_id.to_u32())?;
+            for driving in wire.driving.iter() {
+                write!(writer, "C{} ", driving.to_u32())?;
             }
-
-            write!(writer, " -> ")?;
-
-            if wire.driving.len() == 0 {
-                write!(writer, "O{output_count}")?;
-                output_count += 1;
-            } else {
-                write!(writer, "{{ ")?;
-                for driving in wire.driving.iter() {
-                    write!(writer, "N{} ", driving.to_u32())?;
-                }
-                write!(writer, "}}")?;
-            }
-
-            if show_wire_states {
-                writeln!(
-                    writer,
-                    "[label=\"{}\"];",
-                    self.get_wire_drive(wire_id)
-                        .display_string(self.wire_states.get_width(wire.state)),
-                )?;
-            } else {
-                writeln!(
-                    writer,
-                    "[label=\"[{}]\"];",
-                    self.wire_states.get_width(wire.state),
-                )?;
-            }
+            writeln!(writer, "}};")?;
         }
 
         writeln!(writer, "}}")
