@@ -672,13 +672,13 @@ impl ModuleImporter for YosysModuleImporter {
                     let port_wire =
                         wire_map.get_bus_wire(&port.bits, BusDirection::Write, builder)?;
                     connections.inputs.insert(Rc::clone(port_name), port_wire);
-                    builder.wire_names().insert(port_wire, Rc::clone(port_name));
+                    builder.set_wire_name(port_wire, Rc::clone(port_name));
                 }
                 PortDirection::Output => {
                     let port_wire =
                         wire_map.get_bus_wire(&port.bits, BusDirection::Read, builder)?;
                     connections.outputs.insert(Rc::clone(port_name), port_wire);
-                    builder.wire_names().insert(port_wire, Rc::clone(port_name));
+                    builder.set_wire_name(port_wire, Rc::clone(port_name));
                 }
                 PortDirection::InOut => {
                     return Err(YosysModuleImportError::InOutPort {
@@ -1536,9 +1536,7 @@ impl ModuleImporter for YosysModuleImporter {
                 }
             };
 
-            builder
-                .component_names()
-                .insert(cell_id, Rc::clone(cell_name));
+            builder.set_component_name(cell_id, Rc::clone(cell_name));
         }
 
         wire_map.perform_fixups(builder)?;

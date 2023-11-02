@@ -1815,16 +1815,6 @@ impl SimulatorBuilder {
         Ok(id)
     }
 
-    #[inline]
-    pub(crate) fn wire_names(&mut self) -> &mut HashMap<WireId, Rc<str>> {
-        &mut self.sim.wire_names
-    }
-
-    #[inline]
-    pub(crate) fn component_names(&mut self) -> &mut HashMap<ComponentId, Rc<str>> {
-        &mut self.sim.component_names
-    }
-
     /// Imports a module into this circuit
     #[inline]
     pub fn import_module<T: import::ModuleImporter>(
