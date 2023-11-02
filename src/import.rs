@@ -5,8 +5,7 @@
 #[cfg(feature = "yosys-import")]
 pub mod yosys;
 
-use crate::WireId;
-use std::collections::HashMap;
+use crate::{HashMap, WireId};
 use std::rc::Rc;
 
 /// The list of connections of an imported module

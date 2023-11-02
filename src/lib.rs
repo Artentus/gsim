@@ -59,11 +59,14 @@ use logic::*;
 use smallvec::SmallVec;
 use std::num::NonZeroU8;
 use std::ops::{Add, AddAssign};
+use std::rc::Rc;
 use std::sync::Mutex;
 
 pub use component::ComponentData;
 pub use id_lists::{ComponentId, Id, WireId};
 pub use logic::{LogicBitState, LogicState};
+
+type HashMap<K, V> = ahash::AHashMap<K, V>;
 
 const fn const_max(a: usize, b: usize) -> usize {
     if a >= b {
@@ -451,6 +454,9 @@ pub struct Simulator {
 
     wire_update_queue: Vec<WireId>,
     component_update_queue: Vec<ComponentId>,
+
+    wire_names: HashMap<WireId, Rc<str>>,
+    component_names: HashMap<ComponentId, Rc<str>>,
 }
 
 impl Simulator {
@@ -465,6 +471,9 @@ impl Simulator {
 
             wire_update_queue: Vec::new(),
             component_update_queue: Vec::new(),
+
+            wire_names: HashMap::new(),
+            component_names: HashMap::new(),
         }
     }
 
@@ -507,6 +516,18 @@ impl Simulator {
         self.components[component].get_data()
     }
 
+    /// Assigns a name to a wire
+    #[inline]
+    pub fn set_wire_name<S: Into<Rc<str>>>(&mut self, wire: WireId, name: S) {
+        self.wire_names.insert(wire, name.into());
+    }
+
+    /// Assigns a name to a component
+    #[inline]
+    pub fn set_component_name<S: Into<Rc<str>>>(&mut self, component: ComponentId, name: S) {
+        self.component_names.insert(component, name.into());
+    }
+
     /// Collects statistics of the simulation
     pub fn stats(&self) -> SimulationStats {
         let (small_component_count, large_component_count) = self.components.component_counts();
@@ -538,11 +559,17 @@ impl Simulator {
                 wire_drivers.entry(wire_id).or_default().push(component_id);
             }
 
+            let name = self
+                .component_names
+                .get(&component_id)
+                .map(|name| &**name)
+                .unwrap_or_else(|| component.node_name());
+
             writeln!(
                 writer,
                 "    N{}[label=\"{}\" shape=\"box\"];",
                 component_id.to_u32(),
-                component.node_name()
+                name,
             )?;
         }
 
@@ -552,9 +579,15 @@ impl Simulator {
             let wire = &self.wires[wire_id];
 
             if wire.driving.len() == 0 {
+                let name = self
+                    .wire_names
+                    .get(&wire_id)
+                    .map(|name| &**name)
+                    .unwrap_or("Out");
+
                 writeln!(
                     writer,
-                    "    O{output_count}[label=\"Out\" shape=\"circle\"];"
+                    "    O{output_count}[label=\"{name}\" shape=\"circle\"];"
                 )?;
             }
 
@@ -565,7 +598,16 @@ impl Simulator {
                 }
                 write!(writer, "}}")?;
             } else {
-                writeln!(writer, "    I{input_count}[label=\"In\" shape=\"circle\"];")?;
+                let name = self
+                    .wire_names
+                    .get(&wire_id)
+                    .map(|name| &**name)
+                    .unwrap_or("In");
+
+                writeln!(
+                    writer,
+                    "    I{input_count}[label=\"{name}\" shape=\"circle\"];"
+                )?;
                 write!(writer, "    I{input_count}")?;
                 input_count += 1;
             }
@@ -1070,6 +1112,18 @@ impl SimulatorBuilder {
     #[inline]
     pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
         self.sim.get_component_data(component)
+    }
+
+    /// Assigns a name to a wire
+    #[inline]
+    pub fn set_wire_name<S: Into<Rc<str>>>(&mut self, wire: WireId, name: S) {
+        self.sim.set_wire_name(wire, name);
+    }
+
+    /// Assigns a name to a component
+    #[inline]
+    pub fn set_component_name<S: Into<Rc<str>>>(&mut self, component: ComponentId, name: S) {
+        self.sim.set_component_name(component, name);
     }
 
     /// Collects statistics of the simulation
@@ -1759,6 +1813,16 @@ impl SimulatorBuilder {
         self.mark_driver(data, output_state);
 
         Ok(id)
+    }
+
+    #[inline]
+    pub(crate) fn wire_names(&mut self) -> &mut HashMap<WireId, Rc<str>> {
+        &mut self.sim.wire_names
+    }
+
+    #[inline]
+    pub(crate) fn component_names(&mut self) -> &mut HashMap<ComponentId, Rc<str>> {
+        &mut self.sim.component_names
     }
 
     /// Imports a module into this circuit
