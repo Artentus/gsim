@@ -556,9 +556,11 @@ impl Simulator {
     ) -> std::io::Result<()> {
         writeln!(writer, "digraph {{")?;
 
+        let mut wire_state_map = HashMap::new();
         for wire_id in self.wires.ids() {
             let wire = &self.wires[wire_id];
             let width = self.wire_states.get_width(wire.state);
+            wire_state_map.insert(wire.state, wire_id);
 
             if show_wire_states {
                 if let Some(name) = self.wire_names.get(&wire_id) {
@@ -597,11 +599,21 @@ impl Simulator {
             }
         }
 
-        let mut wire_drivers = ahash::AHashMap::<WireId, Vec<ComponentId>>::new();
+        let mut wire_drivers = ahash::AHashMap::<WireId, Vec<_>>::new();
+        let mut wire_driving = ahash::AHashMap::<WireId, Vec<_>>::new();
         for component_id in self.components.ids() {
             let component = &self.components[component_id];
-            for wire_id in component.output_wires() {
-                wire_drivers.entry(wire_id).or_default().push(component_id);
+            for (wire_id, port_name) in component.output_wires() {
+                wire_drivers
+                    .entry(wire_id)
+                    .or_default()
+                    .push((component_id, port_name));
+            }
+            for (wire_id, port_name) in component.input_wires() {
+                wire_driving
+                    .entry(wire_state_map[&wire_id])
+                    .or_default()
+                    .push((component_id, port_name));
             }
 
             let name = self
@@ -619,24 +631,28 @@ impl Simulator {
         }
 
         for wire_id in self.wires.ids() {
-            let wire = &self.wires[wire_id];
-
             if let Some(drivers) = wire_drivers.get(&wire_id) {
-                if drivers.len() > 0 {
-                    write!(writer, "    {{ ")?;
-                    for &driver in drivers {
-                        write!(writer, "C{} ", driver.to_u32())?;
-                    }
-                    writeln!(writer, "}} -> W{};", wire_id.to_u32())?;
+                for &(driver, port_name) in drivers {
+                    writeln!(
+                        writer,
+                        "    C{} -> W{}[taillabel=\"{}\"];",
+                        driver.to_u32(),
+                        wire_id.to_u32(),
+                        port_name,
+                    )?;
                 }
             }
 
-            if wire.driving.len() > 0 {
-                write!(writer, "    W{} -> {{ ", wire_id.to_u32())?;
-                for driving in wire.driving.iter() {
-                    write!(writer, "C{} ", driving.to_u32())?;
+            if let Some(driving) = wire_driving.get(&wire_id) {
+                for (driving, port_name) in driving {
+                    writeln!(
+                        writer,
+                        "    W{} -> C{}[headlabel=\"{}\"];",
+                        wire_id.to_u32(),
+                        driving.to_u32(),
+                        port_name,
+                    )?;
                 }
-                writeln!(writer, "}};")?;
             }
         }
 

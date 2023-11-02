@@ -6,6 +6,8 @@ use ops::*;
 use crate::*;
 use itertools::izip;
 use smallvec::smallvec;
+#[cfg(feature = "dot-export")]
+use std::borrow::Cow;
 
 pub(crate) enum SmallComponentKind {
     AndGate {
@@ -175,6 +177,52 @@ impl SmallComponent {
             SmallComponentKind::CompareGreaterThanOrEqualSigned { .. } => ">=",
             SmallComponentKind::ZeroExtend { .. } => "ZEXT",
             SmallComponentKind::SignExtend { .. } => "SEXT",
+        }
+    }
+
+    #[cfg(feature = "dot-export")]
+    pub(crate) fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        match self.kind {
+            SmallComponentKind::AndGate { input_a, input_b }
+            | SmallComponentKind::OrGate { input_a, input_b }
+            | SmallComponentKind::XorGate { input_a, input_b }
+            | SmallComponentKind::NandGate { input_a, input_b }
+            | SmallComponentKind::NorGate { input_a, input_b }
+            | SmallComponentKind::XnorGate { input_a, input_b }
+            | SmallComponentKind::Add { input_a, input_b }
+            | SmallComponentKind::Sub { input_a, input_b }
+            | SmallComponentKind::CompareEqual { input_a, input_b }
+            | SmallComponentKind::CompareNotEqual { input_a, input_b }
+            | SmallComponentKind::CompareLessThan { input_a, input_b }
+            | SmallComponentKind::CompareGreaterThan { input_a, input_b }
+            | SmallComponentKind::CompareLessThanOrEqual { input_a, input_b }
+            | SmallComponentKind::CompareGreaterThanOrEqual { input_a, input_b }
+            | SmallComponentKind::CompareLessThanSigned { input_a, input_b }
+            | SmallComponentKind::CompareGreaterThanSigned { input_a, input_b }
+            | SmallComponentKind::CompareLessThanOrEqualSigned { input_a, input_b }
+            | SmallComponentKind::CompareGreaterThanOrEqualSigned { input_a, input_b } => {
+                vec![(input_a, "A".into()), (input_b, "B".into())]
+            }
+            SmallComponentKind::NotGate { input }
+            | SmallComponentKind::HorizontalAnd { input }
+            | SmallComponentKind::HorizontalOr { input }
+            | SmallComponentKind::HorizontalXor { input }
+            | SmallComponentKind::HorizontalNand { input }
+            | SmallComponentKind::HorizontalNor { input }
+            | SmallComponentKind::HorizontalXnor { input }
+            | SmallComponentKind::ZeroExtend { input }
+            | SmallComponentKind::SignExtend { input }
+            | SmallComponentKind::Slice { input, .. } => {
+                vec![(input, "In".into())]
+            }
+            SmallComponentKind::Buffer { input, enable } => {
+                vec![(input, "In".into()), (enable, "En".into())]
+            }
+            SmallComponentKind::LeftShift { input_a, input_b }
+            | SmallComponentKind::LogicalRightShift { input_a, input_b }
+            | SmallComponentKind::ArithmeticRightShift { input_a, input_b } => {
+                vec![(input_a, "In".into()), (input_b, "Shamnt".into())]
+            }
         }
     }
 
@@ -467,7 +515,10 @@ pub(crate) trait LargeComponent: Send + Sync {
     fn node_name(&self) -> &'static str;
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId);
+    fn output_wires(&self) -> Vec<(WireId, &'static str)>;
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)>;
 
     fn alloc_size(&self) -> AllocationSize;
 
@@ -517,8 +568,17 @@ macro_rules! wide_gate {
             }
 
             #[cfg(feature = "dot-export")]
-            fn output_wires(&self) -> inline_vec!(WireId) {
-                smallvec![self.output_wire]
+            fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+                vec![(self.output_wire, "Out")]
+            }
+
+            #[cfg(feature = "dot-export")]
+            fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+                self.inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &wire)| (wire, format!("In{i}").into()))
+                    .collect()
             }
 
             fn alloc_size(&self) -> AllocationSize {
@@ -582,8 +642,17 @@ macro_rules! wide_gate_inv {
             }
 
             #[cfg(feature = "dot-export")]
-            fn output_wires(&self) -> inline_vec!(WireId) {
-                smallvec![self.output_wire]
+            fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+                vec![(self.output_wire, "Out")]
+            }
+
+            #[cfg(feature = "dot-export")]
+            fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+                self.inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &wire)| (wire, format!("In{i}").into()))
+                    .collect()
             }
 
             fn alloc_size(&self) -> AllocationSize {
@@ -655,8 +724,17 @@ impl LargeComponent for Merge {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.output_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![(self.output_wire, "Out")]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        self.inputs
+            .iter()
+            .enumerate()
+            .map(|(i, &wire)| (wire, format!("In{i}").into()))
+            .collect()
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -729,8 +807,20 @@ impl LargeComponent for Adder {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.output_wire, self.carry_out_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![
+            (self.output_wire, "Sum"),
+            (self.carry_out_wire, "Carry out"),
+        ]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        vec![
+            (self.input_a, "A".into()),
+            (self.input_b, "B".into()),
+            (self.carry_in, "Carry in".into()),
+        ]
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -798,8 +888,20 @@ impl LargeComponent for Multiplexer {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.output_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![(self.output_wire, "Out")]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        let mut result: Vec<_> = self
+            .inputs
+            .iter()
+            .enumerate()
+            .map(|(i, &wire)| (wire, format!("In{i}").into()))
+            .collect();
+        result.push((self.select, "Select".into()));
+        result
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -882,8 +984,17 @@ impl LargeComponent for PriorityDecoder {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.output_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![(self.output_wire, "Out")]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        self.inputs
+            .iter()
+            .enumerate()
+            .map(|(i, &wire)| (wire, format!("In{i}").into()))
+            .collect()
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -998,8 +1109,17 @@ impl LargeComponent for Register {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.data_out_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![(self.data_out_wire, "Data out")]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        vec![
+            (self.data_in, "Data in".into()),
+            (self.enable, "En".into()),
+            (self.clock, "Clk".into()),
+        ]
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -1302,8 +1422,19 @@ impl LargeComponent for Ram {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.data_out_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![(self.data_out_wire, "Data out")]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        vec![
+            (self.write_addr, "Write addr".into()),
+            (self.data_in, "Data in".into()),
+            (self.read_addr, "Read addr".into()),
+            (self.write, "Write".into()),
+            (self.clock, "Clk".into()),
+        ]
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -1422,8 +1553,13 @@ impl LargeComponent for Rom {
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> inline_vec!(WireId) {
-        smallvec![self.data_wire]
+    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+        vec![(self.data_wire, "Data")]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        vec![(self.addr, "Addr".into())]
     }
 
     fn alloc_size(&self) -> AllocationSize {
@@ -1520,10 +1656,18 @@ impl Component {
     }
 
     #[cfg(feature = "dot-export")]
-    pub(crate) fn output_wires(&self) -> inline_vec!(WireId) {
+    pub(crate) fn output_wires(&self) -> Vec<(WireId, &'static str)> {
         match self {
-            Component::Small { component, .. } => smallvec![component.output],
+            Component::Small { component, .. } => vec![(component.output, "Out")],
             Component::Large { component, .. } => component.output_wires(),
+        }
+    }
+
+    #[cfg(feature = "dot-export")]
+    pub(crate) fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+        match self {
+            Component::Small { component, .. } => component.input_wires(),
+            Component::Large { component, .. } => component.input_wires(),
         }
     }
 
