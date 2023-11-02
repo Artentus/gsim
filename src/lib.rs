@@ -621,17 +621,23 @@ impl Simulator {
         for wire_id in self.wires.ids() {
             let wire = &self.wires[wire_id];
 
-            write!(writer, "    {{ ")?;
-            for &driver in wire_drivers.get(&wire_id).map(Vec::as_slice).unwrap_or(&[]) {
-                write!(writer, "C{} ", driver.to_u32())?;
+            if let Some(drivers) = wire_drivers.get(&wire_id) {
+                if drivers.len() > 0 {
+                    write!(writer, "    {{ ")?;
+                    for &driver in drivers {
+                        write!(writer, "C{} ", driver.to_u32())?;
+                    }
+                    writeln!(writer, "}} -> W{};", wire_id.to_u32())?;
+                }
             }
-            writeln!(writer, "}} -> W{};", wire_id.to_u32())?;
 
-            write!(writer, "W{} -> {{ ", wire_id.to_u32())?;
-            for driving in wire.driving.iter() {
-                write!(writer, "C{} ", driving.to_u32())?;
+            if wire.driving.len() > 0 {
+                write!(writer, "    W{} -> {{ ", wire_id.to_u32())?;
+                for driving in wire.driving.iter() {
+                    write!(writer, "C{} ", driving.to_u32())?;
+                }
+                writeln!(writer, "}};")?;
             }
-            writeln!(writer, "}};")?;
         }
 
         writeln!(writer, "}}")
