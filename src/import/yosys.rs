@@ -469,53 +469,63 @@ impl WireMap {
             // We have already seen this exact bus
             Ok(wire)
         } else {
-            let all_nets_invalid = bits
-                .iter()
-                .filter_map(|&bit| match bit {
-                    Signal::Value(_) => None,
-                    Signal::Net(net_id) => Some(net_id),
-                })
-                .all(|net_id| {
-                    let mapping = self.net_map[net_id];
-                    mapping.wire.is_invalid()
-                });
-
-            if all_nets_invalid {
-                // None of the wires are part of a bus yet, so we create a new one
+            let all_values = bits.iter().all(|bit| matches!(bit, Signal::Value { .. }));
+            if all_values {
+                // All of the bits are values, not nets, so this is not a bus
                 let bus_wire = add_wire(bits, direction, true, builder)?;
+                let width = builder.get_wire_width(bus_wire);
+                let drive = builder.get_wire_drive(bus_wire);
+                builder.set_wire_name(bus_wire, drive.display_string(width));
+                Ok(bus_wire)
+            } else {
+                let all_nets_invalid = bits
+                    .iter()
+                    .filter_map(|&bit| match bit {
+                        Signal::Value(_) => None,
+                        Signal::Net(net_id) => Some(net_id),
+                    })
+                    .all(|net_id| {
+                        let mapping = self.net_map[net_id];
+                        mapping.wire.is_invalid()
+                    });
 
-                self.bus_map.insert(bits.clone(), bus_wire);
-                if let &[single_bit] = bits.as_slice() {
-                    if let Signal::Net(net_id) = single_bit {
-                        self.net_map[net_id] = NetMapping {
-                            wire: bus_wire,
-                            offset: None,
-                        }
-                    }
-                } else {
-                    for (offset, &bit) in bits.iter().enumerate() {
-                        if let Signal::Net(net_id) = bit {
+                if all_nets_invalid {
+                    // None of the wires are part of a bus yet, so we create a new one
+                    let bus_wire = add_wire(bits, direction, true, builder)?;
+
+                    self.bus_map.insert(bits.clone(), bus_wire);
+                    if let &[single_bit] = bits.as_slice() {
+                        if let Signal::Net(net_id) = single_bit {
                             self.net_map[net_id] = NetMapping {
                                 wire: bus_wire,
-                                offset: Some(offset as u8),
+                                offset: None,
+                            }
+                        }
+                    } else {
+                        for (offset, &bit) in bits.iter().enumerate() {
+                            if let Signal::Net(net_id) = bit {
+                                self.net_map[net_id] = NetMapping {
+                                    wire: bus_wire,
+                                    offset: Some(offset as u8),
+                                }
                             }
                         }
                     }
+
+                    Ok(bus_wire)
+                } else {
+                    // Some of the wires are already part of a bus, so we
+                    // create a dummy bus and postpone the connection
+                    let bus_wire = add_wire(bits, direction, false, builder)?;
+
+                    self.fixups.push(WireFixup {
+                        bus_wire,
+                        direction,
+                        bits: bits.clone(),
+                    });
+
+                    Ok(bus_wire)
                 }
-
-                Ok(bus_wire)
-            } else {
-                // Some of the wires are already part of a bus, so we
-                // create a dummy bus and postpone the connection
-                let bus_wire = add_wire(bits, direction, false, builder)?;
-
-                self.fixups.push(WireFixup {
-                    bus_wire,
-                    direction,
-                    bits: bits.clone(),
-                });
-
-                Ok(bus_wire)
             }
         }
     }
