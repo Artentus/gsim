@@ -525,6 +525,73 @@ impl Simulator {
             output_state_alloc_size: self.output_states.state_alloc_size(),
         }
     }
+
+    /// Writes the simulation graph into a Graphviz DOT file
+    #[cfg(feature = "dot-export")]
+    pub fn write_dot<W: std::io::Write>(&self, mut writer: W) -> std::io::Result<()> {
+        writeln!(writer, "digraph {{")?;
+
+        let mut wire_drivers = ahash::AHashMap::<WireId, Vec<ComponentId>>::new();
+        for component_id in self.components.ids() {
+            let component = &self.components[component_id];
+            for wire_id in component.output_wires() {
+                wire_drivers.entry(wire_id).or_default().push(component_id);
+            }
+
+            writeln!(
+                writer,
+                "    N{}[label=\"{}\" shape=\"box\"];",
+                component_id.to_u32(),
+                component.node_name()
+            )?;
+        }
+
+        let mut output_count = 0u32;
+        let mut input_count = 0u32;
+        for wire_id in self.wires.ids() {
+            let wire = &self.wires[wire_id];
+
+            if wire.driving.len() == 0 {
+                writeln!(
+                    writer,
+                    "    O{output_count}[label=\"Out\" shape=\"circle\"];"
+                )?;
+            }
+
+            if let Some(drivers) = wire_drivers.get(&wire_id) {
+                write!(writer, "    {{ ")?;
+                for &driver in drivers {
+                    write!(writer, "N{} ", driver.to_u32())?;
+                }
+                write!(writer, "}}")?;
+            } else {
+                writeln!(writer, "    I{input_count}[label=\"In\" shape=\"circle\"];")?;
+                write!(writer, "    I{input_count}")?;
+                input_count += 1;
+            }
+
+            write!(writer, " -> ")?;
+
+            if wire.driving.len() == 0 {
+                write!(writer, "O{output_count}")?;
+                output_count += 1;
+            } else {
+                write!(writer, "{{ ")?;
+                for driving in wire.driving.iter() {
+                    write!(writer, "N{} ", driving.to_u32())?;
+                }
+                write!(writer, "}}")?;
+            }
+
+            writeln!(
+                writer,
+                "[label=\"[{}]\"];",
+                self.wire_states.get_width(wire.state)
+            )?;
+        }
+
+        writeln!(writer, "}}")
+    }
 }
 
 /*
@@ -1009,6 +1076,13 @@ impl SimulatorBuilder {
     #[inline]
     pub fn stats(&self) -> SimulationStats {
         self.sim.stats()
+    }
+
+    /// Writes the simulation graph into a Graphviz DOT file
+    #[inline]
+    #[cfg(feature = "dot-export")]
+    pub fn write_dot<W: std::io::Write>(&self, writer: W) -> std::io::Result<()> {
+        self.sim.write_dot(writer)
     }
 
     #[inline]

@@ -140,6 +140,44 @@ impl SmallComponent {
         Self { kind, output }
     }
 
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        match self.kind {
+            SmallComponentKind::AndGate { .. } => "AND",
+            SmallComponentKind::OrGate { .. } => "OR",
+            SmallComponentKind::XorGate { .. } => "XOR",
+            SmallComponentKind::NandGate { .. } => "NAND",
+            SmallComponentKind::NorGate { .. } => "NOR",
+            SmallComponentKind::XnorGate { .. } => "XNOR",
+            SmallComponentKind::NotGate { .. } => "NOT",
+            SmallComponentKind::Buffer { .. } => "Buffer",
+            SmallComponentKind::Slice { .. } => "[:]",
+            SmallComponentKind::Add { .. } => "ADD",
+            SmallComponentKind::Sub { .. } => "SUB",
+            SmallComponentKind::LeftShift { .. } => "<<",
+            SmallComponentKind::LogicalRightShift { .. } => ">>",
+            SmallComponentKind::ArithmeticRightShift { .. } => ">>>",
+            SmallComponentKind::HorizontalAnd { .. } => "AND",
+            SmallComponentKind::HorizontalOr { .. } => "OR",
+            SmallComponentKind::HorizontalXor { .. } => "XOR",
+            SmallComponentKind::HorizontalNand { .. } => "NAND",
+            SmallComponentKind::HorizontalNor { .. } => "NOR",
+            SmallComponentKind::HorizontalXnor { .. } => "XNOR",
+            SmallComponentKind::CompareEqual { .. } => "==",
+            SmallComponentKind::CompareNotEqual { .. } => "!=",
+            SmallComponentKind::CompareLessThan { .. } => "<",
+            SmallComponentKind::CompareGreaterThan { .. } => ">",
+            SmallComponentKind::CompareLessThanOrEqual { .. } => "<=",
+            SmallComponentKind::CompareGreaterThanOrEqual { .. } => ">=",
+            SmallComponentKind::CompareLessThanSigned { .. } => "<",
+            SmallComponentKind::CompareGreaterThanSigned { .. } => ">",
+            SmallComponentKind::CompareLessThanOrEqualSigned { .. } => "<=",
+            SmallComponentKind::CompareGreaterThanOrEqualSigned { .. } => ">=",
+            SmallComponentKind::ZeroExtend { .. } => "ZEXT",
+            SmallComponentKind::SignExtend { .. } => "SEXT",
+        }
+    }
+
     fn update(
         &self,
         output_base: OutputStateId,
@@ -425,6 +463,12 @@ pub enum ComponentData<'a> {
 }
 
 pub(crate) trait LargeComponent: Send + Sync {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str;
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId);
+
     fn alloc_size(&self) -> AllocationSize;
 
     fn get_data(&mut self) -> ComponentData<'_> {
@@ -441,7 +485,7 @@ pub(crate) trait LargeComponent: Send + Sync {
 }
 
 macro_rules! wide_gate {
-    ($name:ident, $op3:ident, $op2:ident) => {
+    ($name:ident, $op3:ident, $op2:ident, $node_name:literal) => {
         pub(crate) struct $name {
             inputs: inline_vec!(WireStateId),
             output: OutputStateId,
@@ -467,6 +511,16 @@ macro_rules! wide_gate {
         }
 
         impl LargeComponent for $name {
+            #[cfg(feature = "dot-export")]
+            fn node_name(&self) -> &'static str {
+                $node_name
+            }
+
+            #[cfg(feature = "dot-export")]
+            fn output_wires(&self) -> inline_vec!(WireId) {
+                smallvec![self.output_wire]
+            }
+
             fn alloc_size(&self) -> AllocationSize {
                 AllocationSize(std::mem::size_of::<$name>())
             }
@@ -496,7 +550,7 @@ macro_rules! wide_gate {
 }
 
 macro_rules! wide_gate_inv {
-    ($name:ident, $op3:ident, $op2:ident) => {
+    ($name:ident, $op3:ident, $op2:ident, $node_name:literal) => {
         pub(crate) struct $name {
             inputs: inline_vec!(WireStateId),
             output: OutputStateId,
@@ -522,6 +576,16 @@ macro_rules! wide_gate_inv {
         }
 
         impl LargeComponent for $name {
+            #[cfg(feature = "dot-export")]
+            fn node_name(&self) -> &'static str {
+                $node_name
+            }
+
+            #[cfg(feature = "dot-export")]
+            fn output_wires(&self) -> inline_vec!(WireId) {
+                smallvec![self.output_wire]
+            }
+
             fn alloc_size(&self) -> AllocationSize {
                 AllocationSize(std::mem::size_of::<$name>())
             }
@@ -552,12 +616,12 @@ macro_rules! wide_gate_inv {
     };
 }
 
-wide_gate!(WideAndGate, logic_and_3, logic_and_2);
-wide_gate!(WideOrGate, logic_or_3, logic_or_2);
-wide_gate!(WideXorGate, logic_xor_3, logic_xor_2);
-wide_gate_inv!(WideNandGate, logic_and_3, logic_and_2);
-wide_gate_inv!(WideNorGate, logic_or_3, logic_or_2);
-wide_gate_inv!(WideXnorGate, logic_xor_3, logic_xor_2);
+wide_gate!(WideAndGate, logic_and_3, logic_and_2, "AND");
+wide_gate!(WideOrGate, logic_or_3, logic_or_2, "OR");
+wide_gate!(WideXorGate, logic_xor_3, logic_xor_2, "XOR");
+wide_gate_inv!(WideNandGate, logic_and_3, logic_and_2, "NAND");
+wide_gate_inv!(WideNorGate, logic_or_3, logic_or_2, "NOR");
+wide_gate_inv!(WideXnorGate, logic_xor_3, logic_xor_2, "XNOR");
 
 #[derive(Debug)]
 pub(crate) struct Merge {
@@ -585,6 +649,16 @@ impl Merge {
 }
 
 impl LargeComponent for Merge {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "{,}"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.output_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -649,6 +723,16 @@ impl Adder {
 }
 
 impl LargeComponent for Adder {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "Adder"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.output_wire, self.carry_out_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -708,6 +792,16 @@ impl Multiplexer {
 }
 
 impl LargeComponent for Multiplexer {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "MUX"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.output_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -782,6 +876,16 @@ impl PriorityDecoder {
 }
 
 impl LargeComponent for PriorityDecoder {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "Decoder"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.output_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -888,6 +992,16 @@ impl Register {
 }
 
 impl LargeComponent for Register {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "Register"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.data_out_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -1182,6 +1296,16 @@ impl Ram {
 }
 
 impl LargeComponent for Ram {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "RAM"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.data_out_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -1292,6 +1416,16 @@ impl Rom {
 }
 
 impl LargeComponent for Rom {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> &'static str {
+        "ROM"
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> inline_vec!(WireId) {
+        smallvec![self.data_wire]
+    }
+
     fn alloc_size(&self) -> AllocationSize {
         AllocationSize(std::mem::size_of::<Self>())
     }
@@ -1382,6 +1516,22 @@ impl Component {
             component: Box::new(component),
             output_base,
             output_atom_count,
+        }
+    }
+
+    #[cfg(feature = "dot-export")]
+    pub(crate) fn output_wires(&self) -> inline_vec!(WireId) {
+        match self {
+            Component::Small { component, .. } => smallvec![component.output],
+            Component::Large { component, .. } => component.output_wires(),
+        }
+    }
+
+    #[cfg(feature = "dot-export")]
+    pub(crate) fn node_name(&self) -> &'static str {
+        match self {
+            Component::Small { component, .. } => component.node_name(),
+            Component::Large { component, .. } => component.node_name(),
         }
     }
 

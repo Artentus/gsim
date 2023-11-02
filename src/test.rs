@@ -2,6 +2,8 @@ use crate::*;
 use std::num::NonZeroU8;
 
 mod component;
+#[cfg(feature = "dot-export")]
+mod dot_export;
 mod import;
 
 macro_rules! logic_state {

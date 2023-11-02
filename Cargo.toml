@@ -17,6 +17,7 @@ harness = false
 
 [features]
 yosys-import = ["serde", "dep:serde_json", "dep:ahash"]
+dot-export = ["dep:ahash"]
 
 [dependencies]
 rayon = "1.6"

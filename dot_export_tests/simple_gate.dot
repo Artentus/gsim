@@ -1,0 +1,9 @@
+digraph {
+    N0[label="AND" shape="box"];
+    I0[label="In" shape="circle"];
+    I0 -> { N0 }[label="[1]"];
+    I1[label="In" shape="circle"];
+    I1 -> { N0 }[label="[1]"];
+    O0[label="Out" shape="circle"];
+    { N0 } -> O0[label="[1]"];
+}
