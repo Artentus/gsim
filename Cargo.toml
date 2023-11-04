@@ -16,7 +16,7 @@ name = "sim"
 harness = false
 
 [features]
-yosys-import = ["serde", "dep:serde_json"]
+yosys-import = ["serde", "dep:serde_json", "dep:indexmap"]
 dot-export = []
 
 [dependencies]
@@ -29,6 +29,7 @@ itertools = "0.11.0"
 ahash = { version = "0.8.6", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
+indexmap = { version = "2.1.0", optional = true }
 
 [dev-dependencies]
 criterion = "0.4"

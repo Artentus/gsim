@@ -9,6 +9,8 @@ use serde::Deserialize;
 use std::num::NonZeroU8;
 use std::rc::Rc;
 
+type IndexMap<K, V> = indexmap::IndexMap<K, V, ahash::RandomState>;
+
 trait EnsureLen {
     fn ensure_len(&mut self, len: usize);
 }
@@ -199,10 +201,18 @@ struct Cell {
 }
 
 #[derive(Deserialize)]
+struct NetNameOpts {
+    hide_name: u8,
+    bits: Bits,
+}
+
+#[derive(Deserialize)]
 struct Module {
     ports: HashMap<String, Port>,
     #[serde(default)]
     cells: HashMap<String, Cell>,
+    #[serde(default, rename = "netnames")]
+    net_names: HashMap<String, NetNameOpts>,
 }
 
 #[derive(Deserialize)]
@@ -264,24 +274,49 @@ impl PreprocCell {
     }
 }
 
+struct PreprocNetNameOpts {
+    name: Rc<str>,
+    hide_name: bool,
+    bits: Bits,
+}
+
 struct PreprocModule {
-    ports: HashMap<Rc<str>, Port>,
+    ports: IndexMap<Rc<str>, Port>,
     cells: HashMap<Rc<str>, PreprocCell>,
+    net_names: Vec<PreprocNetNameOpts>,
 }
 
 impl PreprocModule {
     fn create(module: Module) -> Self {
+        let mut ports: IndexMap<_, _> = module
+            .ports
+            .into_iter()
+            .map(|(k, v)| (k.into(), v))
+            .collect();
+
+        let cells = module
+            .cells
+            .into_iter()
+            .map(|(name, cell)| (name.into(), PreprocCell::create(cell)))
+            .collect();
+
+        let mut net_names: Vec<_> = module
+            .net_names
+            .into_iter()
+            .map(|(name, opts)| PreprocNetNameOpts {
+                name: name.into(),
+                hide_name: opts.hide_name > 0,
+                bits: opts.bits,
+            })
+            .collect();
+
+        ports.sort_unstable_by(|_, a, _, b| b.bits.len().cmp(&a.bits.len()));
+        net_names.sort_unstable_by_key(|opts| (opts.hide_name, std::cmp::Reverse(opts.bits.len())));
+
         Self {
-            ports: module
-                .ports
-                .into_iter()
-                .map(|(k, v)| (k.into(), v))
-                .collect(),
-            cells: module
-                .cells
-                .into_iter()
-                .map(|(name, cell)| (name.into(), PreprocCell::create(cell)))
-                .collect(),
+            ports,
+            cells,
+            net_names,
         }
     }
 
@@ -398,8 +433,7 @@ pub enum YosysModuleImportError {
 
 fn add_wire(
     bits: &Bits,
-    direction: BusDirection,
-    set_drive: bool,
+    set_drive: Option<BusDirection>,
     builder: &mut crate::SimulatorBuilder,
 ) -> Result<WireId, YosysModuleImportError> {
     let bus_width = u8::try_from(bits.len())
@@ -412,7 +446,7 @@ fn add_wire(
         .add_wire(bus_width)
         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
 
-    if set_drive {
+    if let Some(direction) = set_drive {
         let mut drive = vec![LogicBitState::HighZ; bits.len()];
         for (i, &bit) in bits.iter().rev().enumerate() {
             if let Signal::Value(value) = bit {
@@ -539,6 +573,51 @@ impl WireMap {
         }
     }
 
+    fn all_nets_invalid(&self, bits: &Bits) -> bool {
+        bits.iter()
+            .filter_map(|&bit| match bit {
+                Signal::Value(_) => None,
+                Signal::Net(net_id) => Some(net_id),
+            })
+            .all(|net_id| {
+                let mapping = self.net_map[net_id];
+                mapping.wire.is_invalid()
+            })
+    }
+
+    fn add_named_bus(
+        &mut self,
+        bits: &Bits,
+        builder: &mut crate::SimulatorBuilder,
+    ) -> Result<Option<WireId>, YosysModuleImportError> {
+        if self.all_nets_invalid(bits) {
+            let bus_wire = add_wire(bits, None, builder)?;
+
+            self.bus_map.insert(bits.clone(), bus_wire);
+            if let &[single_bit] = bits.as_slice() {
+                if let Signal::Net(net_id) = single_bit {
+                    self.net_map[net_id] = NetMapping {
+                        wire: bus_wire,
+                        offset: None,
+                    }
+                }
+            } else {
+                for (offset, &bit) in bits.iter().enumerate() {
+                    if let Signal::Net(net_id) = bit {
+                        self.net_map[net_id] = NetMapping {
+                            wire: bus_wire,
+                            offset: Some(offset as u8),
+                        }
+                    }
+                }
+            }
+
+            Ok(Some(bus_wire))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn get_bus_wire(
         &mut self,
         bits: &Bits,
@@ -552,26 +631,15 @@ impl WireMap {
             let all_values = bits.iter().all(|bit| matches!(bit, Signal::Value { .. }));
             if all_values {
                 // All of the bits are values, not nets, so this is not a bus
-                let bus_wire = add_wire(bits, direction, true, builder)?;
+                let bus_wire = add_wire(bits, Some(direction), builder)?;
                 let width = builder.get_wire_width(bus_wire);
                 let drive = builder.get_wire_drive(bus_wire);
                 builder.set_wire_name(bus_wire, drive.display_string(width));
                 Ok(bus_wire)
             } else {
-                let all_nets_invalid = bits
-                    .iter()
-                    .filter_map(|&bit| match bit {
-                        Signal::Value(_) => None,
-                        Signal::Net(net_id) => Some(net_id),
-                    })
-                    .all(|net_id| {
-                        let mapping = self.net_map[net_id];
-                        mapping.wire.is_invalid()
-                    });
-
-                if all_nets_invalid {
+                if self.all_nets_invalid(bits) {
                     // None of the wires are part of a bus yet, so we create a new one
-                    let bus_wire = add_wire(bits, direction, true, builder)?;
+                    let bus_wire = add_wire(bits, Some(direction), builder)?;
 
                     self.bus_map.insert(bits.clone(), bus_wire);
                     if let &[single_bit] = bits.as_slice() {
@@ -596,7 +664,7 @@ impl WireMap {
                 } else {
                     // Some of the wires are already part of a bus, so we
                     // create a dummy bus and postpone the connection
-                    let bus_wire = add_wire(bits, direction, false, builder)?;
+                    let bus_wire = add_wire(bits, None, builder)?;
 
                     self.fixups.push(WireFixup {
                         bus_wire,
@@ -750,6 +818,18 @@ impl ModuleImporter for YosysModuleImporter {
                     return Err(YosysModuleImportError::InOutPort {
                         port_name: Rc::clone(port_name),
                     });
+                }
+            }
+        }
+
+        for opts in &self.module.net_names {
+            if opts
+                .bits
+                .iter()
+                .all(|bit| matches!(bit, Signal::Net { .. }))
+            {
+                if let Some(bus_wire) = wire_map.add_named_bus(&opts.bits, builder)? {
+                    builder.set_wire_name(bus_wire, Rc::clone(&opts.name));
                 }
             }
         }
