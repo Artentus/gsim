@@ -815,12 +815,25 @@ impl WireMap {
 
                                     let mapping = self.net_map[net_id];
                                     let target_width = builder.get_wire_width(mapping.wire);
-                                    let mut target_bits = vec![
-                                        self.const_high_z(builder)?;
-                                        target_width.get() as usize
-                                    ];
-                                    target_bits[offset as usize] = bit_wire;
-                                    builder.add_merge(&target_bits, mapping.wire).unwrap();
+                                    let mut target_parts = Vec::new();
+                                    if let Some(high_z_width) = NonZeroU8::new(offset) {
+                                        let high_z_wire = builder
+                                            .add_wire(high_z_width)
+                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                                        builder.set_wire_drive(high_z_wire, &LogicState::HIGH_Z);
+                                        target_parts.push(high_z_wire);
+                                    }
+                                    target_parts.push(bit_wire);
+                                    if let Some(high_z_width) =
+                                        NonZeroU8::new(target_width.get() - offset - 1)
+                                    {
+                                        let high_z_wire = builder
+                                            .add_wire(high_z_width)
+                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                                        builder.set_wire_drive(high_z_wire, &LogicState::HIGH_Z);
+                                        target_parts.push(high_z_wire);
+                                    }
+                                    builder.add_merge(&target_parts, mapping.wire).unwrap();
                                 } else {
                                     // If the bit is the only one in the bus we can drive directly
                                     builder
