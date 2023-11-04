@@ -534,40 +534,42 @@ impl WireMap {
         bits: &Bits,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<Option<WireId>, YosysModuleImportError> {
-        let all_nets_invalid = bits.iter().all(|&bit| match bit {
-            Signal::Value(_) => false,
-            Signal::Net(net_id) => {
-                let mapping = self.net_map[net_id];
-                mapping.wire.is_invalid()
-            }
-        });
-
-        if all_nets_invalid {
-            let bus_wire = add_wire(bits, None, builder)?;
-
-            self.bus_map.insert(bits.clone(), bus_wire);
-            if let &[single_bit] = bits.as_slice() {
-                if let Signal::Net(net_id) = single_bit {
-                    self.net_map[net_id] = NetMapping {
-                        wire: bus_wire,
-                        offset: None,
-                    }
+        if self.bus_map.get(bits).is_none() {
+            let all_nets_invalid = bits.iter().all(|&bit| match bit {
+                Signal::Value(_) => false,
+                Signal::Net(net_id) => {
+                    let mapping = self.net_map[net_id];
+                    mapping.wire.is_invalid()
                 }
-            } else {
-                for (offset, &bit) in bits.iter().enumerate() {
-                    if let Signal::Net(net_id) = bit {
+            });
+
+            if all_nets_invalid {
+                let bus_wire = add_wire(bits, None, builder)?;
+
+                self.bus_map.insert(bits.clone(), bus_wire);
+                if let &[single_bit] = bits.as_slice() {
+                    if let Signal::Net(net_id) = single_bit {
                         self.net_map[net_id] = NetMapping {
                             wire: bus_wire,
-                            offset: Some(offset as u8),
+                            offset: None,
+                        }
+                    }
+                } else {
+                    for (offset, &bit) in bits.iter().enumerate() {
+                        if let Signal::Net(net_id) = bit {
+                            self.net_map[net_id] = NetMapping {
+                                wire: bus_wire,
+                                offset: Some(offset as u8),
+                            }
                         }
                     }
                 }
-            }
 
-            Ok(Some(bus_wire))
-        } else {
-            Ok(None)
+                return Ok(Some(bus_wire));
+            }
         }
+
+        Ok(None)
     }
 
     fn get_bus_wire(
