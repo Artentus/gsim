@@ -463,6 +463,24 @@ fn add_wire(
     Ok(bus_wire)
 }
 
+fn to_contiguous_range(indices: &[u8]) -> Option<u8> {
+    let mut iter = indices.iter().copied();
+    if let Some(start) = iter.next() {
+        let mut end = start;
+        while let Some(next) = iter.next() {
+            if next.checked_sub(end) == Some(1) {
+                end = next;
+            } else {
+                return None;
+            }
+        }
+
+        Some(start)
+    } else {
+        None
+    }
+}
+
 #[derive(Default, Clone, Copy)]
 struct NetMapping {
     wire: WireId,
@@ -720,6 +738,38 @@ impl WireMap {
                     Ok(mapping.wire)
                 }
             }
+
+            fn slice_bus(
+                &mut self,
+                fixup: &WireFixup,
+                builder: &mut crate::SimulatorBuilder,
+            ) -> Result<bool, YosysModuleImportError> {
+                let mut indices = Vec::new();
+                let mut src_bus: Option<WireId> = None;
+
+                for &bit in &fixup.bits {
+                    match bit {
+                        Signal::Value(_) => return Ok(false),
+                        Signal::Net(net_id) => {
+                            let mapping = self.get_mapping(net_id, builder)?;
+                            if *src_bus.get_or_insert(mapping.wire) != mapping.wire {
+                                return Ok(false);
+                            }
+
+                            indices.push(mapping.offset.unwrap_or(0));
+                        }
+                    }
+                }
+
+                if let Some(offset) = to_contiguous_range(&indices) {
+                    builder
+                        .add_slice(src_bus.unwrap(), offset, fixup.bus_wire)
+                        .unwrap();
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
         }
 
         let mut fixups = Vec::new();
@@ -728,27 +778,31 @@ impl WireMap {
             // TODO: if multiple bits connect to the same bus wire we can use one split/merge for all of them
             match fixup.direction {
                 BusDirection::Read => {
-                    let mut bit_wires = Vec::new();
-                    for bit in fixup.bits {
-                        let bit_wire = match bit {
-                            Signal::Value(LogicBitState::HighZ) => self.const_high_z(builder)?,
-                            Signal::Value(LogicBitState::Undefined) => {
-                                self.const_undefined(builder)?
-                            }
-                            Signal::Value(LogicBitState::Logic0) => self.const_0(builder)?,
-                            Signal::Value(LogicBitState::Logic1) => self.const_1(builder)?,
-                            Signal::Net(net_id) => self.get_bit(net_id, builder)?,
-                        };
+                    if !self.slice_bus(&fixup, builder)? {
+                        let mut bit_wires = Vec::new();
+                        for bit in fixup.bits {
+                            let bit_wire = match bit {
+                                Signal::Value(LogicBitState::HighZ) => {
+                                    self.const_high_z(builder)?
+                                }
+                                Signal::Value(LogicBitState::Undefined) => {
+                                    self.const_undefined(builder)?
+                                }
+                                Signal::Value(LogicBitState::Logic0) => self.const_0(builder)?,
+                                Signal::Value(LogicBitState::Logic1) => self.const_1(builder)?,
+                                Signal::Net(net_id) => self.get_bit(net_id, builder)?,
+                            };
 
-                        bit_wires.push(bit_wire);
+                            bit_wires.push(bit_wire);
+                        }
+
+                        builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
                     }
-
-                    builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
                 }
                 BusDirection::Write => {
                     for (i, bit) in fixup.bits.into_iter().enumerate() {
                         match bit {
-                            Signal::Value(_) => todo!(),
+                            Signal::Value(_) => panic!("illegal file format"),
                             Signal::Net(net_id) => {
                                 let mapping = self.get_mapping(net_id, builder)?;
                                 if let Some(offset) = mapping.offset {
