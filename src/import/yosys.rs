@@ -529,24 +529,20 @@ impl WireMap {
         Ok(wire)
     }
 
-    fn all_nets_invalid(&self, bits: &Bits) -> bool {
-        bits.iter()
-            .filter_map(|&bit| match bit {
-                Signal::Value(_) => None,
-                Signal::Net(net_id) => Some(net_id),
-            })
-            .all(|net_id| {
-                let mapping = self.net_map[net_id];
-                mapping.wire.is_invalid()
-            })
-    }
-
     fn add_named_bus(
         &mut self,
         bits: &Bits,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<Option<WireId>, YosysModuleImportError> {
-        if self.all_nets_invalid(bits) {
+        let all_nets_invalid = bits.iter().all(|&bit| match bit {
+            Signal::Value(_) => false,
+            Signal::Net(net_id) => {
+                let mapping = self.net_map[net_id];
+                mapping.wire.is_invalid()
+            }
+        });
+
+        if all_nets_invalid {
             let bus_wire = add_wire(bits, None, builder)?;
 
             self.bus_map.insert(bits.clone(), bus_wire);
@@ -593,7 +589,18 @@ impl WireMap {
                 builder.set_wire_name(bus_wire, drive.display_string(width));
                 Ok(bus_wire)
             } else {
-                if self.all_nets_invalid(bits) {
+                let all_nets_invalid = bits
+                    .iter()
+                    .filter_map(|&bit| match bit {
+                        Signal::Value(_) => None,
+                        Signal::Net(net_id) => Some(net_id),
+                    })
+                    .all(|net_id| {
+                        let mapping = self.net_map[net_id];
+                        mapping.wire.is_invalid()
+                    });
+
+                if all_nets_invalid {
                     // None of the wires are part of a bus yet, so we create a new one
                     let bus_wire = add_wire(bits, Some(direction), builder)?;
 
@@ -767,20 +774,22 @@ impl WireMap {
                                     let target_width = builder.get_wire_width(mapping.wire);
                                     let mut target_parts = Vec::new();
                                     if let Some(high_z_width) = NonZeroU8::new(offset) {
-                                        let high_z_wire = builder
-                                            .add_wire(high_z_width)
-                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                                        builder.set_wire_drive(high_z_wire, &LogicState::HIGH_Z);
+                                        let high_z_wire = self.add_const_wire(
+                                            high_z_width,
+                                            &LogicState::HIGH_Z,
+                                            builder,
+                                        )?;
                                         target_parts.push(high_z_wire);
                                     }
                                     target_parts.push(bit_wire);
                                     if let Some(high_z_width) =
                                         NonZeroU8::new(target_width.get() - offset - 1)
                                     {
-                                        let high_z_wire = builder
-                                            .add_wire(high_z_width)
-                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                                        builder.set_wire_drive(high_z_wire, &LogicState::HIGH_Z);
+                                        let high_z_wire = self.add_const_wire(
+                                            high_z_width,
+                                            &LogicState::HIGH_Z,
+                                            builder,
+                                        )?;
                                         target_parts.push(high_z_wire);
                                     }
                                     builder.add_merge(&target_parts, mapping.wire).unwrap();
