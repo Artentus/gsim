@@ -501,10 +501,6 @@ struct WireFixup {
 }
 
 struct WireMap {
-    const_high_z: Option<WireId>,
-    const_undefined: Option<WireId>,
-    const_0: Option<WireId>,
-    const_1: Option<WireId>,
     bus_map: HashMap<Bits, WireId>,
     net_map: Vec<NetMapping>,
     fixups: Vec<WireFixup>,
@@ -513,82 +509,24 @@ struct WireMap {
 impl WireMap {
     fn new(max_net_id: usize) -> Self {
         Self {
-            const_high_z: None,
-            const_undefined: None,
-            const_0: None,
-            const_1: None,
             bus_map: HashMap::new(),
             net_map: vec![NetMapping::default(); max_net_id + 1],
             fixups: Vec::new(),
         }
     }
 
-    fn const_high_z(
+    fn add_const_wire(
         &mut self,
+        width: NonZeroU8,
+        drive: &LogicState,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<WireId, YosysModuleImportError> {
-        if let Some(const_high_z) = self.const_high_z {
-            Ok(const_high_z)
-        } else {
-            let const_high_z = builder
-                .add_wire(NonZeroU8::MIN)
-                .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-            builder.set_wire_drive(const_high_z, &LogicState::HIGH_Z);
-            builder.set_wire_name(const_high_z, "Z");
-            self.const_high_z = Some(const_high_z);
-            Ok(const_high_z)
-        }
-    }
-
-    fn const_undefined(
-        &mut self,
-        builder: &mut crate::SimulatorBuilder,
-    ) -> Result<WireId, YosysModuleImportError> {
-        if let Some(const_undefined) = self.const_undefined {
-            Ok(const_undefined)
-        } else {
-            let const_undefined = builder
-                .add_wire(NonZeroU8::MIN)
-                .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-            builder.set_wire_drive(const_undefined, &LogicState::UNDEFINED);
-            builder.set_wire_name(const_undefined, "X");
-            self.const_undefined = Some(const_undefined);
-            Ok(const_undefined)
-        }
-    }
-
-    fn const_0(
-        &mut self,
-        builder: &mut crate::SimulatorBuilder,
-    ) -> Result<WireId, YosysModuleImportError> {
-        if let Some(const_0) = self.const_0 {
-            Ok(const_0)
-        } else {
-            let const_0 = builder
-                .add_wire(NonZeroU8::MIN)
-                .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-            builder.set_wire_drive(const_0, &LogicState::LOGIC_0);
-            builder.set_wire_name(const_0, "0");
-            self.const_0 = Some(const_0);
-            Ok(const_0)
-        }
-    }
-
-    fn const_1(
-        &mut self,
-        builder: &mut crate::SimulatorBuilder,
-    ) -> Result<WireId, YosysModuleImportError> {
-        if let Some(const_1) = self.const_1 {
-            Ok(const_1)
-        } else {
-            let const_1 = builder
-                .add_wire(NonZeroU8::MIN)
-                .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-            builder.set_wire_drive(const_1, &LogicState::LOGIC_1);
-            builder.set_wire_name(const_1, "1");
-            self.const_1 = Some(const_1);
-            Ok(const_1)
-        }
+        let wire = builder
+            .add_wire(width)
+            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+        builder.set_wire_drive(wire, drive);
+        builder.set_wire_name(wire, drive.display_string(width));
+        Ok(wire)
     }
 
     fn all_nets_invalid(&self, bits: &Bits) -> bool {
@@ -782,14 +720,26 @@ impl WireMap {
                         let mut bit_wires = Vec::new();
                         for bit in fixup.bits {
                             let bit_wire = match bit {
-                                Signal::Value(LogicBitState::HighZ) => {
-                                    self.const_high_z(builder)?
-                                }
-                                Signal::Value(LogicBitState::Undefined) => {
-                                    self.const_undefined(builder)?
-                                }
-                                Signal::Value(LogicBitState::Logic0) => self.const_0(builder)?,
-                                Signal::Value(LogicBitState::Logic1) => self.const_1(builder)?,
+                                Signal::Value(LogicBitState::HighZ) => self.add_const_wire(
+                                    NonZeroU8::MIN,
+                                    &LogicState::HIGH_Z,
+                                    builder,
+                                )?,
+                                Signal::Value(LogicBitState::Undefined) => self.add_const_wire(
+                                    NonZeroU8::MIN,
+                                    &LogicState::UNDEFINED,
+                                    builder,
+                                )?,
+                                Signal::Value(LogicBitState::Logic0) => self.add_const_wire(
+                                    NonZeroU8::MIN,
+                                    &LogicState::LOGIC_0,
+                                    builder,
+                                )?,
+                                Signal::Value(LogicBitState::Logic1) => self.add_const_wire(
+                                    NonZeroU8::MIN,
+                                    &LogicState::LOGIC_1,
+                                    builder,
+                                )?,
                                 Signal::Net(net_id) => self.get_bit(net_id, builder)?,
                             };
 
@@ -1428,7 +1378,8 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let const_1 = wire_map.const_1(builder)?;
+                    let const_1 =
+                        wire_map.add_const_wire(NonZeroU8::MIN, &LogicState::LOGIC_1, builder)?;
                     builder
                         .add_register(
                             data_in,
@@ -1550,7 +1501,8 @@ impl ModuleImporter for YosysModuleImporter {
                             cell_name: Rc::clone(cell_name),
                         })?;
 
-                    let const_1 = wire_map.const_1(builder)?;
+                    let const_1 =
+                        wire_map.add_const_wire(NonZeroU8::MIN, &LogicState::LOGIC_1, builder)?;
                     builder
                         .add_register(
                             mux_out,
