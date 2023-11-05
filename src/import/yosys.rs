@@ -924,7 +924,9 @@ impl ModuleImporter for YosysModuleImporter {
                 .all(|bit| matches!(bit, Signal::Net { .. }))
             {
                 if let Some(bus_wire) = wire_map.add_named_bus(&opts.bits, builder)? {
-                    builder.set_wire_name(bus_wire, Rc::clone(&opts.name));
+                    if !opts.hide_name {
+                        builder.set_wire_name(bus_wire, Rc::clone(&opts.name));
+                    }
                 }
             }
         }
