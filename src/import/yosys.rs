@@ -686,7 +686,7 @@ impl WireMap {
                 }
             }
 
-            fn slice_bus(
+            fn slice_bus_read(
                 &mut self,
                 fixup: &WireFixup,
                 builder: &mut crate::SimulatorBuilder,
@@ -717,6 +717,39 @@ impl WireMap {
                     Ok(false)
                 }
             }
+
+            fn slice_bus_write(
+                &mut self,
+                fixup: &WireFixup,
+                builder: &mut crate::SimulatorBuilder,
+            ) -> Result<bool, YosysModuleImportError> {
+                let mut indices = Vec::new();
+                let mut dst_bus: Option<WireId> = None;
+
+                for &bit in &fixup.bits {
+                    match bit {
+                        Signal::Value(_) => return Ok(false),
+                        Signal::Net(net_id) => {
+                            let mapping = self.get_mapping(net_id, builder)?;
+                            if *dst_bus.get_or_insert(mapping.wire) != mapping.wire {
+                                return Ok(false);
+                            }
+
+                            indices.push(mapping.offset.unwrap_or(0));
+                        }
+                    }
+                }
+
+                if let Some(0) = to_contiguous_range(&indices) {
+                    builder
+                        .add_slice(fixup.bus_wire, 0, dst_bus.unwrap())
+                        .unwrap();
+
+                    Ok(true)
+                } else {
+                    Ok(false)
+                }
+            }
         }
 
         let mut fixups = Vec::new();
@@ -725,7 +758,7 @@ impl WireMap {
             // TODO: if multiple bits connect to the same bus wire we can use one split/merge for all of them
             match fixup.direction {
                 BusDirection::Read => {
-                    if !self.slice_bus(&fixup, builder)? {
+                    if !self.slice_bus_read(&fixup, builder)? {
                         let mut bit_wires = Vec::new();
                         for bit in fixup.bits {
                             let bit_wire = match bit {
@@ -759,47 +792,49 @@ impl WireMap {
                     }
                 }
                 BusDirection::Write => {
-                    for (i, bit) in fixup.bits.into_iter().enumerate() {
-                        match bit {
-                            Signal::Value(_) => panic!("illegal file format"),
-                            Signal::Net(net_id) => {
-                                let mapping = self.get_mapping(net_id, builder)?;
-                                if let Some(offset) = mapping.offset {
-                                    let bit_wire = builder
-                                        .add_wire(NonZeroU8::MIN)
-                                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                                    builder
-                                        .add_slice(fixup.bus_wire, i as u8, bit_wire)
-                                        .unwrap();
+                    if !self.slice_bus_write(&fixup, builder)? {
+                        for (i, bit) in fixup.bits.into_iter().enumerate() {
+                            match bit {
+                                Signal::Value(_) => panic!("illegal file format"),
+                                Signal::Net(net_id) => {
+                                    let mapping = self.get_mapping(net_id, builder)?;
+                                    if let Some(offset) = mapping.offset {
+                                        let bit_wire = builder
+                                            .add_wire(NonZeroU8::MIN)
+                                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+                                        builder
+                                            .add_slice(fixup.bus_wire, i as u8, bit_wire)
+                                            .unwrap();
 
-                                    let mapping = self.net_map[net_id];
-                                    let target_width = builder.get_wire_width(mapping.wire);
-                                    let mut target_parts = Vec::new();
-                                    if let Some(high_z_width) = NonZeroU8::new(offset) {
-                                        let high_z_wire = self.add_const_wire(
-                                            high_z_width,
-                                            &LogicState::HIGH_Z,
-                                            builder,
-                                        )?;
-                                        target_parts.push(high_z_wire);
+                                        let mapping = self.net_map[net_id];
+                                        let target_width = builder.get_wire_width(mapping.wire);
+                                        let mut target_parts = Vec::new();
+                                        if let Some(high_z_width) = NonZeroU8::new(offset) {
+                                            let high_z_wire = self.add_const_wire(
+                                                high_z_width,
+                                                &LogicState::HIGH_Z,
+                                                builder,
+                                            )?;
+                                            target_parts.push(high_z_wire);
+                                        }
+                                        target_parts.push(bit_wire);
+                                        if let Some(high_z_width) =
+                                            NonZeroU8::new(target_width.get() - offset - 1)
+                                        {
+                                            let high_z_wire = self.add_const_wire(
+                                                high_z_width,
+                                                &LogicState::HIGH_Z,
+                                                builder,
+                                            )?;
+                                            target_parts.push(high_z_wire);
+                                        }
+                                        builder.add_merge(&target_parts, mapping.wire).unwrap();
+                                    } else {
+                                        // If the bit is the only one in the bus we can drive directly
+                                        builder
+                                            .add_slice(fixup.bus_wire, i as u8, mapping.wire)
+                                            .unwrap();
                                     }
-                                    target_parts.push(bit_wire);
-                                    if let Some(high_z_width) =
-                                        NonZeroU8::new(target_width.get() - offset - 1)
-                                    {
-                                        let high_z_wire = self.add_const_wire(
-                                            high_z_width,
-                                            &LogicState::HIGH_Z,
-                                            builder,
-                                        )?;
-                                        target_parts.push(high_z_wire);
-                                    }
-                                    builder.add_merge(&target_parts, mapping.wire).unwrap();
-                                } else {
-                                    // If the bit is the only one in the bus we can drive directly
-                                    builder
-                                        .add_slice(fixup.bus_wire, i as u8, mapping.wire)
-                                        .unwrap();
                                 }
                             }
                         }
