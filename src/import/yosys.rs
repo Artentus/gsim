@@ -740,10 +740,23 @@ impl WireMap {
                     }
                 }
 
-                if let Some(0) = to_contiguous_range(&indices) {
-                    builder
-                        .add_slice(fixup.bus_wire, 0, dst_bus.unwrap())
-                        .unwrap();
+                if let Some(offset) = to_contiguous_range(&indices) {
+                    let dst_bus = dst_bus.unwrap();
+                    let dst_width = builder.get_wire_width(dst_bus);
+
+                    let mut dst_parts = SmallVec::<[WireId; 3]>::new();
+                    if let Some(high_z_width) = NonZeroU8::new(offset) {
+                        let high_z_wire =
+                            self.add_const_wire(high_z_width, &LogicState::HIGH_Z, builder)?;
+                        dst_parts.push(high_z_wire);
+                    }
+                    dst_parts.push(fixup.bus_wire);
+                    if let Some(high_z_width) = NonZeroU8::new(dst_width.get() - offset - 1) {
+                        let high_z_wire =
+                            self.add_const_wire(high_z_width, &LogicState::HIGH_Z, builder)?;
+                        dst_parts.push(high_z_wire);
+                    }
+                    builder.add_merge(&dst_parts, dst_bus).unwrap();
 
                     Ok(true)
                 } else {
