@@ -463,24 +463,6 @@ fn add_wire(
     Ok(bus_wire)
 }
 
-fn to_contiguous_range(indices: &[u8]) -> Option<u8> {
-    let mut iter = indices.iter().copied();
-    if let Some(start) = iter.next() {
-        let mut end = start;
-        while let Some(next) = iter.next() {
-            if next.checked_sub(end) == Some(1) {
-                end = next;
-            } else {
-                return None;
-            }
-        }
-
-        Some(start)
-    } else {
-        None
-    }
-}
-
 #[derive(Default, Clone, Copy)]
 struct NetMapping {
     wire: WireId,
@@ -646,62 +628,116 @@ impl WireMap {
                 Ok(*mapping)
             }
 
-            fn get_bit(
-                &mut self,
-                net_id: NetId,
-                builder: &mut crate::SimulatorBuilder,
-            ) -> Result<WireId, YosysModuleImportError> {
-                let mapping = self.get_mapping(net_id, builder)?;
-                let width = builder.get_wire_width(mapping.wire);
-
-                if width == NonZeroU8::MIN {
-                    debug_assert_eq!(mapping.offset, 0);
-
-                    // If the bit is the only one in the bus we don't have to slice
-                    Ok(mapping.wire)
-                } else {
-                    let output = builder
-                        .add_wire(NonZeroU8::MIN)
-                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-
-                    builder
-                        .add_slice(mapping.wire, mapping.offset, output)
-                        .unwrap();
-
-                    Ok(output)
-                }
-            }
-
             fn slice_bus_read(
                 &mut self,
                 fixup: &WireFixup,
                 builder: &mut crate::SimulatorBuilder,
-            ) -> Result<bool, YosysModuleImportError> {
-                let mut indices = Vec::new();
-                let mut src_bus: Option<WireId> = None;
+            ) -> Result<(), YosysModuleImportError> {
+                enum Slice {
+                    Value {
+                        width: NonZeroU8,
+                        drive: LogicState,
+                    },
+                    Bus {
+                        src: WireId,
+                        src_start: u8,
+                        src_end: u8,
+                    },
+                }
 
-                for &bit in &fixup.bits {
-                    match bit {
-                        Signal::Value(_) => return Ok(false),
-                        Signal::Net(net_id) => {
-                            let mapping = self.get_mapping(net_id, builder)?;
-                            if *src_bus.get_or_insert(mapping.wire) != mapping.wire {
-                                return Ok(false);
+                let dst = fixup.bus_wire;
+                let dst_width = builder.get_wire_width(dst);
+                debug_assert_eq!(dst_width.get() as usize, fixup.bits.len());
+
+                let mut slices = Vec::new();
+                let mut iter = fixup.bits.iter().copied().peekable();
+
+                // Create slices while we still have more bits
+                while let Some(first) = iter.next() {
+                    match first {
+                        Signal::Value(first_bit) => {
+                            let mut bits = Vec::new();
+                            bits.push(first_bit);
+
+                            // Advance until we find a bit that is not a value
+                            while let Some(&Signal::Value(bit)) = iter.peek() {
+                                bits.push(bit);
+                                iter.next();
                             }
 
-                            indices.push(mapping.offset);
+                            // We didn't find any more bits that are part of this slice, so add it to the list
+                            slices.push(Slice::Value {
+                                width: NonZeroU8::new(bits.len() as u8).unwrap(),
+                                drive: LogicState::from_bits(&bits),
+                            });
+                        }
+                        Signal::Net(first_net_id) => {
+                            let first_mapping = self.get_mapping(first_net_id, builder)?;
+                            let src = first_mapping.wire;
+                            let src_start = first_mapping.offset;
+                            let mut src_end = src_start;
+
+                            // Advance until we find a bit that targets a different wire or is not in a contiguous region
+                            while let Some(&Signal::Net(net_id)) = iter.peek() {
+                                let mapping = self.get_mapping(net_id, builder)?;
+
+                                if (mapping.wire != src)
+                                    || (mapping.offset.checked_sub(src_end) != Some(1))
+                                {
+                                    // This bit has to be part of a different slice
+                                    break;
+                                }
+
+                                src_end = mapping.offset;
+                                iter.next();
+                            }
+
+                            // We didn't find any more bits that are part of this slice, so add it to the list
+                            slices.push(Slice::Bus {
+                                src,
+                                src_start,
+                                src_end,
+                            });
                         }
                     }
                 }
 
-                if let Some(offset) = to_contiguous_range(&indices) {
-                    builder
-                        .add_slice(src_bus.unwrap(), offset, fixup.bus_wire)
-                        .unwrap();
-                    Ok(true)
+                if slices.len() == 1 {
+                    let slice = slices.into_iter().next().unwrap();
+                    match slice {
+                        Slice::Value { .. } => {
+                            // Should not have been made into a fixup in the first place
+                            unreachable!("illegal fixup");
+                        }
+                        Slice::Bus { src, src_start, .. } => {
+                            builder.add_slice(src, src_start, dst).unwrap();
+                        }
+                    }
                 } else {
-                    Ok(false)
+                    let mut wires = Vec::new();
+                    for slice in slices {
+                        match slice {
+                            Slice::Value { width, drive } => {
+                                let wire = self.add_const_wire(width, &drive, builder)?;
+                                wires.push(wire);
+                            }
+                            Slice::Bus {
+                                src,
+                                src_start,
+                                src_end,
+                            } => {
+                                let width = NonZeroU8::new(src_end - src_start + 1).unwrap();
+                                let wire = builder.add_wire(width).unwrap();
+                                builder.add_slice(src, src_start, wire).unwrap();
+                                wires.push(wire);
+                            }
+                        }
+                    }
+
+                    builder.add_merge(&wires, dst).unwrap();
                 }
+
+                Ok(())
             }
 
             fn slice_bus_write(
@@ -709,6 +745,14 @@ impl WireMap {
                 fixup: &WireFixup,
                 builder: &mut crate::SimulatorBuilder,
             ) -> Result<(), YosysModuleImportError> {
+                struct Slice {
+                    src_start: u8,
+                    src_end: u8,
+                    dst: WireId,
+                    dst_start: u8,
+                    dst_end: u8,
+                }
+
                 let src = fixup.bus_wire;
                 let src_width = builder.get_wire_width(src);
                 debug_assert_eq!(src_width.get() as usize, fixup.bits.len());
@@ -717,43 +761,56 @@ impl WireMap {
                 let mut iter = fixup.bits.iter().copied().enumerate().peekable();
 
                 // Create slices while we still have more bits
-                while let Some((slice_start, first)) = iter.next() {
+                while let Some((src_start, first)) = iter.next() {
                     match first {
                         Signal::Value(_) => panic!("illegal file format"),
                         Signal::Net(first_net_id) => {
                             let first_mapping = self.get_mapping(first_net_id, builder)?;
-                            let dst_bus = first_mapping.wire;
-                            let start = first_mapping.offset;
-                            let mut end = start;
-                            let mut slice_end = slice_start;
+                            let dst = first_mapping.wire;
+                            let dst_start = first_mapping.offset;
+                            let mut dst_end = dst_start;
+                            let mut src_end = src_start;
 
                             // Advance until we find a bit that targets a different wire or is not in a contiguous region
                             while let Some(&(i, Signal::Net(net_id))) = iter.peek() {
                                 let mapping = self.get_mapping(net_id, builder)?;
 
-                                if (mapping.wire != dst_bus)
-                                    || (mapping.offset.checked_sub(end) != Some(1))
+                                if (mapping.wire != dst)
+                                    || (mapping.offset.checked_sub(dst_end) != Some(1))
                                 {
                                     // This bit has to be part of a different slice
                                     break;
                                 }
 
-                                end = mapping.offset;
-                                slice_end = i;
+                                dst_end = mapping.offset;
+                                src_end = i;
                                 iter.next();
                             }
 
                             // We didn't find any more bits that are part of this slice, so add it to the list
-                            slices.push((slice_start as u8, slice_end as u8, dst_bus, start, end));
+                            slices.push(Slice {
+                                src_start: src_start as u8,
+                                src_end: src_end as u8,
+                                dst,
+                                dst_start,
+                                dst_end,
+                            });
                         }
                     }
                 }
 
                 debug_assert!(slices.len() > 0);
-                debug_assert_eq!(slices.first().unwrap().0, 0);
-                debug_assert_eq!(slices.last().unwrap().1, src_width.get() - 1);
+                debug_assert_eq!(slices.first().unwrap().src_start, 0);
+                debug_assert_eq!(slices.last().unwrap().src_end, src_width.get() - 1);
 
-                for (src_start, src_end, dst, dst_start, dst_end) in slices {
+                for Slice {
+                    src_start,
+                    src_end,
+                    dst,
+                    dst_start,
+                    dst_end,
+                } in slices
+                {
                     debug_assert_eq!(src_end - src_start, dst_end - dst_start);
                     let slice_width = NonZeroU8::new(src_end - src_start + 1).unwrap();
                     let dst_width = builder.get_wire_width(dst);
@@ -810,38 +867,7 @@ impl WireMap {
             // TODO: if multiple bits connect to the same bus wire we can use one split/merge for all of them
             match fixup.direction {
                 BusDirection::Read => {
-                    if !self.slice_bus_read(&fixup, builder)? {
-                        let mut bit_wires = Vec::new();
-                        for bit in fixup.bits {
-                            let bit_wire = match bit {
-                                Signal::Value(LogicBitState::HighZ) => self.add_const_wire(
-                                    NonZeroU8::MIN,
-                                    &LogicState::HIGH_Z,
-                                    builder,
-                                )?,
-                                Signal::Value(LogicBitState::Undefined) => self.add_const_wire(
-                                    NonZeroU8::MIN,
-                                    &LogicState::UNDEFINED,
-                                    builder,
-                                )?,
-                                Signal::Value(LogicBitState::Logic0) => self.add_const_wire(
-                                    NonZeroU8::MIN,
-                                    &LogicState::LOGIC_0,
-                                    builder,
-                                )?,
-                                Signal::Value(LogicBitState::Logic1) => self.add_const_wire(
-                                    NonZeroU8::MIN,
-                                    &LogicState::LOGIC_1,
-                                    builder,
-                                )?,
-                                Signal::Net(net_id) => self.get_bit(net_id, builder)?,
-                            };
-
-                            bit_wires.push(bit_wire);
-                        }
-
-                        builder.add_merge(&bit_wires, fixup.bus_wire).unwrap();
-                    }
+                    self.slice_bus_read(&fixup, builder)?;
                 }
                 BusDirection::Write => {
                     self.slice_bus_write(&fixup, builder)?;
