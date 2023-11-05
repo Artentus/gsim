@@ -192,6 +192,8 @@ struct Port {
 
 #[derive(Deserialize)]
 struct Cell {
+    #[serde(default)]
+    hide_name: u8,
     #[serde(rename = "type", deserialize_with = "cell_type")]
     cell_type: CellType,
     #[serde(default)]
@@ -202,6 +204,7 @@ struct Cell {
 
 #[derive(Deserialize)]
 struct NetNameOpts {
+    #[serde(default)]
     hide_name: u8,
     bits: Bits,
 }
@@ -229,6 +232,7 @@ struct PreprocCellPort {
 }
 
 struct PreprocCell {
+    hide_name: bool,
     cell_type: CellType,
     ports: HashMap<Rc<str>, PreprocCellPort>,
     parameters: HashMap<Rc<str>, LogicState>,
@@ -267,6 +271,7 @@ impl PreprocCell {
             .collect();
 
         Self {
+            hide_name: cell.hide_name > 0,
             cell_type: cell.cell_type,
             ports,
             parameters,
@@ -1783,7 +1788,9 @@ impl ModuleImporter for YosysModuleImporter {
                 }
             };
 
-            builder.set_component_name(cell_id, Rc::clone(cell_name));
+            if !cell.hide_name {
+                builder.set_component_name(cell_id, Rc::clone(cell_name));
+            }
         }
 
         wire_map.perform_fixups(builder)?;
