@@ -38,6 +38,7 @@
 #![deny(missing_docs)]
 #![warn(missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::too_many_arguments)]
 
 #[macro_use]
 extern crate static_assertions;
@@ -1408,7 +1409,7 @@ impl SimulatorBuilder {
 
     /// Adds a `Merge` component to the simulation
     pub fn add_merge(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
-        if inputs.len() < 1 {
+        if inputs.is_empty() {
             return Err(AddComponentError::TooFewInputs);
         }
 
@@ -1545,7 +1546,7 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> AddComponentResult {
-        if inputs.len() < 1 {
+        if inputs.is_empty() {
             return Err(AddComponentError::TooFewInputs);
         }
 

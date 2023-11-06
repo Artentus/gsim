@@ -707,7 +707,7 @@ impl Merge {
         output_wire: WireId,
     ) -> Self {
         let inputs = inputs.into();
-        debug_assert!(inputs.len() >= 1);
+        debug_assert!(!inputs.is_empty());
 
         Self {
             inputs,
@@ -1356,11 +1356,10 @@ fn to_address(width: NonZeroU8, atoms: &[Atom]) -> Option<usize> {
 
     let mut addr = 0;
     let mut total_width = width.get();
-    for i in 0..atom_count {
+    for (i, atom) in atoms.iter().enumerate() {
         let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
         total_width -= width.get();
 
-        let atom = atoms[i];
         if !atom.is_valid(width) {
             return None;
         }
@@ -1387,7 +1386,6 @@ pub(crate) struct Ram {
 }
 
 impl Ram {
-    #[allow(clippy::too_many_arguments)]
     #[inline]
     pub(crate) fn new(
         write_addr: WireStateId,

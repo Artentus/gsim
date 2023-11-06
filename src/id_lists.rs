@@ -138,6 +138,7 @@ macro_rules! def_id_list {
             }
 
             /// SAFETY: caller must ensure there are no other references to the item with this ID
+            #[allow(clippy::mut_from_ref)]
             #[inline]
             pub(crate) unsafe fn get_unsafe(&self, id: $id_name) -> &mut $t {
                 unsafe { &mut *self.0[id.0 as usize].get() }
@@ -250,6 +251,7 @@ impl ComponentList {
 }
 
 /// The same requirements as casting `&SyncUnsafeCell<T>` to `&T` apply.
+#[allow(clippy::needless_lifetimes)]
 #[inline]
 unsafe fn cell_slice_to_ref<'a, T>(slice: &'a [SyncUnsafeCell<T>]) -> &'a [T] {
     let (ptr, len) = (slice.as_ptr(), slice.len());
@@ -258,6 +260,8 @@ unsafe fn cell_slice_to_ref<'a, T>(slice: &'a [SyncUnsafeCell<T>]) -> &'a [T] {
 }
 
 /// The same requirements as casting `&SyncUnsafeCell<T>` to `&mut T` apply.
+#[allow(clippy::needless_lifetimes)]
+#[allow(clippy::mut_from_ref)]
 #[inline]
 unsafe fn cell_slice_to_mut<'a, T>(slice: &'a [SyncUnsafeCell<T>]) -> &'a mut [T] {
     let (ptr, len) = (slice.as_ptr(), slice.len());
@@ -321,9 +325,7 @@ impl WireStateList {
         let current_len = u32::try_from(self.widths.len())
             .ok()
             .filter(|&len| len < INVALID_ID)?;
-        let new_len = current_len
-            .checked_add(atom_count.get() as u32)
-            .filter(|&len| len <= INVALID_ID)? as usize;
+        let new_len = current_len.checked_add(atom_count.get() as u32)? as usize;
 
         self.widths.push(Some(width));
         self.widths.resize(new_len, None);
@@ -443,9 +445,7 @@ impl OutputStateList {
         let current_len = u32::try_from(self.widths.len())
             .ok()
             .filter(|&len| len < INVALID_ID)?;
-        let new_len = current_len
-            .checked_add(atom_count.get() as u32)
-            .filter(|&len| len <= INVALID_ID)? as usize;
+        let new_len = current_len.checked_add(atom_count.get() as u32)? as usize;
 
         self.widths.push(Some(width));
         self.widths.resize(new_len, None);
@@ -492,11 +492,11 @@ impl OutputStateList {
 
     /// SAFETY: caller must guarantee there are no other references to all items within this slice
     #[inline]
-    pub(crate) unsafe fn get_slice_unsafe<'this>(
-        &'this self,
+    pub(crate) unsafe fn get_slice_unsafe(
+        &self,
         base: OutputStateId,
         atom_count: u16,
-    ) -> OutputStateSlice<'this> {
+    ) -> OutputStateSlice<'_> {
         if atom_count == 0 {
             return OutputStateSlice {
                 offset: 0,

@@ -523,17 +523,17 @@ impl Atom {
     }
 
     fn from_bits(bits: &[LogicBitState]) -> Self {
-        debug_assert!(bits.len() > 0);
+        debug_assert!(!bits.is_empty());
         debug_assert!(bits.len() <= (Self::BITS.get() as usize));
 
         let mut state = 0;
         let mut valid = 0;
 
-        for i in 0..bits.len() {
+        for bit in bits {
             state <<= 1;
             valid <<= 1;
 
-            let (bit_state, bit_valid) = match bits[i] {
+            let (bit_state, bit_valid) = match bit {
                 LogicBitState::HighZ => (0, 0),
                 LogicBitState::Undefined => (1, 0),
                 LogicBitState::Logic0 => (0, 1),
@@ -551,7 +551,7 @@ impl Atom {
     }
 
     fn parse(s: &[u8]) -> Option<Self> {
-        debug_assert!(s.len() > 0);
+        debug_assert!(!s.is_empty());
         debug_assert!(s.len() <= (Self::BITS.get() as usize));
 
         let mut state = 0;
@@ -770,7 +770,7 @@ impl LogicState {
             LogicStateRepr::Logic0 => LogicBitState::Logic0,
             LogicStateRepr::Logic1 => LogicBitState::Logic1,
             LogicStateRepr::Int(value) => {
-                if let Some(bit_index) = u8::try_from(bit_index).ok().and_then(AtomOffset::new) {
+                if let Some(bit_index) = AtomOffset::new(bit_index) {
                     let state_bit = value.get_bit(bit_index);
                     LogicBitState::from_bits(state_bit, true)
                 } else {

@@ -1467,8 +1467,8 @@ pub(super) fn zero_extend(
     let out_tail_width =
         AtomWidth::new(out_width.get() % Atom::BITS.get()).unwrap_or(AtomWidth::MAX);
 
-    let mut val_iter = val.into_iter();
-    let mut out_iter = out.into_iter();
+    let mut val_iter = val.iter();
+    let mut out_iter = out.iter_mut();
 
     let mut result = OpResult::Unchanged;
 
@@ -1535,8 +1535,8 @@ pub(super) fn sign_extend(
     let out_tail_width =
         AtomWidth::new(out_width.get() % Atom::BITS.get()).unwrap_or(AtomWidth::MAX);
 
-    let mut val_iter = val.into_iter();
-    let mut out_iter = out.into_iter();
+    let mut val_iter = val.iter();
+    let mut out_iter = out.iter_mut();
 
     let mut result = OpResult::Unchanged;
 

@@ -1,4 +1,5 @@
 use crate::id_lists::{Id, IdInternal};
+use std::cmp::Ordering;
 use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 
@@ -82,33 +83,37 @@ impl<T: IdInternal> IdVec<T> {
         assert!((len as usize) < (isize::MAX as usize));
         assert!((len as usize) < (u32::MAX as usize));
 
-        if len < INLINE_CAPACITY {
-            unsafe {
-                // SAFETY: when len <= INLINE_CAPACITY, the active variant is `inline`
-                self.inline.data[len as usize] = id;
-                self.inline.len += 1;
+        match len.cmp(&INLINE_CAPACITY) {
+            Ordering::Less => {
+                unsafe {
+                    // SAFETY: when len <= INLINE_CAPACITY, the active variant is `inline`
+                    self.inline.data[len as usize] = id;
+                    self.inline.len += 1;
+                }
             }
-        } else if len == INLINE_CAPACITY {
-            unsafe {
-                // SAFETY: when len == INLINE_CAPACITY, the active variant is `inline`, but after adding it must be `heap`
-                let new_heap = alloc_new(&self.inline.data, id);
-                self.heap = ManuallyDrop::new(new_heap);
-            }
-        } else {
-            unsafe {
-                // SAFETY: when len > INLINE_CAPACITY, the active variant is `heap`
-                let capacity = self.heap.capacity;
-                if len < capacity {
-                    self.heap.data.as_ptr().add(len as usize).write(id);
-                    self.heap.len += 1;
-                } else {
-                    let existing = std::slice::from_raw_parts(
-                        self.heap.data.as_ptr().cast_const(),
-                        len as usize,
-                    );
-                    let new_heap = alloc_new(existing, id);
-                    self.drop_alloc();
+            Ordering::Equal => {
+                unsafe {
+                    // SAFETY: when len == INLINE_CAPACITY, the active variant is `inline`, but after adding it must be `heap`
+                    let new_heap = alloc_new(&self.inline.data, id);
                     self.heap = ManuallyDrop::new(new_heap);
+                }
+            }
+            Ordering::Greater => {
+                unsafe {
+                    // SAFETY: when len > INLINE_CAPACITY, the active variant is `heap`
+                    let capacity = self.heap.capacity;
+                    if len < capacity {
+                        self.heap.data.as_ptr().add(len as usize).write(id);
+                        self.heap.len += 1;
+                    } else {
+                        let existing = std::slice::from_raw_parts(
+                            self.heap.data.as_ptr().cast_const(),
+                            len as usize,
+                        );
+                        let new_heap = alloc_new(existing, id);
+                        self.drop_alloc();
+                        self.heap = ManuallyDrop::new(new_heap);
+                    }
                 }
             }
         }
