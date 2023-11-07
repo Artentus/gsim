@@ -619,6 +619,14 @@ impl Atom {
             valid: self.valid,
         }
     }
+
+    #[inline]
+    pub(crate) fn undefined_to_logic_0(self) -> Self {
+        Self {
+            state: self.state & self.valid,
+            valid: self.state | self.valid,
+        }
+    }
 }
 
 impl std::fmt::Display for Atom {
@@ -845,6 +853,22 @@ impl LogicState {
         }
 
         true
+    }
+
+    pub(crate) fn undefined_to_logic_0(self) -> Self {
+        Self(match self.0 {
+            LogicStateRepr::HighZ => LogicStateRepr::HighZ,
+            LogicStateRepr::Undefined => LogicStateRepr::Logic0,
+            LogicStateRepr::Logic0 => LogicStateRepr::Logic0,
+            LogicStateRepr::Logic1 => LogicStateRepr::Logic1,
+            LogicStateRepr::Int(value) => LogicStateRepr::Int(value),
+            LogicStateRepr::Bits(mut atoms) => {
+                atoms
+                    .iter_mut()
+                    .for_each(|atom| *atom = atom.undefined_to_logic_0());
+                LogicStateRepr::Bits(atoms)
+            }
+        })
     }
 }
 

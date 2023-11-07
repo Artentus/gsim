@@ -462,7 +462,10 @@ fn add_wire(
             }
         }
 
-        builder.set_wire_drive(bus_wire, &LogicState::from_bits(&drive));
+        builder.set_wire_drive(
+            bus_wire,
+            &LogicState::from_bits(&drive).undefined_to_logic_0(),
+        );
     }
 
     Ok(bus_wire)
@@ -504,13 +507,14 @@ impl WireMap {
     fn add_const_wire(
         &mut self,
         width: NonZeroU8,
-        drive: &LogicState,
+        mut drive: LogicState,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<WireId, YosysModuleImportError> {
         let wire = builder
             .add_wire(width)
             .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-        builder.set_wire_drive(wire, drive);
+        drive = drive.undefined_to_logic_0();
+        builder.set_wire_drive(wire, &drive);
         builder.set_wire_name(wire, drive.display_string(width));
         Ok(wire)
     }
@@ -723,7 +727,7 @@ impl WireMap {
                     for slice in slices {
                         match slice {
                             Slice::Value { width, drive } => {
-                                let wire = self.add_const_wire(width, &drive, builder)?;
+                                let wire = self.add_const_wire(width, drive, builder)?;
                                 wires.push(wire);
                             }
                             Slice::Bus {
@@ -832,13 +836,13 @@ impl WireMap {
                         let mut dst_parts = SmallVec::<[WireId; 3]>::new();
                         if let Some(high_z_width) = NonZeroU8::new(dst_start) {
                             let high_z_wire =
-                                self.add_const_wire(high_z_width, &LogicState::HIGH_Z, builder)?;
+                                self.add_const_wire(high_z_width, LogicState::HIGH_Z, builder)?;
                             dst_parts.push(high_z_wire);
                         }
                         dst_parts.push(src);
                         if let Some(high_z_width) = NonZeroU8::new(dst_width.get() - dst_end - 1) {
                             let high_z_wire =
-                                self.add_const_wire(high_z_width, &LogicState::HIGH_Z, builder)?;
+                                self.add_const_wire(high_z_width, LogicState::HIGH_Z, builder)?;
                             dst_parts.push(high_z_wire);
                         }
                         builder.add_merge(&dst_parts, dst).unwrap();
@@ -849,13 +853,13 @@ impl WireMap {
                         let mut dst_parts = SmallVec::<[WireId; 3]>::new();
                         if let Some(high_z_width) = NonZeroU8::new(dst_start) {
                             let high_z_wire =
-                                self.add_const_wire(high_z_width, &LogicState::HIGH_Z, builder)?;
+                                self.add_const_wire(high_z_width, LogicState::HIGH_Z, builder)?;
                             dst_parts.push(high_z_wire);
                         }
                         dst_parts.push(slice_wire);
                         if let Some(high_z_width) = NonZeroU8::new(dst_width.get() - dst_end - 1) {
                             let high_z_wire =
-                                self.add_const_wire(high_z_width, &LogicState::HIGH_Z, builder)?;
+                                self.add_const_wire(high_z_width, LogicState::HIGH_Z, builder)?;
                             dst_parts.push(high_z_wire);
                         }
                         builder.add_merge(&dst_parts, dst).unwrap();
@@ -1464,7 +1468,7 @@ impl ModuleImporter for YosysModuleImporter {
                     })?;
 
                     let const_1 =
-                        wire_map.add_const_wire(NonZeroU8::MIN, &LogicState::LOGIC_1, builder)?;
+                        wire_map.add_const_wire(NonZeroU8::MIN, LogicState::LOGIC_1, builder)?;
                     builder
                         .add_register(
                             data_in,
@@ -1598,7 +1602,7 @@ impl ModuleImporter for YosysModuleImporter {
                     }
 
                     let const_1 =
-                        wire_map.add_const_wire(NonZeroU8::MIN, &LogicState::LOGIC_1, builder)?;
+                        wire_map.add_const_wire(NonZeroU8::MIN, LogicState::LOGIC_1, builder)?;
                     builder
                         .add_register(
                             mux_out,
