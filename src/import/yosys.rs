@@ -1580,11 +1580,22 @@ impl ModuleImporter for YosysModuleImporter {
                     let mux_out = builder
                         .add_wire(data_width)
                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder
-                        .add_multiplexer(&[data_in, reset_value], reset, mux_out)
-                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        })?;
+                    match cell.ports["SRST"].polarity.unwrap_or_default() {
+                        ClockPolarity::Rising => {
+                            builder
+                                .add_multiplexer(&[data_in, reset_value], reset, mux_out)
+                                .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Rc::clone(cell_name),
+                                })?;
+                        }
+                        ClockPolarity::Falling => {
+                            builder
+                                .add_multiplexer(&[reset_value, data_in], reset, mux_out)
+                                .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Rc::clone(cell_name),
+                                })?;
+                        }
+                    }
 
                     let const_1 =
                         wire_map.add_const_wire(NonZeroU8::MIN, &LogicState::LOGIC_1, builder)?;
@@ -1660,11 +1671,22 @@ impl ModuleImporter for YosysModuleImporter {
                     let mux_out = builder
                         .add_wire(data_width)
                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder
-                        .add_multiplexer(&[data_in, reset_value], reset, mux_out)
-                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        })?;
+                    match cell.ports["SRST"].polarity.unwrap_or_default() {
+                        ClockPolarity::Rising => {
+                            builder
+                                .add_multiplexer(&[data_in, reset_value], reset, mux_out)
+                                .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Rc::clone(cell_name),
+                                })?;
+                        }
+                        ClockPolarity::Falling => {
+                            builder
+                                .add_multiplexer(&[reset_value, data_in], reset, mux_out)
+                                .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Rc::clone(cell_name),
+                                })?;
+                        }
+                    }
 
                     let or_out = builder
                         .add_wire(NonZeroU8::MIN)
@@ -1747,26 +1769,28 @@ impl ModuleImporter for YosysModuleImporter {
                     let mux_out = builder
                         .add_wire(data_width)
                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder
-                        .add_multiplexer(&[reset_value, data_in], enable, mux_out)
-                        .map_err(|_| YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
-                        })?;
-
-                    let or_out = builder
-                        .add_wire(NonZeroU8::MIN)
-                        .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.add_or_gate(&[reset, enable], or_out).map_err(|_| {
-                        YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Rc::clone(cell_name),
+                    match cell.ports["SRST"].polarity.unwrap_or_default() {
+                        ClockPolarity::Rising => {
+                            builder
+                                .add_multiplexer(&[data_in, reset_value], reset, mux_out)
+                                .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Rc::clone(cell_name),
+                                })?;
                         }
-                    })?;
+                        ClockPolarity::Falling => {
+                            builder
+                                .add_multiplexer(&[reset_value, data_in], reset, mux_out)
+                                .map_err(|_| YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Rc::clone(cell_name),
+                                })?;
+                        }
+                    }
 
                     builder
                         .add_register(
                             mux_out,
                             output,
-                            or_out,
+                            enable,
                             clock,
                             cell.ports["CLK"].polarity.unwrap_or_default(),
                         )
