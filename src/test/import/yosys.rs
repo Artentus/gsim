@@ -132,8 +132,8 @@ fn program_counter() {
     }
 
     const TEST_DATA: &[TestData] = test_data!(
-        (0, 0, LD-, EN-, RST-, CLK-) -> (UNDEFINED, UNDEFINED),
-        (0, 0, LD-, EN-, RST+, CLK-) -> (0, UNDEFINED),
+        (0, 0, LD-, EN-, RST-, CLK-) -> (0, 0),
+        (0, 0, LD-, EN-, RST+, CLK-) -> (0, 0),
         (0, 0, LD-, EN-, RST+, CLK+) -> (0, 0),
         (0, 0, LD-, EN-, RST-, CLK-) -> (0, 0),
 
