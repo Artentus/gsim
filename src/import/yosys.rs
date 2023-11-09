@@ -808,7 +808,7 @@ impl WireMap {
                     }
                 }
 
-                debug_assert!(slices.len() > 0);
+                debug_assert!(!slices.is_empty());
                 debug_assert_eq!(slices.first().unwrap().src_start, 0);
                 debug_assert_eq!(slices.last().unwrap().src_end, src_width.get() - 1);
 

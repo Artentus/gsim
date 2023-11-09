@@ -442,11 +442,7 @@ pub enum AddComponentError {
 /// The result of adding a component to a simulator
 pub type AddComponentResult = Result<ComponentId, AddComponentError>;
 
-/// A digital circuit simulator
-///
-/// See crate level documentation for a usage example
-#[allow(missing_debug_implementations)]
-pub struct Simulator {
+struct SimulatorData {
     wires: WireList,
     wire_states: WireStateList,
 
@@ -460,7 +456,7 @@ pub struct Simulator {
     component_names: HashMap<ComponentId, Rc<str>>,
 }
 
-impl Simulator {
+impl SimulatorData {
     #[inline]
     fn new() -> Self {
         Self {
@@ -478,16 +474,12 @@ impl Simulator {
         }
     }
 
-    /// Gets the width of a wire
-    pub fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
+    fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
         let wire = &self.wires[wire];
         self.wire_states.get_width(wire.state)
     }
 
-    /// Drives a wire to a certain state without needing a component
-    ///
-    /// Any unspecified bits will be set to Z
-    pub fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
+    fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
         let wire = &self.wires[wire];
         let drive = self.wire_states.get_drive_mut(wire.state);
 
@@ -496,46 +488,29 @@ impl Simulator {
         }
     }
 
-    /// Gets the current base drive of a wire
-    pub fn get_wire_drive(&self, wire: WireId) -> LogicState {
+    fn get_wire_drive(&self, wire: WireId) -> LogicState {
         let wire = &self.wires[wire];
         let drive = self.wire_states.get_drive(wire.state);
 
         LogicState(LogicStateRepr::Bits(drive.iter().copied().collect()))
     }
 
-    /// Gets the current state of a wire
-    pub fn get_wire_state(&self, wire: WireId) -> LogicState {
+    fn get_wire_state(&self, wire: WireId) -> LogicState {
         let wire = &self.wires[wire];
         let state = self.wire_states.get_state(wire.state);
 
         LogicState(LogicStateRepr::Bits(state.iter().copied().collect()))
     }
 
-    /// Gets a components data
-    pub fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
+    fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
         self.components[component].get_data()
     }
 
-    /// Gets a components data mutably
-    pub fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
+    fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
         self.components[component].get_data_mut()
     }
 
-    /// Assigns a name to a wire
-    #[inline]
-    pub fn set_wire_name<S: Into<Rc<str>>>(&mut self, wire: WireId, name: S) {
-        self.wire_names.insert(wire, name.into());
-    }
-
-    /// Assigns a name to a component
-    #[inline]
-    pub fn set_component_name<S: Into<Rc<str>>>(&mut self, component: ComponentId, name: S) {
-        self.component_names.insert(component, name.into());
-    }
-
-    /// Collects statistics of the simulation
-    pub fn stats(&self) -> SimulationStats {
+    fn stats(&self) -> SimulationStats {
         let (small_component_count, large_component_count) = self.components.component_counts();
 
         SimulationStats {
@@ -553,9 +528,8 @@ impl Simulator {
         }
     }
 
-    /// Writes the simulation graph into a Graphviz DOT file
     #[cfg(feature = "dot-export")]
-    pub fn write_dot<W: std::io::Write>(
+    fn write_dot<W: std::io::Write>(
         &self,
         mut writer: W,
         show_states: bool,
@@ -568,6 +542,7 @@ impl Simulator {
             let width = self.wire_states.get_width(wire.state);
             wire_state_map.insert(wire.state, wire_id);
 
+            #[allow(clippy::collapsible_else_if)]
             if show_states {
                 if let Some(name) = self.wire_names.get(&wire_id) {
                     writeln!(
@@ -683,6 +658,73 @@ impl Simulator {
     }
 }
 
+/// A digital circuit simulator
+///
+/// See crate level documentation for a usage example
+#[allow(missing_debug_implementations)]
+pub struct Simulator<VCD: std::io::Write = std::io::Sink> {
+    data: SimulatorData,
+    #[allow(dead_code)]
+    vcd: VCD,
+}
+
+impl<VCD: std::io::Write> Simulator<VCD> {
+    /// Gets the width of a wire
+    #[inline]
+    pub fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
+        self.data.get_wire_width(wire)
+    }
+
+    /// Drives a wire to a certain state without needing a component
+    ///
+    /// Any unspecified bits will be set to Z
+    #[inline]
+    pub fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
+        self.data.set_wire_drive(wire, new_drive)
+    }
+
+    /// Gets the current drive of a wire
+    #[inline]
+    pub fn get_wire_drive(&self, wire: WireId) -> LogicState {
+        self.data.get_wire_drive(wire)
+    }
+
+    /// Gets the current state of a wire
+    #[inline]
+    pub fn get_wire_state(&self, wire: WireId) -> LogicState {
+        self.data.get_wire_state(wire)
+    }
+
+    /// Gets a components data
+    #[inline]
+    pub fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
+        self.data.get_component_data(component)
+    }
+
+    /// Gets a components data mutably
+    #[inline]
+    pub fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
+        self.data.get_component_data_mut(component)
+    }
+
+    /// Collects statistics of the simulation
+    #[inline]
+    pub fn stats(&self) -> SimulationStats {
+        self.data.stats()
+    }
+
+    /// Writes the simulation graph into a Graphviz DOT file
+    #[cfg(feature = "dot-export")]
+    #[inline]
+    pub fn write_dot<W: std::io::Write>(
+        &self,
+        writer: W,
+        show_states: bool,
+    ) -> std::io::Result<()> {
+        self.data.write_dot(writer, show_states)
+    }
+}
+
 /*
 
 Simulation algorithm:
@@ -697,22 +739,22 @@ Simulation algorithm:
     builds an update queue. If the next queue is empty, we are done.
 
 */
-impl Simulator {
+impl<VCD: std::io::Write> Simulator<VCD> {
     fn update_wires(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
 
-        self.component_update_queue.clear();
+        self.data.component_update_queue.clear();
 
         let conflicts = Mutex::new(Vec::new());
 
         let perform = |wire_id| {
-            let wire: &Wire = &self.wires[wire_id];
+            let wire: &Wire = &self.data.wires[wire_id];
             let (width, drive, state) = unsafe {
                 // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                self.wire_states.get_data_unsafe(wire.state)
+                self.data.wire_states.get_data_unsafe(wire.state)
             };
 
-            match wire.update(width, drive, state, &self.output_states) {
+            match wire.update(width, drive, state, &self.data.output_states) {
                 WireUpdateResult::Unchanged => [].as_slice(),
                 WireUpdateResult::Changed => wire.driving.as_slice(),
                 WireUpdateResult::Conflict => {
@@ -725,28 +767,35 @@ impl Simulator {
             }
         };
 
-        if self.wire_update_queue.len() > 400 {
+        if self.data.wire_update_queue.len() > 400 {
             let component_update_queue_iter = self
+                .data
                 .wire_update_queue
                 .par_iter()
                 .with_min_len(200)
                 .copied()
                 .flat_map_iter(perform);
 
-            self.component_update_queue
+            self.data
+                .component_update_queue
                 .par_extend(component_update_queue_iter);
         } else {
-            let component_update_queue_iter =
-                self.wire_update_queue.iter().copied().flat_map(perform);
+            let component_update_queue_iter = self
+                .data
+                .wire_update_queue
+                .iter()
+                .copied()
+                .flat_map(perform);
 
-            self.component_update_queue
+            self.data
+                .component_update_queue
                 .extend(component_update_queue_iter);
         }
 
         // Make sure the component update queue contains no duplicates,
         // otherwise all our safety guarantees do not hold.
-        self.component_update_queue.par_sort_unstable();
-        self.component_update_queue.dedup();
+        self.data.component_update_queue.par_sort_unstable();
+        self.data.component_update_queue.dedup();
 
         let conflicts = conflicts
             .into_inner()
@@ -755,7 +804,7 @@ impl Simulator {
 
         if !conflicts.is_empty() {
             SimulationStepResult::Err(SimulationErrors { conflicts })
-        } else if self.component_update_queue.is_empty() {
+        } else if self.data.component_update_queue.is_empty() {
             SimulationStepResult::Unchanged
         } else {
             SimulationStepResult::Changed
@@ -765,50 +814,55 @@ impl Simulator {
     fn update_components(&mut self) -> SimulationStepResult {
         use rayon::prelude::*;
 
-        self.wire_update_queue.clear();
+        self.data.wire_update_queue.clear();
 
         let perform = |component_id| {
             let component = unsafe {
                 // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                self.components.get_unsafe(component_id)
+                self.data.components.get_unsafe(component_id)
             };
 
             let (output_base, output_atom_count) = component.output_range();
             let output_states = unsafe {
                 // SAFETY: since the component is unique, so are the outputs
-                self.output_states
+                self.data
+                    .output_states
                     .get_slice_unsafe(output_base, output_atom_count)
             };
 
             // `Component::update` returns all the wires that need to be inserted into the next update queue.
-            component.update(&self.wire_states, output_states)
+            component.update(&self.data.wire_states, output_states)
         };
 
-        if self.component_update_queue.len() > 400 {
+        if self.data.component_update_queue.len() > 400 {
             let wire_update_queue_iter = self
+                .data
                 .component_update_queue
                 .par_iter()
                 .with_min_len(200)
                 .copied()
                 .flat_map_iter(perform);
 
-            self.wire_update_queue.par_extend(wire_update_queue_iter);
+            self.data
+                .wire_update_queue
+                .par_extend(wire_update_queue_iter);
         } else {
             let wire_update_queue_iter = self
+                .data
                 .component_update_queue
                 .iter()
                 .copied()
                 .flat_map(perform);
 
-            self.wire_update_queue.extend(wire_update_queue_iter);
+            self.data.wire_update_queue.extend(wire_update_queue_iter);
         }
 
         // Make sure the wire update queue contains no duplicates,
         // otherwise all our safety guarantees do not hold.
-        self.wire_update_queue.par_sort_unstable();
-        self.wire_update_queue.dedup();
+        self.data.wire_update_queue.par_sort_unstable();
+        self.data.wire_update_queue.dedup();
 
-        if self.wire_update_queue.is_empty() {
+        if self.data.wire_update_queue.is_empty() {
             SimulationStepResult::Unchanged
         } else {
             SimulationStepResult::Changed
@@ -817,10 +871,10 @@ impl Simulator {
 
     /// Resets the simulation
     pub fn reset(&mut self) {
-        self.wire_states.clear_states();
-        self.output_states.clear_states();
+        self.data.wire_states.clear_states();
+        self.data.output_states.clear_states();
 
-        for component in self.components.iter_mut() {
+        for component in self.data.components.iter_mut() {
             component.reset();
         }
     }
@@ -832,14 +886,16 @@ impl Simulator {
         // We have to perform the first update step on all nodes in the graph,
         // so we insert all IDs into the queues.
 
-        self.wire_update_queue.clear();
-        self.wire_update_queue.extend(self.wires.ids());
+        self.data.wire_update_queue.clear();
+        self.data.wire_update_queue.extend(self.data.wires.ids());
         if let SimulationStepResult::Err(err) = self.update_wires() {
             return SimulationStepResult::Err(err);
         }
 
-        self.component_update_queue.clear();
-        self.component_update_queue.extend(self.components.ids());
+        self.data.component_update_queue.clear();
+        self.data
+            .component_update_queue
+            .extend(self.data.components.ids());
         self.update_components()
     }
 
@@ -877,209 +933,6 @@ impl Simulator {
     }
 }
 
-macro_rules! def_add_binary_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            input_a: WireId,
-            input_b: WireId,
-            output: WireId,
-        ) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input_a, input_b, output])?;
-
-            let output_state = self
-                .sim
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire_a = &self.sim.wires[input_a];
-            let wire_b = &self.sim.wires[input_b];
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input_a: wire_a.state,
-                input_b: wire_b.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input_a, id);
-            self.mark_driving(input_b, id);
-            self.mark_driver(output, output_state);
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_unary_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input, output])?;
-
-            let output_state = self
-                .sim
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire = &self.sim.wires[input];
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input: wire.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input, id);
-            self.mark_driver(output, output_state);
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_wide_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident, $wide_gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
-            if inputs.len() < 2 {
-                return Err(AddComponentError::TooFewInputs);
-            }
-
-            let width = self.check_wire_widths_match(inputs)?;
-            self.check_wire_widths_match(&[inputs[0], output])?;
-
-            let output_state = self
-                .sim
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let id = if inputs.len() == 2 {
-                let wire_a = &self.sim.wires[inputs[0]];
-                let wire_b = &self.sim.wires[inputs[1]];
-                let gate = SmallComponent::new(SmallComponentKind::$gate {
-                    input_a: wire_a.state,
-                    input_b: wire_b.state,
-                }, output);
-                self.add_small_component(gate, &[output_state])
-            } else {
-                let inputs: SmallVec<_> = inputs
-                    .iter()
-                    .map(|&input| self.sim.wires[input].state)
-                    .collect();
-                let gate = $wide_gate::new(inputs, output_state, output);
-                self.add_large_component(gate, &[output_state])
-            }?;
-
-            for &input in inputs {
-                self.mark_driving(input, id);
-            }
-            self.mark_driver(output, output_state);
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_shifter {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            input_a: WireId,
-            input_b: WireId,
-            output: WireId,
-        ) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input_a, output])?;
-            let Some(shamnt_width) = NonZeroU8::new(width.clog2()) else {
-                return Err(AddComponentError::WireWidthIncompatible);
-            };
-            self.check_wire_width_eq(input_b, shamnt_width)?;
-
-            let output_state = self
-                .sim
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire_a = &self.sim.wires[input_a];
-            let wire_b = &self.sim.wires[input_b];
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input_a: wire_a.state,
-                input_b: wire_b.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input_a, id);
-            self.mark_driving(input_b, id);
-            self.mark_driver(output, output_state);
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_horizontal_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
-
-            let output_state = self
-                .sim
-                .output_states
-                .push(NonZeroU8::MIN)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire = &self.sim.wires[input];
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input: wire.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input, id);
-            self.mark_driver(output, output_state);
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_comparator {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            input_a: WireId,
-            input_b: WireId,
-            output: WireId,
-        ) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input_a, input_b])?;
-            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
-
-            let output_state = self
-                .sim
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire_a = &self.sim.wires[input_a];
-            let wire_b = &self.sim.wires[input_b];
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input_a: wire_a.state,
-                input_b: wire_b.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input_a, id);
-            self.mark_driving(input_b, id);
-            self.mark_driver(output, output_state);
-
-            Ok(id)
-        }
-    };
-}
-
 /// Defines the polarity of a clock signal
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClockPolarity {
@@ -1114,15 +967,264 @@ impl ClockPolarity {
 #[allow(missing_debug_implementations)]
 #[repr(transparent)]
 pub struct SimulatorBuilder {
-    sim: Simulator,
+    data: SimulatorData,
 }
 
 impl Default for SimulatorBuilder {
+    #[inline]
     fn default() -> Self {
         Self {
-            sim: Simulator::new(),
+            data: SimulatorData::new(),
         }
     }
+}
+
+impl SimulatorBuilder {
+    /// Gets the width of a wire
+    #[inline]
+    pub fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
+        self.data.get_wire_width(wire)
+    }
+
+    /// Drives a wire to a certain state without needing a component
+    ///
+    /// Any unspecified bits will be set to Z
+    #[inline]
+    pub fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
+        self.data.set_wire_drive(wire, new_drive)
+    }
+
+    /// Gets the current drive of a wire
+    #[inline]
+    pub fn get_wire_drive(&self, wire: WireId) -> LogicState {
+        self.data.get_wire_drive(wire)
+    }
+
+    /// Gets a components data
+    #[inline]
+    pub fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
+        self.data.get_component_data(component)
+    }
+
+    /// Gets a components data mutably
+    #[inline]
+    pub fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
+        self.data.get_component_data_mut(component)
+    }
+
+    /// Collects statistics of the simulation
+    #[inline]
+    pub fn stats(&self) -> SimulationStats {
+        self.data.stats()
+    }
+
+    /// Writes the simulation graph into a Graphviz DOT file
+    #[cfg(feature = "dot-export")]
+    #[inline]
+    pub fn write_dot<W: std::io::Write>(
+        &self,
+        writer: W,
+        show_states: bool,
+    ) -> std::io::Result<()> {
+        self.data.write_dot(writer, show_states)
+    }
+}
+
+macro_rules! def_add_binary_gate {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(
+            &mut self,
+            input_a: WireId,
+            input_b: WireId,
+            output: WireId,
+        ) -> AddComponentResult {
+            let width = self.check_wire_widths_match(&[input_a, input_b, output])?;
+
+            let output_state = self.data
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire_a = &self.data.wires[input_a];
+            let wire_b = &self.data.wires[input_b];
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
+                input_a: wire_a.state,
+                input_b: wire_b.state,
+            }, output);
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input_a, id);
+            self.mark_driving(input_b, id);
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
+}
+
+macro_rules! def_add_unary_gate {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+            let width = self.check_wire_widths_match(&[input, output])?;
+
+            let output_state = self.data
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire = &self.data.wires[input];
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
+                input: wire.state,
+            }, output);
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input, id);
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
+}
+
+macro_rules! def_add_wide_gate {
+    ($(#[$attr:meta])* $name:ident, $gate:ident, $wide_gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
+            if inputs.len() < 2 {
+                return Err(AddComponentError::TooFewInputs);
+            }
+
+            let width = self.check_wire_widths_match(inputs)?;
+            self.check_wire_widths_match(&[inputs[0], output])?;
+
+            let output_state = self.data
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let id = if inputs.len() == 2 {
+                let wire_a = &self.data.wires[inputs[0]];
+                let wire_b = &self.data.wires[inputs[1]];
+                let gate = SmallComponent::new(SmallComponentKind::$gate {
+                    input_a: wire_a.state,
+                    input_b: wire_b.state,
+                }, output);
+                self.add_small_component(gate, &[output_state])
+            } else {
+                let inputs: SmallVec<_> = inputs
+                    .iter()
+                    .map(|&input| self.data.wires[input].state)
+                    .collect();
+                let gate = $wide_gate::new(inputs, output_state, output);
+                self.add_large_component(gate, &[output_state])
+            }?;
+
+            for &input in inputs {
+                self.mark_driving(input, id);
+            }
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
+}
+
+macro_rules! def_add_shifter {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(
+            &mut self,
+            input_a: WireId,
+            input_b: WireId,
+            output: WireId,
+        ) -> AddComponentResult {
+            let width = self.check_wire_widths_match(&[input_a, output])?;
+            let Some(shamnt_width) = NonZeroU8::new(width.clog2()) else {
+                return Err(AddComponentError::WireWidthIncompatible);
+            };
+            self.check_wire_width_eq(input_b, shamnt_width)?;
+
+            let output_state = self.data
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire_a = &self.data.wires[input_a];
+            let wire_b = &self.data.wires[input_b];
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
+                input_a: wire_a.state,
+                input_b: wire_b.state,
+            }, output);
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input_a, id);
+            self.mark_driving(input_b, id);
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
+}
+
+macro_rules! def_add_horizontal_gate {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
+
+            let output_state = self.data
+                .output_states
+                .push(NonZeroU8::MIN)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire = &self.data.wires[input];
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
+                input: wire.state,
+            }, output);
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input, id);
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
+}
+
+macro_rules! def_add_comparator {
+    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
+        $(#[$attr])*
+        pub fn $name(
+            &mut self,
+            input_a: WireId,
+            input_b: WireId,
+            output: WireId,
+        ) -> AddComponentResult {
+            let width = self.check_wire_widths_match(&[input_a, input_b])?;
+            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
+
+            let output_state = self.data
+                .output_states
+                .push(width)
+                .ok_or(AddComponentError::TooManyComponents)?;
+
+            let wire_a = &self.data.wires[input_a];
+            let wire_b = &self.data.wires[input_b];
+            let gate = SmallComponent::new(SmallComponentKind::$gate {
+                input_a: wire_a.state,
+                input_b: wire_b.state,
+            }, output);
+            let id = self.add_small_component(gate, &[output_state])?;
+
+            self.mark_driving(input_a, id);
+            self.mark_driving(input_b, id);
+            self.mark_driver(output, output_state);
+
+            Ok(id)
+        }
+    };
 }
 
 impl SimulatorBuilder {
@@ -1130,79 +1232,32 @@ impl SimulatorBuilder {
     ///
     /// Returns `None` if the memory limit for wires has been reached
     pub fn add_wire(&mut self, width: NonZeroU8) -> Option<WireId> {
-        let state_id = self.sim.wire_states.push(width)?;
+        let state_id = self.data.wire_states.push(width)?;
         let wire = Wire::new(state_id);
-        self.sim.wires.push(wire)
-    }
-
-    /// Gets the width of a wire
-    #[inline]
-    pub fn get_wire_width(&self, wire: WireId) -> NonZeroU8 {
-        self.sim.get_wire_width(wire)
-    }
-
-    /// Drives a wire to a certain state without needing a component
-    #[inline]
-    pub fn set_wire_drive(&mut self, wire: WireId, new_drive: &LogicState) {
-        self.sim.set_wire_drive(wire, new_drive)
-    }
-
-    /// Gets the current drive of a wire
-    #[inline]
-    pub fn get_wire_drive(&self, wire: WireId) -> LogicState {
-        self.sim.get_wire_drive(wire)
-    }
-
-    /// Gets a components data
-    #[inline]
-    pub fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
-        self.sim.get_component_data(component)
-    }
-
-    /// Gets a components data mutably
-    #[inline]
-    pub fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
-        self.sim.get_component_data_mut(component)
+        self.data.wires.push(wire)
     }
 
     /// Assigns a name to a wire
     #[inline]
     pub fn set_wire_name<S: Into<Rc<str>>>(&mut self, wire: WireId, name: S) {
-        self.sim.set_wire_name(wire, name);
+        self.data.wire_names.insert(wire, name.into());
     }
 
     /// Assigns a name to a component
     #[inline]
     pub fn set_component_name<S: Into<Rc<str>>>(&mut self, component: ComponentId, name: S) {
-        self.sim.set_component_name(component, name);
-    }
-
-    /// Collects statistics of the simulation
-    #[inline]
-    pub fn stats(&self) -> SimulationStats {
-        self.sim.stats()
-    }
-
-    /// Writes the simulation graph into a Graphviz DOT file
-    #[inline]
-    #[cfg(feature = "dot-export")]
-    pub fn write_dot<W: std::io::Write>(
-        &self,
-        writer: W,
-        show_states: bool,
-    ) -> std::io::Result<()> {
-        self.sim.write_dot(writer, show_states)
+        self.data.component_names.insert(component, name.into());
     }
 
     #[inline]
     fn mark_driving(&mut self, wire: WireId, component: ComponentId) {
-        let wire = &mut self.sim.wires[wire];
+        let wire = &mut self.data.wires[wire];
         wire.add_driving(component);
     }
 
     #[inline]
     fn mark_driver(&mut self, wire: WireId, output_state: OutputStateId) {
-        let wire = &mut self.sim.wires[wire];
+        let wire = &mut self.data.wires[wire];
         wire.drivers.push(output_state);
     }
 
@@ -1242,7 +1297,7 @@ impl SimulatorBuilder {
         let output_atom_count = outputs
             .iter()
             .copied()
-            .map(|id| self.sim.output_states.get_width(id))
+            .map(|id| self.data.output_states.get_width(id))
             .map(|width| width.safe_div_ceil(Atom::BITS))
             .map(NonZeroU8::get)
             .map(u16::from)
@@ -1255,7 +1310,7 @@ impl SimulatorBuilder {
             output_atom_count,
         );
 
-        self.sim
+        self.data
             .components
             .push(component)
             .ok_or(AddComponentError::TooManyComponents)
@@ -1269,7 +1324,7 @@ impl SimulatorBuilder {
         let output_atom_count = outputs
             .iter()
             .copied()
-            .map(|id| self.sim.output_states.get_width(id))
+            .map(|id| self.data.output_states.get_width(id))
             .map(|width| width.safe_div_ceil(Atom::BITS))
             .map(NonZeroU8::get)
             .map(u16::from)
@@ -1282,7 +1337,7 @@ impl SimulatorBuilder {
             output_atom_count,
         );
 
-        self.sim
+        self.data
             .components
             .push(component)
             .ok_or(AddComponentError::TooManyComponents)
@@ -1377,13 +1432,13 @@ impl SimulatorBuilder {
         self.check_wire_width_eq(enable, NonZeroU8::MIN)?;
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire = &self.sim.wires[input];
-        let wire_en = &self.sim.wires[enable];
+        let wire = &self.data.wires[input];
+        let wire_en = &self.data.wires[enable];
         let gate = SmallComponent::new(
             SmallComponentKind::Buffer {
                 input: wire.state,
@@ -1414,12 +1469,12 @@ impl SimulatorBuilder {
         }
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(output_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire = &self.sim.wires[input];
+        let wire = &self.data.wires[input];
         let gate = SmallComponent::new(
             SmallComponentKind::Slice {
                 input: wire.state,
@@ -1453,14 +1508,14 @@ impl SimulatorBuilder {
         }
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(output_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
         let input_states: SmallVec<_> = inputs
             .iter()
-            .map(|&input| self.sim.wires[input].state)
+            .map(|&input| self.data.wires[input].state)
             .collect();
         let gate = Merge::new(input_states, output_state, output);
         let id = self.add_large_component(gate, &[output_state])?;
@@ -1487,20 +1542,20 @@ impl SimulatorBuilder {
         self.check_wire_width_eq(carry_out, NonZeroU8::MIN)?;
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
         let cout_state = self
-            .sim
+            .data
             .output_states
             .push(NonZeroU8::MIN)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire_a = &self.sim.wires[input_a];
-        let wire_b = &self.sim.wires[input_b];
-        let wire_cin = &self.sim.wires[carry_in];
+        let wire_a = &self.data.wires[input_a];
+        let wire_b = &self.data.wires[input_b];
+        let wire_cin = &self.data.wires[carry_in];
         let gate = Adder::new(
             wire_a.state,
             wire_b.state,
@@ -1546,16 +1601,16 @@ impl SimulatorBuilder {
         self.check_wire_widths_match(&[inputs[0], output])?;
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
         let wires: SmallVec<_> = inputs
             .iter()
-            .map(|&wire| self.sim.wires[wire].state)
+            .map(|&wire| self.data.wires[wire].state)
             .collect();
-        let wire_sel = &self.sim.wires[select];
+        let wire_sel = &self.data.wires[select];
         let mux = Multiplexer::new(wires, wire_sel.state, output_state, output);
         let id = self.add_large_component(mux, &[output_state])?;
 
@@ -1589,14 +1644,14 @@ impl SimulatorBuilder {
         }
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(output_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
         let wires: SmallVec<_> = inputs
             .iter()
-            .map(|&input| self.sim.wires[input].state)
+            .map(|&input| self.data.wires[input].state)
             .collect();
         let decoder = PriorityDecoder::new(wires, output_state, output);
         let id = self.add_large_component(decoder, &[output_state])?;
@@ -1623,14 +1678,14 @@ impl SimulatorBuilder {
         self.check_wire_width_eq(clock, NonZeroU8::MIN)?;
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire_din = &self.sim.wires[data_in];
-        let wire_en = &self.sim.wires[enable];
-        let wire_clk = &self.sim.wires[clock];
+        let wire_din = &self.data.wires[data_in];
+        let wire_en = &self.data.wires[enable];
+        let wire_clk = &self.data.wires[clock];
         let register = Register::new(
             width,
             wire_din.state,
@@ -1756,12 +1811,12 @@ impl SimulatorBuilder {
         }
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(output_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire = &self.sim.wires[input];
+        let wire = &self.data.wires[input];
         let extend =
             SmallComponent::new(SmallComponentKind::ZeroExtend { input: wire.state }, output);
         let id = self.add_small_component(extend, &[output_state])?;
@@ -1782,12 +1837,12 @@ impl SimulatorBuilder {
         }
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(output_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire = &self.sim.wires[input];
+        let wire = &self.data.wires[input];
         let extend =
             SmallComponent::new(SmallComponentKind::SignExtend { input: wire.state }, output);
         let id = self.add_small_component(extend, &[output_state])?;
@@ -1815,16 +1870,16 @@ impl SimulatorBuilder {
         self.check_wire_width_eq(clock, NonZeroU8::MIN)?;
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(data_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire_waddr = &self.sim.wires[write_addr];
-        let wire_din = &self.sim.wires[data_in];
-        let wire_raddr = &self.sim.wires[read_addr];
-        let wire_w = &self.sim.wires[write];
-        let wire_clk = &self.sim.wires[clock];
+        let wire_waddr = &self.data.wires[write_addr];
+        let wire_din = &self.data.wires[data_in];
+        let wire_raddr = &self.data.wires[read_addr];
+        let wire_w = &self.data.wires[write];
+        let wire_clk = &self.data.wires[clock];
         let ram = Ram::new(
             wire_waddr.state,
             wire_din.state,
@@ -1855,12 +1910,12 @@ impl SimulatorBuilder {
         let data_width = self.get_wire_width(data);
 
         let output_state = self
-            .sim
+            .data
             .output_states
             .push(data_width)
             .ok_or(AddComponentError::TooManyComponents)?;
 
-        let wire_addr = &self.sim.wires[addr];
+        let wire_addr = &self.data.wires[addr];
         let rom = Rom::new(wire_addr.state, output_state, data, addr_width, data_width);
         let id = self.add_large_component(rom, &[output_state])?;
 
@@ -1881,12 +1936,51 @@ impl SimulatorBuilder {
 
     /// Creates the simulator
     pub fn build(mut self) -> Simulator {
-        self.sim.wires.shrink_to_fit();
-        self.sim.wire_states.shrink_to_fit();
+        self.data.wires.shrink_to_fit();
+        self.data.wire_states.shrink_to_fit();
 
-        self.sim.components.shrink_to_fit();
-        self.sim.output_states.shrink_to_fit();
+        self.data.components.shrink_to_fit();
+        self.data.output_states.shrink_to_fit();
 
-        self.sim
+        Simulator {
+            data: self.data,
+            vcd: std::io::sink(),
+        }
+    }
+}
+
+#[cfg(feature = "tracing")]
+mod tracing;
+#[cfg(feature = "tracing")]
+pub use tracing::Timescale;
+
+#[cfg(feature = "tracing")]
+impl SimulatorBuilder {
+    /// Creates the simulator and attaches VCD tracing
+    pub fn build_with_trace<VCD: std::io::Write>(
+        mut self,
+        mut vcd: VCD,
+        timescale: Timescale,
+    ) -> std::io::Result<Simulator<VCD>> {
+        self.data.wires.shrink_to_fit();
+        self.data.wire_states.shrink_to_fit();
+
+        self.data.components.shrink_to_fit();
+        self.data.output_states.shrink_to_fit();
+
+        tracing::write_vcd_header(&self.data, &mut vcd, timescale)?;
+
+        Ok(Simulator {
+            data: self.data,
+            vcd,
+        })
+    }
+}
+
+#[cfg(feature = "tracing")]
+impl<VCD: std::io::Write> Simulator<VCD> {
+    /// Traces the current state of the simulation
+    pub fn trace(&mut self, time: u64) -> std::io::Result<()> {
+        tracing::trace_vcd(&self.data, &mut self.vcd, time)
     }
 }
