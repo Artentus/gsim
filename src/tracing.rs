@@ -130,7 +130,7 @@ pub(crate) fn trace_vcd<VCD: std::io::Write>(
         if wire_width > NonZeroU8::MIN {
             writeln!(vcd, "b{} W{ident}", wire_state.display_string(wire_width))?;
         } else {
-            writeln!(vcd, "{} W{ident}", wire_state.get_bit_state(0))?;
+            writeln!(vcd, "{}W{ident}", wire_state.get_bit_state(0))?;
         }
     }
 
