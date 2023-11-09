@@ -102,14 +102,7 @@ pub(crate) fn write_vcd_header<VCD: std::io::Write>(
         let wire_name = wire_name.cow_replace(char::is_whitespace, "_");
         let wire_width = data.get_wire_width(wire_id);
         let ident = wire_id.to_u32();
-        if wire_width > NonZeroU8::MIN {
-            writeln!(
-                vcd,
-                "    $var wire {wire_width} W{ident} {wire_name}[{wire_width}] $end",
-            )?;
-        } else {
-            writeln!(vcd, "    $var wire {wire_width} W{ident} {wire_name} $end")?;
-        }
+        writeln!(vcd, "    $var wire {wire_width} W{ident} {wire_name} $end")?;
     }
     writeln!(vcd, "$upscope $end")?;
     writeln!(vcd, "$enddefinitions $end")?;
