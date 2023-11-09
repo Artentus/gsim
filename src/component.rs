@@ -461,16 +461,39 @@ impl SmallComponent {
     }
 }
 
-#[repr(transparent)]
-pub struct MemoryCell<'a> {
-    mem: &'a mut [Atom],
+pub trait Mutability {
+    type Ref<'a, T: ?Sized>: std::ops::Deref<Target = T>
+    where
+        T: 'a;
 }
 
-impl MemoryCell<'_> {
+pub enum Immutable {}
+impl Mutability for Immutable {
+    type Ref<'a, T: ?Sized> = &'a T where T: 'a;
+}
+
+pub enum Mutable {}
+impl Mutability for Mutable {
+    type Ref<'a, T: ?Sized> = &'a mut T where T: 'a;
+}
+
+pub struct MemoryCell<'a, M: Mutability> {
+    width: NonZeroU8,
+    mem: M::Ref<'a, [Atom]>,
+}
+
+impl<M: Mutability> MemoryCell<'_, M> {
+    #[inline]
+    pub fn width(&self) -> NonZeroU8 {
+        self.width
+    }
+
     pub fn read(&self) -> LogicState {
         LogicState(LogicStateRepr::Bits(self.mem.iter().copied().collect()))
     }
+}
 
+impl MemoryCell<'_, Mutable> {
     pub fn write(&mut self, value: &LogicState) {
         for (dst, src) in self.mem.iter_mut().zip(value.iter_atoms()) {
             *dst = src;
@@ -478,12 +501,17 @@ impl MemoryCell<'_> {
     }
 }
 
-#[repr(transparent)]
-pub struct MemoryBlock<'a> {
-    mem: &'a mut Memory,
+pub struct MemoryBlock<'a, M: Mutability> {
+    width: NonZeroU8,
+    mem: M::Ref<'a, Memory>,
 }
 
-impl MemoryBlock<'_> {
+impl<M: Mutability> MemoryBlock<'_, M> {
+    #[inline]
+    pub fn width(&self) -> NonZeroU8 {
+        self.width
+    }
+
     #[inline]
     pub fn len(&self) -> usize {
         self.mem.len()
@@ -493,7 +521,9 @@ impl MemoryBlock<'_> {
     pub fn read(&self, addr: usize) -> LogicState {
         self.mem.read(addr)
     }
+}
 
+impl MemoryBlock<'_, Mutable> {
     #[inline]
     pub fn write(&mut self, addr: usize, value: &LogicState) {
         self.mem.write(addr, value.iter_atoms());
@@ -501,13 +531,13 @@ impl MemoryBlock<'_> {
 }
 
 /// Contains mutable data of a component
-pub enum ComponentData<'a> {
+pub enum ComponentData<'a, M: Mutability> {
     /// The component does not store any data
     None,
     /// The component stores a single register value
-    RegisterValue(MemoryCell<'a>),
+    RegisterValue(MemoryCell<'a, M>),
     /// The component stores a memory block
-    MemoryBlock(MemoryBlock<'a>),
+    MemoryBlock(MemoryBlock<'a, M>),
 }
 
 pub(crate) trait LargeComponent: Send + Sync {
@@ -522,7 +552,11 @@ pub(crate) trait LargeComponent: Send + Sync {
 
     fn alloc_size(&self) -> AllocationSize;
 
-    fn get_data(&mut self) -> ComponentData<'_> {
+    fn get_data(&self) -> ComponentData<'_, Immutable> {
+        ComponentData::None
+    }
+
+    fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
         ComponentData::None
     }
 
@@ -1068,6 +1102,7 @@ impl ClockTrigger {
 }
 
 pub(crate) struct Register {
+    width: NonZeroU8,
     data_in: WireStateId,
     data_out: OutputStateId,
     data_out_wire: WireId,
@@ -1091,6 +1126,7 @@ impl Register {
         let atom_count = width.safe_div_ceil(Atom::BITS).get() as usize;
 
         Self {
+            width,
             data_in,
             data_out,
             data_out_wire,
@@ -1126,8 +1162,16 @@ impl LargeComponent for Register {
         AllocationSize(std::mem::size_of::<Self>())
     }
 
-    fn get_data(&mut self) -> ComponentData<'_> {
+    fn get_data(&self) -> ComponentData<'_, Immutable> {
         ComponentData::RegisterValue(MemoryCell {
+            width: self.width,
+            mem: &self.data,
+        })
+    }
+
+    fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
+        ComponentData::RegisterValue(MemoryCell {
+            width: self.width,
             mem: &mut self.data,
         })
     }
@@ -1382,6 +1426,7 @@ pub(crate) struct Ram {
     write: WireStateId,
     clock: WireStateId,
     clock_trigger: ClockTrigger,
+    data_width: NonZeroU8,
     mem: Memory,
 }
 
@@ -1408,6 +1453,7 @@ impl Ram {
             write,
             clock,
             clock_trigger: ClockTrigger::new(clock_polarity),
+            data_width,
             mem: Memory::new(data_width, 1usize << addr_width.get()),
         }
     }
@@ -1439,8 +1485,18 @@ impl LargeComponent for Ram {
         AllocationSize(std::mem::size_of::<Self>())
     }
 
-    fn get_data(&mut self) -> ComponentData<'_> {
-        ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
+    fn get_data(&self) -> ComponentData<'_, Immutable> {
+        ComponentData::MemoryBlock(MemoryBlock {
+            width: self.data_width,
+            mem: &self.mem,
+        })
+    }
+
+    fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
+        ComponentData::MemoryBlock(MemoryBlock {
+            width: self.data_width,
+            mem: &mut self.mem,
+        })
     }
 
     fn reset(&mut self) {
@@ -1523,6 +1579,7 @@ pub(crate) struct Rom {
     addr: WireStateId,
     data: OutputStateId,
     data_wire: WireId,
+    data_width: NonZeroU8,
     mem: Memory,
 }
 
@@ -1539,6 +1596,7 @@ impl Rom {
             addr,
             data,
             data_wire,
+            data_width,
             mem: Memory::new(data_width, 1usize << addr_width.get()),
         }
     }
@@ -1564,8 +1622,18 @@ impl LargeComponent for Rom {
         AllocationSize(std::mem::size_of::<Self>())
     }
 
-    fn get_data(&mut self) -> ComponentData<'_> {
-        ComponentData::MemoryBlock(MemoryBlock { mem: &mut self.mem })
+    fn get_data(&self) -> ComponentData<'_, Immutable> {
+        ComponentData::MemoryBlock(MemoryBlock {
+            width: self.data_width,
+            mem: &self.mem,
+        })
+    }
+
+    fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
+        ComponentData::MemoryBlock(MemoryBlock {
+            width: self.data_width,
+            mem: &mut self.mem,
+        })
     }
 
     fn reset(&mut self) {}
@@ -1702,10 +1770,18 @@ impl Component {
     }
 
     #[inline]
-    pub(crate) fn get_data(&mut self) -> ComponentData<'_> {
+    pub(crate) fn get_data(&self) -> ComponentData<'_, Immutable> {
         match self {
             Self::Small { .. } => ComponentData::None,
             Self::Large { component, .. } => component.get_data(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
+        match self {
+            Self::Small { .. } => ComponentData::None,
+            Self::Large { component, .. } => component.get_data_mut(),
         }
     }
 

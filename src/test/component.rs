@@ -2343,7 +2343,7 @@ fn rom() {
     let data = builder.add_wire(WIDTH_32).unwrap();
     let rom = builder.add_rom(addr, data).unwrap();
 
-    let mem_data = builder.get_component_data(rom);
+    let mem_data = builder.get_component_data_mut(rom);
     let ComponentData::MemoryBlock(mut mem_data) = mem_data else {
         panic!("[TEST] invalid component data");
     };

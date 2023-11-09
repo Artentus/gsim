@@ -513,8 +513,13 @@ impl Simulator {
     }
 
     /// Gets a components data
-    pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
+    pub fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
         self.components[component].get_data()
+    }
+
+    /// Gets a components data mutably
+    pub fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
+        self.components[component].get_data_mut()
     }
 
     /// Assigns a name to a wire
@@ -553,7 +558,7 @@ impl Simulator {
     pub fn write_dot<W: std::io::Write>(
         &self,
         mut writer: W,
-        show_wire_states: bool,
+        show_states: bool,
     ) -> std::io::Result<()> {
         writeln!(writer, "digraph {{")?;
 
@@ -563,7 +568,7 @@ impl Simulator {
             let width = self.wire_states.get_width(wire.state);
             wire_state_map.insert(wire.state, wire_id);
 
-            if show_wire_states {
+            if show_states {
                 if let Some(name) = self.wire_names.get(&wire_id) {
                     writeln!(
                         writer,
@@ -623,12 +628,29 @@ impl Simulator {
                 .map(|name| &**name)
                 .unwrap_or_else(|| component.node_name());
 
-            writeln!(
-                writer,
-                "    C{}[label=\"{}\" shape=\"box\"];",
-                component_id.to_u32(),
-                name,
-            )?;
+            'print: {
+                if show_states {
+                    let data = self.get_component_data(component_id);
+                    if let ComponentData::RegisterValue(value) = data {
+                        writeln!(
+                            writer,
+                            "    C{}[label=\"{} ({})\" shape=\"box\"];",
+                            component_id.to_u32(),
+                            name,
+                            value.read().display_string(value.width()),
+                        )?;
+
+                        break 'print;
+                    }
+                }
+
+                writeln!(
+                    writer,
+                    "    C{}[label=\"{}\" shape=\"box\"];",
+                    component_id.to_u32(),
+                    name,
+                )?;
+            }
         }
 
         for wire_id in self.wires.ids() {
@@ -1133,8 +1155,14 @@ impl SimulatorBuilder {
 
     /// Gets a components data
     #[inline]
-    pub fn get_component_data(&mut self, component: ComponentId) -> ComponentData<'_> {
+    pub fn get_component_data(&self, component: ComponentId) -> ComponentData<'_, Immutable> {
         self.sim.get_component_data(component)
+    }
+
+    /// Gets a components data mutably
+    #[inline]
+    pub fn get_component_data_mut(&mut self, component: ComponentId) -> ComponentData<'_, Mutable> {
+        self.sim.get_component_data_mut(component)
     }
 
     /// Assigns a name to a wire
@@ -1161,9 +1189,9 @@ impl SimulatorBuilder {
     pub fn write_dot<W: std::io::Write>(
         &self,
         writer: W,
-        show_wire_states: bool,
+        show_states: bool,
     ) -> std::io::Result<()> {
-        self.sim.write_dot(writer, show_wire_states)
+        self.sim.write_dot(writer, show_states)
     }
 
     #[inline]
