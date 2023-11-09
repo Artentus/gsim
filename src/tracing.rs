@@ -114,7 +114,7 @@ pub(crate) fn write_vcd_header<VCD: std::io::Write>(
     writeln!(vcd, "$upscope $end")?;
     writeln!(vcd, "$enddefinitions $end")?;
 
-    vcd.flush()
+    Ok(())
 }
 
 pub(crate) fn trace_vcd<VCD: std::io::Write>(
@@ -134,5 +134,5 @@ pub(crate) fn trace_vcd<VCD: std::io::Write>(
         }
     }
 
-    vcd.flush()
+    Ok(())
 }
