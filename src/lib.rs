@@ -44,6 +44,7 @@
 extern crate static_assertions;
 
 mod component;
+mod ffi;
 mod id_lists;
 mod id_vec;
 pub mod import;
@@ -938,9 +939,9 @@ impl<VCD: std::io::Write> Simulator<VCD> {
 pub enum ClockPolarity {
     /// The clock will trigger on a rising edge
     #[default]
-    Rising,
+    Rising = 1,
     /// The clock will trigger on a falling edge
-    Falling,
+    Falling = 0,
 }
 
 impl ClockPolarity {
@@ -1021,12 +1022,8 @@ impl SimulatorBuilder {
     /// Writes the simulation graph into a Graphviz DOT file
     #[cfg(feature = "dot-export")]
     #[inline]
-    pub fn write_dot<W: std::io::Write>(
-        &self,
-        writer: W,
-        show_states: bool,
-    ) -> std::io::Result<()> {
-        self.data.write_dot(writer, show_states)
+    pub fn write_dot<W: std::io::Write>(&self, writer: W) -> std::io::Result<()> {
+        self.data.write_dot(writer, false)
     }
 }
 

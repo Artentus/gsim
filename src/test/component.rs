@@ -2328,6 +2328,7 @@ fn ram() {
         assert!(
             mem_data
                 .read(test_data.read_addr as usize)
+                .unwrap()
                 .eq(&output_state, WIDTH_32),
             "[TEST {i}] memory data differs from output",
         );
@@ -2348,10 +2349,10 @@ fn rom() {
         panic!("[TEST] invalid component data");
     };
 
-    mem_data.write(0, &LogicState::from_int(1));
-    mem_data.write(1, &LogicState::from_int(2));
-    mem_data.write(2, &LogicState::from_int(3));
-    mem_data.write(3, &LogicState::from_int(4));
+    mem_data.write(0, &LogicState::from_int(1)).unwrap();
+    mem_data.write(1, &LogicState::from_int(2)).unwrap();
+    mem_data.write(2, &LogicState::from_int(3)).unwrap();
+    mem_data.write(3, &LogicState::from_int(4)).unwrap();
 
     let mut sim = builder.build();
 

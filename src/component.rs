@@ -518,15 +518,15 @@ impl<M: Mutability> MemoryBlock<'_, M> {
     }
 
     #[inline]
-    pub fn read(&self, addr: usize) -> LogicState {
+    pub fn read(&self, addr: usize) -> Option<LogicState> {
         self.mem.read(addr)
     }
 }
 
 impl MemoryBlock<'_, Mutable> {
     #[inline]
-    pub fn write(&mut self, addr: usize, value: &LogicState) {
-        self.mem.write(addr, value.iter_atoms());
+    pub fn write(&mut self, addr: usize, value: &LogicState) -> Result<(), ()> {
+        self.mem.write(addr, value.iter_atoms()).ok_or(())
     }
 }
 
@@ -1272,30 +1272,33 @@ impl Memory {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn read(&self, addr: usize) -> LogicState {
+    fn read(&self, addr: usize) -> Option<LogicState> {
         let (state, valid) = match self {
             Self::U8(atoms) => {
-                let [state, valid] = atoms[addr];
+                let &[state, valid] = atoms.get(addr)?;
                 (state as u32, valid as u32)
             }
             Self::U16(atoms) => {
-                let [state, valid] = atoms[addr];
+                let &[state, valid] = atoms.get(addr)?;
                 (state as u32, valid as u32)
             }
             Self::U32(atoms) => {
-                let [state, valid] = atoms[addr];
+                let &[state, valid] = atoms.get(addr)?;
                 (state as u32, valid as u32)
             }
             Self::Big { atom_width, atoms } => {
                 let start = addr * (atom_width.get() as usize);
                 let end = start + (atom_width.get() as usize);
-                let slice = &atoms[start..end];
-                return LogicState(LogicStateRepr::Bits(slice.iter().copied().collect()));
+                let &slice = &atoms.get(start..end)?;
+
+                return Some(LogicState(LogicStateRepr::Bits(
+                    slice.iter().copied().collect(),
+                )));
             }
         };
 
         let value = Atom::from_state_valid(state, valid);
-        LogicState(LogicStateRepr::Bits(smallvec![value]))
+        Some(LogicState(LogicStateRepr::Bits(smallvec![value])))
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -1326,29 +1329,34 @@ impl Memory {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn write(&mut self, addr: usize, mut value: impl Iterator<Item = Atom>) {
+    fn write(&mut self, addr: usize, mut value: impl Iterator<Item = Atom>) -> Option<()> {
         match self {
             Self::U8(atoms) => {
                 let (state, valid) = value.next().unwrap().to_state_valid();
-                atoms[addr] = [state as u8, valid as u8];
+                let atom = atoms.get_mut(addr)?;
+                *atom = [state as u8, valid as u8];
             }
             Self::U16(atoms) => {
                 let (state, valid) = value.next().unwrap().to_state_valid();
-                atoms[addr] = [state as u16, valid as u16];
+                let atom = atoms.get_mut(addr)?;
+                *atom = [state as u16, valid as u16];
             }
             Self::U32(atoms) => {
                 let (state, valid) = value.next().unwrap().to_state_valid();
-                atoms[addr] = [state as u32, valid as u32];
+                let atom = atoms.get_mut(addr)?;
+                *atom = [state as u32, valid as u32];
             }
             Self::Big { atom_width, atoms } => {
                 let start = addr * (atom_width.get() as usize);
                 let end = start + (atom_width.get() as usize);
-                let slice = &mut atoms[start..end];
+                let slice = atoms.get_mut(start..end)?;
                 for (dst, src) in izip!(slice, value) {
                     *dst = src;
                 }
             }
         }
+
+        Some(())
     }
 
     #[allow(clippy::unnecessary_cast)]
@@ -1522,12 +1530,14 @@ impl LargeComponent for Ram {
                 match write {
                     LogicBitState::HighZ | LogicBitState::Undefined => {
                         let data_iter = std::iter::repeat(Atom::UNDEFINED);
-                        self.mem.write(write_addr, data_iter);
+                        let result = self.mem.write(write_addr, data_iter);
+                        debug_assert!(result.is_some());
                     }
                     LogicBitState::Logic0 => (),
                     LogicBitState::Logic1 => {
                         let data_iter = data_in.iter().copied().map(Atom::high_z_to_undefined);
-                        self.mem.write(write_addr, data_iter);
+                        let result = self.mem.write(write_addr, data_iter);
+                        debug_assert!(result.is_some());
                     }
                 }
             } else {

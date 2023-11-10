@@ -367,6 +367,12 @@ impl YosysModuleImporter {
         }
     }
 
+    /// Creates a Yosys module importer from a stream containing JSON data
+    pub fn from_json_reader<R: std::io::Read>(reader: R) -> serde_json::Result<Self> {
+        let netlist: Netlist = serde_json::from_reader(reader)?;
+        Ok(Self::preprocess(netlist))
+    }
+
     /// Creates a Yosys module importer from a slice containing JSON data
     pub fn from_json_slice(slice: &[u8]) -> serde_json::Result<Self> {
         let netlist: Netlist = serde_json::from_slice(slice)?;
@@ -464,7 +470,9 @@ fn add_wire(
 
         builder.set_wire_drive(
             bus_wire,
-            &LogicState::from_bits(&drive).undefined_to_logic_0(),
+            &LogicState::from_bits(&drive)
+                .unwrap()
+                .undefined_to_logic_0(),
         );
     }
 
@@ -677,7 +685,7 @@ impl WireMap {
                             // We didn't find any more bits that are part of this slice, so add it to the list
                             slices.push(Slice::Value {
                                 width: NonZeroU8::new(bits.len() as u8).unwrap(),
-                                drive: LogicState::from_bits(&bits),
+                                drive: LogicState::from_bits(&bits).unwrap(),
                             });
                         }
                         Signal::Net(first_net_id) => {

@@ -688,11 +688,8 @@ impl LogicState {
     /// Creates a new logic state from the given bits (most significant bit first)
     ///
     /// Bits past the specified ones are implicitely assigned the value Z
-    pub fn from_bits(bits: &[LogicBitState]) -> Self {
-        let width = u8::try_from(bits.len())
-            .ok()
-            .and_then(NonZeroU8::new)
-            .expect("invalid bit width");
+    pub fn from_bits(bits: &[LogicBitState]) -> Option<Self> {
+        let width = u8::try_from(bits.len()).ok().and_then(NonZeroU8::new)?;
 
         let head_width = (width.get() % Atom::BITS.get()) as usize;
         let list_len = (width.get().div_ceil(Atom::BITS.get())) as usize;
@@ -718,7 +715,7 @@ impl LogicState {
         }
         debug_assert_eq!(chunks.remainder().len(), 0);
 
-        Self(LogicStateRepr::Bits(list))
+        Some(Self(LogicStateRepr::Bits(list)))
     }
 
     /// Constructs a logic state from a string of bits (most significant bit first)
@@ -734,10 +731,7 @@ impl LogicState {
     /// assert_eq!(state.display_string(NonZeroU8::new(4).unwrap()), "10XZ");
     /// ```
     pub fn parse(s: &str) -> Option<Self> {
-        let width = u8::try_from(s.len())
-            .ok()
-            .and_then(NonZeroU8::new)
-            .expect("invalid bit width");
+        let width = u8::try_from(s.len()).ok().and_then(NonZeroU8::new)?;
 
         if !s.is_ascii() {
             return None;
@@ -953,7 +947,10 @@ macro_rules! bits {
     (@BIT 0) => { $crate::LogicBitState::Logic0 };
     (@BIT 1) => { $crate::LogicBitState::Logic1 };
     ($($bit:tt),+) => {{
-        $crate::LogicState::from_bits(&[$($crate::bits!(@BIT $bit)),+])
+        const BITS: &'static [$crate::LogicBitState] = &[$($crate::bits!(@BIT $bit)),+];
+        const _ASSERT_MAX: usize = (u8::MAX as usize) - BITS.len();
+        const _ASSERT_MIN: usize = BITS.len() - 1;
+        $crate::LogicState::from_bits(BITS).unwrap()
     }}
 }
 

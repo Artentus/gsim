@@ -10,7 +10,7 @@ fn simple_gate() {
     builder.add_and_gate(&[a, b], o).unwrap();
 
     let mut dot = Vec::new();
-    builder.write_dot(&mut dot, false).unwrap();
+    builder.write_dot(&mut dot).unwrap();
     let dot = String::from_utf8(dot).unwrap();
 
     const EXPECTED: &str = include_str!(concat!(
