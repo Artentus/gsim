@@ -6,15 +6,15 @@
 pub mod yosys;
 
 use crate::{HashMap, WireId};
-use std::rc::Rc;
+use std::sync::Arc;
 
 /// The list of connections of an imported module
 #[derive(Debug, Default)]
 pub struct ModuleConnections {
     /// The inputs of the module
-    pub inputs: HashMap<Rc<str>, WireId>,
+    pub inputs: HashMap<Arc<str>, WireId>,
     /// The outputs of the module
-    pub outputs: HashMap<Rc<str>, WireId>,
+    pub outputs: HashMap<Arc<str>, WireId>,
 }
 
 /// Imports a module into a simulation

@@ -288,40 +288,6 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    simulator_begin_sim(simulator: *mut FfiSimulator) {
-        let simulator = cast_mut_ptr(simulator)?;
-        let result = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.begin_sim(),
-            #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.begin_sim(),
-        };
-
-        match result {
-            SimulationStepResult::Unchanged => Ok(ffi_status::UNCHANGED),
-            SimulationStepResult::Changed => Ok(ffi_status::CHANGED),
-            SimulationStepResult::Err(_) => Err(FfiError::Conflict),
-        }
-    }
-}
-
-ffi_fn! {
-    simulator_step_sim(simulator: *mut FfiSimulator) {
-        let simulator = cast_mut_ptr(simulator)?;
-        let result = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.step_sim(),
-            #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.step_sim(),
-        };
-
-        match result {
-            SimulationStepResult::Unchanged => Ok(ffi_status::UNCHANGED),
-            SimulationStepResult::Changed => Ok(ffi_status::CHANGED),
-            SimulationStepResult::Err(_) => Err(FfiError::Conflict),
-        }
-    }
-}
-
-ffi_fn! {
     simulator_run_sim(simulator: *mut FfiSimulator, max_steps: u64) {
         let simulator = cast_mut_ptr(simulator)?;
         let result = match simulator {

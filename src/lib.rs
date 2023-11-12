@@ -44,11 +44,16 @@
 extern crate static_assertions;
 
 mod component;
-mod ffi;
 mod id_lists;
 mod id_vec;
 pub mod import;
 mod logic;
+
+#[cfg(feature = "c-api")]
+mod ffi;
+
+#[cfg(feature = "python-bindings")]
+mod python_bindings;
 
 #[cfg(test)]
 mod test;
@@ -61,8 +66,7 @@ use logic::*;
 use smallvec::SmallVec;
 use std::num::NonZeroU8;
 use std::ops::{Add, AddAssign};
-use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub use component::ComponentData;
 pub use id_lists::{ComponentId, Id, WireId};
@@ -402,7 +406,7 @@ pub struct SimulationErrors {
 
 /// The result of a single simulation step
 #[derive(Debug, Clone)]
-pub enum SimulationStepResult {
+enum SimulationStepResult {
     /// The simulation did not change during this update
     Unchanged,
     /// The simulation changed during this update
@@ -453,8 +457,8 @@ struct SimulatorData {
     wire_update_queue: Vec<WireId>,
     component_update_queue: Vec<ComponentId>,
 
-    wire_names: HashMap<WireId, Rc<str>>,
-    component_names: HashMap<ComponentId, Rc<str>>,
+    wire_names: HashMap<WireId, Arc<str>>,
+    component_names: HashMap<ComponentId, Arc<str>>,
 }
 
 impl SimulatorData {
@@ -883,7 +887,7 @@ impl<VCD: std::io::Write> Simulator<VCD> {
     /// Begins simulating
     ///
     /// Must be called before any calls to `step_sim`
-    pub fn begin_sim(&mut self) -> SimulationStepResult {
+    fn begin_sim(&mut self) -> SimulationStepResult {
         // We have to perform the first update step on all nodes in the graph,
         // so we insert all IDs into the queues.
 
@@ -903,7 +907,7 @@ impl<VCD: std::io::Write> Simulator<VCD> {
     /// Performs one simulation step
     ///
     /// Must only be called after `begin_sim`
-    pub fn step_sim(&mut self) -> SimulationStepResult {
+    fn step_sim(&mut self) -> SimulationStepResult {
         match self.update_wires() {
             SimulationStepResult::Unchanged => SimulationStepResult::Unchanged,
             SimulationStepResult::Changed => self.update_components(),
@@ -1236,13 +1240,13 @@ impl SimulatorBuilder {
 
     /// Assigns a name to a wire
     #[inline]
-    pub fn set_wire_name<S: Into<Rc<str>>>(&mut self, wire: WireId, name: S) {
+    pub fn set_wire_name<S: Into<Arc<str>>>(&mut self, wire: WireId, name: S) {
         self.data.wire_names.insert(wire, name.into());
     }
 
     /// Assigns a name to a component
     #[inline]
-    pub fn set_component_name<S: Into<Rc<str>>>(&mut self, component: ComponentId, name: S) {
+    pub fn set_component_name<S: Into<Arc<str>>>(&mut self, component: ComponentId, name: S) {
         self.data.component_names.insert(component, name.into());
     }
 
@@ -1945,6 +1949,9 @@ impl SimulatorBuilder {
         }
     }
 }
+
+assert_impl_all!(SimulatorBuilder: Send);
+assert_impl_all!(Simulator: Send);
 
 #[cfg(feature = "tracing")]
 mod tracing;

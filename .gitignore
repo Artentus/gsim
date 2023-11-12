@@ -1,4 +1,6 @@
-/target
-/Cargo.lock
+target/
+.venv/
+Cargo.lock
 flamegraph.svg
 expanded.rs
+test.py

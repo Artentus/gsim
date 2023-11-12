@@ -7,9 +7,6 @@ use std::ptr::NonNull;
 mod ffi_status {
     pub const SUCCESS: i32 = 0;
 
-    pub const UNCHANGED: i32 = 0;
-    pub const CHANGED: i32 = 1;
-
     pub const MAX_STEPS_REACHED: i32 = 1;
 
     pub const FALSE: i32 = 0;

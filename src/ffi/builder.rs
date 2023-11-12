@@ -248,6 +248,8 @@ impl_add_wide_gate!(builder_add_xor_gate, add_xor_gate);
 impl_add_wide_gate!(builder_add_nand_gate, add_nand_gate);
 impl_add_wide_gate!(builder_add_nor_gate, add_nor_gate);
 impl_add_wide_gate!(builder_add_xnor_gate, add_xnor_gate);
+impl_add_wide_gate!(builder_add_merge, add_merge);
+impl_add_wide_gate!(builder_add_priority_decoder, add_priority_decoder);
 
 macro_rules! impl_add_binary_gate {
     ($name:ident, $inner_name:ident) => {
@@ -271,6 +273,7 @@ macro_rules! impl_add_binary_gate {
     };
 }
 
+impl_add_binary_gate!(builder_add_buffer, add_buffer);
 impl_add_binary_gate!(builder_add_add, add_add);
 impl_add_binary_gate!(builder_add_sub, add_sub);
 impl_add_binary_gate!(builder_add_left_shift, add_left_shift);
@@ -340,24 +343,6 @@ impl_add_unary_gate!(builder_add_zero_extend, add_zero_extend);
 impl_add_unary_gate!(builder_add_sign_extend, add_sign_extend);
 
 ffi_fn! {
-    builder_add_buffer(
-        builder: *mut SimulatorBuilder,
-        input: WireId,
-        enable: WireId,
-        output: WireId,
-        component: *mut ComponentId,
-    ) {
-        let builder = cast_mut_ptr(builder)?;
-        let component_outer = check_ptr(component)?;
-
-        let component_inner = builder.add_buffer(input, enable, output)?;
-        component_outer.as_ptr().write(component_inner);
-
-        Ok(ffi_status::SUCCESS)
-    }
-}
-
-ffi_fn! {
     builder_add_slice(
         builder: *mut SimulatorBuilder,
         input: WireId,
@@ -369,26 +354,6 @@ ffi_fn! {
         let component_outer = check_ptr(component)?;
 
         let component_inner = builder.add_slice(input, offset, output)?;
-        component_outer.as_ptr().write(component_inner);
-
-        Ok(ffi_status::SUCCESS)
-    }
-}
-
-ffi_fn! {
-    builder_add_merge(
-        builder: *mut SimulatorBuilder,
-        inputs: *const WireId,
-        input_len: usize,
-        output: WireId,
-        component: *mut ComponentId,
-    ) {
-        let builder = cast_mut_ptr(builder)?;
-        let inputs = check_ptr(inputs.cast_mut())?;
-        let inputs = std::slice::from_raw_parts(inputs.as_ptr().cast_const(), input_len);
-        let component_outer = check_ptr(component)?;
-
-        let component_inner = builder.add_merge(inputs, output)?;
         component_outer.as_ptr().write(component_inner);
 
         Ok(ffi_status::SUCCESS)
@@ -430,26 +395,6 @@ ffi_fn! {
         let component_outer = check_ptr(component)?;
 
         let component_inner = builder.add_multiplexer(inputs, select, output)?;
-        component_outer.as_ptr().write(component_inner);
-
-        Ok(ffi_status::SUCCESS)
-    }
-}
-
-ffi_fn! {
-    builder_add_priority_decoder(
-        builder: *mut SimulatorBuilder,
-        inputs: *const WireId,
-        input_len: usize,
-        output: WireId,
-        component: *mut ComponentId,
-    ) {
-        let builder = cast_mut_ptr(builder)?;
-        let inputs = check_ptr(inputs.cast_mut())?;
-        let inputs = std::slice::from_raw_parts(inputs.as_ptr().cast_const(), input_len);
-        let component_outer = check_ptr(component)?;
-
-        let component_inner = builder.add_priority_decoder(inputs, output)?;
         component_outer.as_ptr().write(component_inner);
 
         Ok(ffi_status::SUCCESS)
