@@ -486,9 +486,72 @@ ffi_fn! {
     }
 }
 
+#[repr(C)]
+struct PortList {
+    len: usize,
+    names: *const *const c_char,
+    wires: *const WireId,
+}
+
+impl PortList {
+    fn create(map: HashMap<Arc<str>, WireId>) -> Self {
+        let len = map.len();
+        let mut names = Vec::with_capacity(len);
+        let mut wires = Vec::with_capacity(len);
+        for (name, wire) in map {
+            let name = str::to_owned(&*name);
+            let name = CString::new(name).unwrap().into_raw().cast_const();
+            names.push(name);
+            wires.push(wire);
+        }
+
+        let names = Box::into_raw(names.into_boxed_slice());
+        let wires = Box::into_raw(wires.into_boxed_slice());
+
+        let names: *const *const c_char = names as _;
+        let wires: *const WireId = wires as _;
+
+        Self { len, names, wires }
+    }
+
+    unsafe fn free(self) -> Result<(), FfiError> {
+        let names = check_ptr(self.names.cast_mut())?.as_ptr().cast_const();
+        let wires = check_ptr(self.wires.cast_mut())?.as_ptr().cast_const();
+
+        let names = std::ptr::slice_from_raw_parts(names, self.len);
+        let wires = std::ptr::slice_from_raw_parts(wires, self.len);
+
+        let names = Box::from_raw(names.cast_mut());
+        let wires = Box::from_raw(wires.cast_mut());
+
+        for &name in names.iter() {
+            let name = check_ptr(name.cast_mut())?;
+            let name = CString::from_raw(name.as_ptr());
+            std::mem::drop(name);
+        }
+
+        std::mem::drop(names);
+        std::mem::drop(wires);
+
+        Ok(())
+    }
+}
+
+ffi_fn! {
+    port_list_free(port_list: PortList) {
+        port_list.free()?;
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
 #[cfg(feature = "yosys-import")]
 ffi_fn! {
-    builder_import_yosys_module(builder: *mut SimulatorBuilder, json_file: *const c_char) {
+    builder_import_yosys_module(
+        builder: *mut SimulatorBuilder,
+        json_file: *const c_char,
+        inputs: *mut PortList,
+        outputs: *mut PortList,
+    ) {
         use std::fs::File;
         use std::io::BufReader;
         use crate::import::yosys::YosysModuleImporter;
@@ -497,7 +560,10 @@ ffi_fn! {
         let json_file = BufReader::new(File::open(cast_c_str(json_file)?)?);
 
         let importer = YosysModuleImporter::from_json_reader(json_file)?;
-        builder.import_module(&importer)?;
+        let connections = builder.import_module(&importer)?;
+
+        inputs.write(PortList::create(connections.inputs));
+        outputs.write(PortList::create(connections.outputs));
 
         Ok(ffi_status::SUCCESS)
     }
