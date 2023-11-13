@@ -11,6 +11,11 @@ mod ffi_status {
 
     pub const FALSE: u32 = 0;
     pub const TRUE: u32 = 1;
+
+    pub const HIGH_Z: u32 = 0;
+    pub const UNDEFINED: u32 = 1;
+    pub const LOGIC_0: u32 = 2;
+    pub const LOGIC_1: u32 = 3;
 }
 
 #[allow(dead_code)]

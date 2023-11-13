@@ -66,14 +66,16 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    logic_state_get_bit_state(state: *const LogicState, bit_index: u8, bit_state: *mut LogicBitState) {
+    logic_state_get_bit_state(state: *const LogicState, bit_index: u8) {
         let state = cast_ptr(state)?;
-        let bit_state_outer = check_ptr(bit_state)?;
 
-        let bit_state_inner = state.get_bit_state(bit_index);
-        bit_state_outer.as_ptr().write(bit_state_inner);
-
-        Ok(ffi_status::SUCCESS)
+        let bit_state = state.get_bit_state(bit_index);
+        match bit_state {
+            LogicBitState::HighZ => Ok(ffi_status::HIGH_Z),
+            LogicBitState::Undefined => Ok(ffi_status::UNDEFINED),
+            LogicBitState::Logic0 => Ok(ffi_status::LOGIC_0),
+            LogicBitState::Logic1 => Ok(ffi_status::LOGIC_1),
+        }
     }
 }
 
