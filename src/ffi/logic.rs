@@ -45,6 +45,27 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    logic_state_clone(state: *const LogicState, clone: *mut *const LogicState) {
+        let clone_outer = check_ptr(clone)?;
+
+        if std::ptr::eq(state, HIGH_Z)
+            || std::ptr::eq(state, UNDEFINED)
+            || std::ptr::eq(state, LOGIC_0)
+            || std::ptr::eq(state, LOGIC_1)
+        {
+            clone_outer.as_ptr().write(state);
+            return Ok(ffi_status::SUCCESS);
+        }
+
+        let state = cast_ptr(state)?;
+        let clone_inner = Box::into_raw(Box::new(state.clone())).cast_const();
+        clone_outer.as_ptr().write(clone_inner);
+
+        return Ok(ffi_status::SUCCESS);
+    }
+}
+
+ffi_fn! {
     logic_state_get_bit_state(state: *const LogicState, bit_index: u8, bit_state: *mut LogicBitState) {
         let state = cast_ptr(state)?;
         let bit_state_outer = check_ptr(bit_state)?;
