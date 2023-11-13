@@ -40,8 +40,8 @@ enum FfiError {
     InvalidComponentId = -0x0002_0003,
 
     // Import errors
-    MalformedFormat = 0x0003_0001,
-    Unsupported     = 0x0003_0002,
+    MalformedFormat = -0x0003_0001,
+    Unsupported     = -0x0003_0002,
 }
 
 impl From<std::str::Utf8Error> for FfiError {
