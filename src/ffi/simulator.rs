@@ -313,7 +313,7 @@ ffi_fn! {
             #[cfg(feature = "tracing")]
             FfiSimulator::Trace(simulator) => simulator.trace(time)?,
         }
-        
+
         Ok(ffi_status::SUCCESS)
     }
 }

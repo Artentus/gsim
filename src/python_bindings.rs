@@ -262,6 +262,7 @@ impl PyLogicState {
     }
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[pyclass(name = "ClockPolarity")]
 enum PyClockPolarity {
     RISING = 1,

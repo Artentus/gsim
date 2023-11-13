@@ -1612,8 +1612,8 @@ impl SimulatorBuilder {
         let total_input_width = inputs
             .iter()
             .map(|&input| self.get_wire_width(input).map(NonZeroU8::get))
-            .fold(Ok(0u8), |a, b| {
-                a?.checked_add(b?)
+            .try_fold(0u8, |a, b| {
+                a.checked_add(b?)
                     .ok_or(AddComponentError::WireWidthIncompatible)
             })?;
         if total_input_width != output_width.get() {
