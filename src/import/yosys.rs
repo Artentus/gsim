@@ -468,12 +468,14 @@ fn add_wire(
             }
         }
 
-        builder.set_wire_drive(
-            bus_wire,
-            &LogicState::from_bits(&drive)
-                .unwrap()
-                .undefined_to_logic_0(),
-        );
+        builder
+            .set_wire_drive(
+                bus_wire,
+                &LogicState::from_bits(&drive)
+                    .unwrap()
+                    .undefined_to_logic_0(),
+            )
+            .unwrap();
     }
 
     Ok(bus_wire)
@@ -522,8 +524,10 @@ impl WireMap {
             .add_wire(width)
             .ok_or(YosysModuleImportError::ResourceLimitReached)?;
         drive = drive.undefined_to_logic_0();
-        builder.set_wire_drive(wire, &drive);
-        builder.set_wire_name(wire, drive.display_string(width));
+        builder.set_wire_drive(wire, &drive).unwrap();
+        builder
+            .set_wire_name(wire, drive.display_string(width))
+            .unwrap();
         Ok(wire)
     }
 
@@ -575,9 +579,11 @@ impl WireMap {
             if all_values {
                 // All of the bits are values, not nets, so this is not a bus
                 let bus_wire = add_wire(bits, Some(direction), builder)?;
-                let width = builder.get_wire_width(bus_wire);
-                let drive = builder.get_wire_drive(bus_wire);
-                builder.set_wire_name(bus_wire, drive.display_string(width));
+                let width = builder.get_wire_width(bus_wire).unwrap();
+                let drive = builder.get_wire_drive(bus_wire).unwrap();
+                builder
+                    .set_wire_name(bus_wire, drive.display_string(width))
+                    .unwrap();
                 Ok(bus_wire)
             } else {
                 let all_nets_invalid = bits
@@ -663,7 +669,7 @@ impl WireMap {
                 }
 
                 let dst = fixup.bus_wire;
-                let dst_width = builder.get_wire_width(dst);
+                let dst_width = builder.get_wire_width(dst).unwrap();
                 debug_assert_eq!(dst_width.get() as usize, fixup.bits.len());
 
                 let mut slices = Vec::new();
@@ -771,7 +777,7 @@ impl WireMap {
                 }
 
                 let src = fixup.bus_wire;
-                let src_width = builder.get_wire_width(src);
+                let src_width = builder.get_wire_width(src).unwrap();
                 debug_assert_eq!(src_width.get() as usize, fixup.bits.len());
 
                 let mut slices = Vec::new();
@@ -830,7 +836,7 @@ impl WireMap {
                 {
                     debug_assert_eq!(src_end - src_start, dst_end - dst_start);
                     let slice_width = NonZeroU8::new(src_end - src_start + 1).unwrap();
-                    let dst_width = builder.get_wire_width(dst);
+                    let dst_width = builder.get_wire_width(dst).unwrap();
 
                     if slice_width == dst_width {
                         debug_assert_eq!(dst_start, 0);
@@ -918,13 +924,17 @@ impl ModuleImporter for YosysModuleImporter {
                     let port_wire =
                         wire_map.get_bus_wire(&port.bits, BusDirection::Write, builder)?;
                     connections.inputs.insert(Arc::clone(port_name), port_wire);
-                    builder.set_wire_name(port_wire, Arc::clone(port_name));
+                    builder
+                        .set_wire_name(port_wire, Arc::clone(port_name))
+                        .unwrap();
                 }
                 PortDirection::Output => {
                     let port_wire =
                         wire_map.get_bus_wire(&port.bits, BusDirection::Read, builder)?;
                     connections.outputs.insert(Arc::clone(port_name), port_wire);
-                    builder.set_wire_name(port_wire, Arc::clone(port_name));
+                    builder
+                        .set_wire_name(port_wire, Arc::clone(port_name))
+                        .unwrap();
                 }
                 PortDirection::InOut => {
                     return Err(YosysModuleImportError::InOutPort {
@@ -942,7 +952,9 @@ impl ModuleImporter for YosysModuleImporter {
             {
                 if let Some(bus_wire) = wire_map.add_named_bus(&opts.bits, builder)? {
                     if !opts.hide_name {
-                        builder.set_wire_name(bus_wire, Arc::clone(&opts.name));
+                        builder
+                            .set_wire_name(bus_wire, Arc::clone(&opts.name))
+                            .unwrap();
                     }
                 }
             }
@@ -1119,9 +1131,9 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let a_width = builder.get_wire_width(input_a);
-                    let b_width = builder.get_wire_width(input_b);
-                    let o_width = builder.get_wire_width(output);
+                    let a_width = builder.get_wire_width(input_a).unwrap();
+                    let b_width = builder.get_wire_width(input_b).unwrap();
+                    let o_width = builder.get_wire_width(output).unwrap();
                     let max_width = a_width.max(b_width).max(o_width);
 
                     let input_a = if a_width < max_width {
@@ -1194,9 +1206,9 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let a_width = builder.get_wire_width(input_a);
-                    let b_width = builder.get_wire_width(input_b);
-                    let o_width = builder.get_wire_width(output);
+                    let a_width = builder.get_wire_width(input_a).unwrap();
+                    let b_width = builder.get_wire_width(input_b).unwrap();
+                    let o_width = builder.get_wire_width(output).unwrap();
                     let max_width = a_width.max(b_width).max(o_width);
 
                     let input_a = if a_width < max_width {
@@ -1358,8 +1370,8 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let input_count = builder.get_wire_width(select).get() as usize;
-                    let input_width = builder.get_wire_width(input_a);
+                    let input_count = builder.get_wire_width(select).unwrap().get() as usize;
+                    let input_width = builder.get_wire_width(input_a).unwrap();
 
                     let mut decoder_inputs = Vec::with_capacity(input_count);
                     let mut mux_inputs = Vec::with_capacity(input_count + 1);
@@ -1575,19 +1587,21 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let data_width = builder.get_wire_width(data_in);
+                    let data_width = builder.get_wire_width(data_in).unwrap();
 
                     let reset_value = builder
                         .add_wire(data_width)
                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.set_wire_drive(
-                        reset_value,
-                        cell.parameters.get("SRST_VALUE").ok_or(
-                            YosysModuleImportError::InvalidCellParameters {
-                                cell_name: Arc::clone(cell_name),
-                            },
-                        )?,
-                    );
+                    builder
+                        .set_wire_drive(
+                            reset_value,
+                            cell.parameters.get("SRST_VALUE").ok_or(
+                                YosysModuleImportError::InvalidCellParameters {
+                                    cell_name: Arc::clone(cell_name),
+                                },
+                            )?,
+                        )
+                        .unwrap();
 
                     let mux_out = builder
                         .add_wire(data_width)
@@ -1666,19 +1680,21 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let data_width = builder.get_wire_width(data_in);
+                    let data_width = builder.get_wire_width(data_in).unwrap();
 
                     let reset_value = builder
                         .add_wire(data_width)
                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.set_wire_drive(
-                        reset_value,
-                        cell.parameters.get("SRST_VALUE").ok_or(
-                            YosysModuleImportError::InvalidCellParameters {
-                                cell_name: Arc::clone(cell_name),
-                            },
-                        )?,
-                    );
+                    builder
+                        .set_wire_drive(
+                            reset_value,
+                            cell.parameters.get("SRST_VALUE").ok_or(
+                                YosysModuleImportError::InvalidCellParameters {
+                                    cell_name: Arc::clone(cell_name),
+                                },
+                            )?,
+                        )
+                        .unwrap();
 
                     let mux_out = builder
                         .add_wire(data_width)
@@ -1764,19 +1780,21 @@ impl ModuleImporter for YosysModuleImporter {
                         }
                     })?;
 
-                    let data_width = builder.get_wire_width(data_in);
+                    let data_width = builder.get_wire_width(data_in).unwrap();
 
                     let reset_value = builder
                         .add_wire(data_width)
                         .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                    builder.set_wire_drive(
-                        reset_value,
-                        cell.parameters.get("SRST_VALUE").ok_or(
-                            YosysModuleImportError::InvalidCellParameters {
-                                cell_name: Arc::clone(cell_name),
-                            },
-                        )?,
-                    );
+                    builder
+                        .set_wire_drive(
+                            reset_value,
+                            cell.parameters.get("SRST_VALUE").ok_or(
+                                YosysModuleImportError::InvalidCellParameters {
+                                    cell_name: Arc::clone(cell_name),
+                                },
+                            )?,
+                        )
+                        .unwrap();
 
                     let mux_out = builder
                         .add_wire(data_width)
@@ -1824,14 +1842,18 @@ impl ModuleImporter for YosysModuleImporter {
                 }
             };
 
-            if let ComponentData::RegisterValue(mut reg) = builder.get_component_data_mut(cell_id) {
+            if let ComponentData::RegisterValue(mut reg) =
+                builder.get_component_data_mut(cell_id).unwrap()
+            {
                 // Yosys optimizes designs in a way that doesn't account for undefined register values,
                 // so we have to set registers to a valid logic state to make the design work in the simulation.
                 reg.write(&LogicState::LOGIC_0);
             }
 
             if !cell.hide_name {
-                builder.set_component_name(cell_id, Arc::clone(cell_name));
+                builder
+                    .set_component_name(cell_id, Arc::clone(cell_name))
+                    .unwrap();
             }
         }
 

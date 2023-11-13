@@ -83,9 +83,9 @@ ffi_fn! {
         let width_outer = check_ptr(width)?;
 
         let width_inner = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_wire_width(wire),
+            FfiSimulator::NoTrace(simulator) => simulator.get_wire_width(wire)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_wire_width(wire),
+            FfiSimulator::Trace(simulator) => simulator.get_wire_width(wire)?,
         };
         width_outer.as_ptr().write(width_inner.get());
 
@@ -98,9 +98,9 @@ ffi_fn! {
         let simulator = cast_mut_ptr(simulator)?;
         let drive = cast_ptr(drive)?;
         match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.set_wire_drive(wire, drive),
+            FfiSimulator::NoTrace(simulator) => simulator.set_wire_drive(wire, drive)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.set_wire_drive(wire, drive),
+            FfiSimulator::Trace(simulator) => simulator.set_wire_drive(wire, drive)?,
         }
 
         Ok(ffi_status::SUCCESS)
@@ -113,9 +113,9 @@ ffi_fn! {
         let drive_outer = check_ptr(drive)?;
 
         let drive_box = Box::new(match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_wire_drive(wire),
+            FfiSimulator::NoTrace(simulator) => simulator.get_wire_drive(wire)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_wire_drive(wire),
+            FfiSimulator::Trace(simulator) => simulator.get_wire_drive(wire)?,
         });
         let drive_inner = Box::into_raw(drive_box).cast_const();
         drive_outer.as_ptr().write(drive_inner);
@@ -130,9 +130,9 @@ ffi_fn! {
         let state_outer = check_ptr(state)?;
 
         let state_box = Box::new(match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_wire_state(wire),
+            FfiSimulator::NoTrace(simulator) => simulator.get_wire_state(wire)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_wire_state(wire),
+            FfiSimulator::Trace(simulator) => simulator.get_wire_state(wire)?,
         });
         let state_inner = Box::into_raw(state_box).cast_const();
         state_outer.as_ptr().write(state_inner);
@@ -153,9 +153,9 @@ ffi_fn! {
         let state_outer = check_ptr(state)?;
 
         let data = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(register),
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(register)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_component_data(register),
+            FfiSimulator::Trace(simulator) => simulator.get_component_data(register)?,
         };
         let ComponentData::RegisterValue(data) = data else {
             return Err(FfiError::InvalidComponentType);
@@ -180,9 +180,9 @@ ffi_fn! {
         let state = cast_ptr(state)?;
 
         let data = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_component_data_mut(register),
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_data_mut(register)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_component_data_mut(register),
+            FfiSimulator::Trace(simulator) => simulator.get_component_data_mut(register)?,
         };
         let ComponentData::RegisterValue(mut data) = data else {
             return Err(FfiError::InvalidComponentType);
@@ -204,9 +204,9 @@ ffi_fn! {
         let size_outer = check_ptr(size)?;
 
         let data = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(memory),
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(memory)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_component_data(memory),
+            FfiSimulator::Trace(simulator) => simulator.get_component_data(memory)?,
         };
         let ComponentData::MemoryBlock(data) = data else {
             return Err(FfiError::InvalidComponentType);
@@ -231,9 +231,9 @@ ffi_fn! {
         let state_outer = check_ptr(state)?;
 
         let data = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(memory),
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(memory)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_component_data(memory),
+            FfiSimulator::Trace(simulator) => simulator.get_component_data(memory)?,
         };
         let ComponentData::MemoryBlock(data) = data else {
             return Err(FfiError::InvalidComponentType);
@@ -259,9 +259,9 @@ ffi_fn! {
         let state = cast_ptr(state)?;
 
         let data = match simulator {
-            FfiSimulator::NoTrace(simulator) => simulator.get_component_data_mut(memory),
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_data_mut(memory)?,
             #[cfg(feature = "tracing")]
-            FfiSimulator::Trace(simulator) => simulator.get_component_data_mut(memory),
+            FfiSimulator::Trace(simulator) => simulator.get_component_data_mut(memory)?,
         };
         let ComponentData::MemoryBlock(mut data) = data else {
             return Err(FfiError::InvalidComponentType);

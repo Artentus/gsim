@@ -35,7 +35,7 @@ ffi_fn! {
         let builder = cast_ptr(builder)?;
         let width_outer = check_ptr(width)?;
 
-        let width_inner = builder.get_wire_width(wire);
+        let width_inner = builder.get_wire_width(wire)?;
         width_outer.as_ptr().write(width_inner.get());
 
         Ok(ffi_status::SUCCESS)
@@ -46,7 +46,7 @@ ffi_fn! {
     builder_set_wire_drive(builder: *mut SimulatorBuilder, wire: WireId, drive: *const LogicState) {
         let builder = cast_mut_ptr(builder)?;
         let drive = cast_ptr(drive)?;
-        builder.set_wire_drive(wire, drive);
+        builder.set_wire_drive(wire, drive)?;
 
         Ok(ffi_status::SUCCESS)
     }
@@ -57,7 +57,7 @@ ffi_fn! {
         let builder = cast_ptr(builder)?;
         let drive_outer = check_ptr(drive)?;
 
-        let drive_box = Box::new(builder.get_wire_drive(wire));
+        let drive_box = Box::new(builder.get_wire_drive(wire)?);
         let drive_inner = Box::into_raw(drive_box).cast_const();
         drive_outer.as_ptr().write(drive_inner);
 
@@ -76,7 +76,7 @@ ffi_fn! {
         let width_outer = check_ptr(width)?;
         let state_outer = check_ptr(state)?;
 
-        let data = builder.get_component_data(register);
+        let data = builder.get_component_data(register)?;
         let ComponentData::RegisterValue(data) = data else {
             return Err(FfiError::InvalidComponentType);
         };
@@ -99,7 +99,7 @@ ffi_fn! {
         let builder = cast_mut_ptr(builder)?;
         let state = cast_ptr(state)?;
 
-        let data = builder.get_component_data_mut(register);
+        let data = builder.get_component_data_mut(register)?;
         let ComponentData::RegisterValue(mut data) = data else {
             return Err(FfiError::InvalidComponentType);
         };
@@ -119,7 +119,7 @@ ffi_fn! {
         let builder = cast_ptr(builder)?;
         let size_outer = check_ptr(size)?;
 
-        let data = builder.get_component_data(memory);
+        let data = builder.get_component_data(memory)?;
         let ComponentData::MemoryBlock(data) = data else {
             return Err(FfiError::InvalidComponentType);
         };
@@ -142,7 +142,7 @@ ffi_fn! {
         let width_outer = check_ptr(width)?;
         let state_outer = check_ptr(state)?;
 
-        let data = builder.get_component_data(memory);
+        let data = builder.get_component_data(memory)?;
         let ComponentData::MemoryBlock(data) = data else {
             return Err(FfiError::InvalidComponentType);
         };
@@ -166,7 +166,7 @@ ffi_fn! {
         let builder = cast_mut_ptr(builder)?;
         let state = cast_ptr(state)?;
 
-        let data = builder.get_component_data_mut(memory);
+        let data = builder.get_component_data_mut(memory)?;
         let ComponentData::MemoryBlock(mut data) = data else {
             return Err(FfiError::InvalidComponentType);
         };
@@ -186,7 +186,7 @@ ffi_fn! {
     ) {
         let builder = cast_mut_ptr(builder)?;
         let name = cast_c_str(name)?;
-        builder.set_wire_name(wire, name);
+        builder.set_wire_name(wire, name)?;
 
         Ok(ffi_status::SUCCESS)
     }
@@ -200,7 +200,7 @@ ffi_fn! {
     ) {
         let builder = cast_mut_ptr(builder)?;
         let name = cast_c_str(name)?;
-        builder.set_component_name(component, name);
+        builder.set_component_name(component, name)?;
 
         Ok(ffi_status::SUCCESS)
     }
@@ -494,6 +494,7 @@ struct PortList {
 }
 
 impl PortList {
+    #[allow(dead_code)]
     fn create(map: HashMap<Arc<str>, WireId>) -> Self {
         let len = map.len();
         let mut names = Vec::with_capacity(len);

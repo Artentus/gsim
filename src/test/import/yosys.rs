@@ -17,7 +17,7 @@ fn test_yosys_import(
             .inputs
             .get(port_name)
             .expect(&format!("expected input port `{port_name}` to be present"));
-        let wire_width = builder.get_wire_width(wire);
+        let wire_width = builder.get_wire_width(wire).unwrap();
         assert_eq!(wire_width, port_width, "input port `{port_name}` has incorrect width;  expected: {port_width}  actual: {wire_width}");
     }
 
@@ -26,7 +26,7 @@ fn test_yosys_import(
             .outputs
             .get(port_name)
             .expect(&format!("expected output port `{port_name}` to be present"));
-        let wire_width = builder.get_wire_width(wire);
+        let wire_width = builder.get_wire_width(wire).unwrap();
         assert_eq!(wire_width, port_width, "output port `{port_name}` has incorrect width;  expected: {port_width}  actual: {wire_width}");
     }
 
@@ -161,27 +161,33 @@ fn program_counter() {
         sim.set_wire_drive(
             connections.inputs["data_in"],
             &LogicState::from_int(test_data.data_in),
-        );
+        )
+        .unwrap();
         sim.set_wire_drive(
             connections.inputs["inc"],
             &LogicState::from_int(test_data.inc),
-        );
+        )
+        .unwrap();
         sim.set_wire_drive(
             connections.inputs["load"],
             &LogicState::from_bool(test_data.load),
-        );
+        )
+        .unwrap();
         sim.set_wire_drive(
             connections.inputs["enable"],
             &LogicState::from_bool(test_data.enable),
-        );
+        )
+        .unwrap();
         sim.set_wire_drive(
             connections.inputs["reset"],
             &LogicState::from_bool(test_data.reset),
-        );
+        )
+        .unwrap();
         sim.set_wire_drive(
             connections.inputs["clk"],
             &LogicState::from_bool(test_data.clk),
-        );
+        )
+        .unwrap();
 
         match sim.run_sim(50) {
             SimulationRunResult::Ok => {}
@@ -189,8 +195,8 @@ fn program_counter() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let pc_next = sim.get_wire_state(connections.outputs["pc_next"]);
-        let pc_value = sim.get_wire_state(connections.outputs["pc_value"]);
+        let pc_next = sim.get_wire_state(connections.outputs["pc_next"]).unwrap();
+        let pc_value = sim.get_wire_state(connections.outputs["pc_value"]).unwrap();
 
         assert!(
             pc_next.eq(&test_data.pc_next, width),
@@ -280,9 +286,12 @@ fn proc_mux() {
     );
 
     for (i, test_data) in TEST_DATA.iter().enumerate() {
-        sim.set_wire_drive(connections.inputs["data_in"], &test_data.data);
-        sim.set_wire_drive(connections.inputs["select_0"], &test_data.select[0]);
-        sim.set_wire_drive(connections.inputs["select_1"], &test_data.select[1]);
+        sim.set_wire_drive(connections.inputs["data_in"], &test_data.data)
+            .unwrap();
+        sim.set_wire_drive(connections.inputs["select_0"], &test_data.select[0])
+            .unwrap();
+        sim.set_wire_drive(connections.inputs["select_1"], &test_data.select[1])
+            .unwrap();
 
         match sim.run_sim(4) {
             SimulationRunResult::Ok => {}
@@ -290,7 +299,7 @@ fn proc_mux() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output = sim.get_wire_state(connections.outputs["data_out"]);
+        let output = sim.get_wire_state(connections.outputs["data_out"]).unwrap();
 
         assert!(
             output.eq(&test_data.output, NonZeroU8::MIN),

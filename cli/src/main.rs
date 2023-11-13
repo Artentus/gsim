@@ -105,12 +105,12 @@ fn list(_args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     let mut name_width = NAME_HEADER.len();
     let mut state_width = STATE_HEADER.len();
     for (input_name, &input_wire) in &context.ports.inputs {
-        let input_width = context.sim.get_wire_width(input_wire);
+        let input_width = context.sim.get_wire_width(input_wire).unwrap();
         name_width = name_width.max(input_name.chars().count());
         state_width = state_width.max(input_width.get() as usize);
     }
     for (output_name, &output_wire) in &context.ports.outputs {
-        let output_width = context.sim.get_wire_width(output_wire);
+        let output_width = context.sim.get_wire_width(output_wire).unwrap();
         name_width = name_width.max(output_name.chars().count());
         state_width = state_width.max(output_width.get() as usize);
     }
@@ -125,8 +125,8 @@ fn list(_args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     ).unwrap();
 
     for (input_name, &input_wire) in &context.ports.inputs {
-        let input_width = context.sim.get_wire_width(input_wire);
-        let input_state = context.sim.get_wire_drive(input_wire);
+        let input_width = context.sim.get_wire_width(input_wire).unwrap();
+        let input_state = context.sim.get_wire_drive(input_wire).unwrap();
 
         writeln!(
             result,
@@ -140,8 +140,8 @@ fn list(_args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     }
 
     for (output_name, &output_wire) in &context.ports.outputs {
-        let output_width = context.sim.get_wire_width(output_wire);
-        let output_state = context.sim.get_wire_state(output_wire);
+        let output_width = context.sim.get_wire_width(output_wire).unwrap();
+        let output_state = context.sim.get_wire_state(output_wire).unwrap();
 
         writeln!(
             result,
@@ -183,9 +183,9 @@ fn drive(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
         return Ok(None);
     };
 
-    context.sim.set_wire_drive(input_wire, &new_state);
+    context.sim.set_wire_drive(input_wire, &new_state).unwrap();
 
-    let input_width = context.sim.get_wire_width(input_wire);
+    let input_width = context.sim.get_wire_width(input_wire).unwrap();
     let result = format!(
         "Driving input `{input_name}' to '{}'",
         new_state.display_string(input_width)
@@ -210,7 +210,7 @@ fn eval(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     let mut name_width = NAME_HEADER.len();
     let mut state_width = STATE_HEADER.len();
     for (output_name, &output_wire) in &context.ports.outputs {
-        let output_width = context.sim.get_wire_width(output_wire);
+        let output_width = context.sim.get_wire_width(output_wire).unwrap();
         name_width = name_width.max(output_name.chars().count());
         state_width = state_width.max(output_width.get() as usize);
     }
@@ -224,8 +224,8 @@ fn eval(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     .unwrap();
 
     for (output_name, &output_wire) in &context.ports.outputs {
-        let output_width = context.sim.get_wire_width(output_wire);
-        let output_state = context.sim.get_wire_state(output_wire);
+        let output_width = context.sim.get_wire_width(output_wire).unwrap();
+        let output_state = context.sim.get_wire_state(output_wire).unwrap();
 
         writeln!(
             result,

@@ -100,7 +100,7 @@ pub(crate) fn write_vcd_header<VCD: std::io::Write>(
     writeln!(vcd, "$scope module SIM $end")?;
     for (&wire_id, wire_name) in &data.wire_names {
         let wire_name = wire_name.cow_replace(char::is_whitespace, "_");
-        let wire_width = data.get_wire_width(wire_id);
+        let wire_width = data.get_wire_width(wire_id).unwrap();
         let ident = wire_id.to_u32();
         writeln!(vcd, "    $var wire {wire_width} W{ident} {wire_name} $end")?;
     }
@@ -117,8 +117,8 @@ pub(crate) fn trace_vcd<VCD: std::io::Write>(
 ) -> std::io::Result<()> {
     writeln!(vcd, "#{time}")?;
     for &wire_id in data.wire_names.keys() {
-        let wire_width = data.get_wire_width(wire_id);
-        let wire_state = data.get_wire_state(wire_id);
+        let wire_width = data.get_wire_width(wire_id).unwrap();
+        let wire_state = data.get_wire_state(wire_id).unwrap();
         let ident = wire_id.to_u32();
         if wire_width > NonZeroU8::MIN {
             writeln!(vcd, "b{} W{ident}", wire_state.display_string(wire_width))?;

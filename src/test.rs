@@ -47,8 +47,8 @@ fn test_binary_gate<F>(
     let mut sim = builder.build();
 
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input_a, &test_data.input_a);
-        sim.set_wire_drive(input_b, &test_data.input_b);
+        sim.set_wire_drive(input_a, &test_data.input_a).unwrap();
+        sim.set_wire_drive(input_b, &test_data.input_b).unwrap();
 
         match sim.run_sim(max_steps) {
             SimulationRunResult::Ok => {}
@@ -56,7 +56,7 @@ fn test_binary_gate<F>(
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, width),
@@ -82,8 +82,8 @@ where
     let mut sim = builder.build();
 
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input_a, &test_data.input_a);
-        sim.set_wire_drive(input_b, &test_data.input_b);
+        sim.set_wire_drive(input_a, &test_data.input_a).unwrap();
+        sim.set_wire_drive(input_b, &test_data.input_b).unwrap();
 
         match sim.run_sim(max_steps) {
             SimulationRunResult::Ok => {}
@@ -91,7 +91,7 @@ where
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, width),
@@ -112,8 +112,8 @@ fn test_binary_module(
     max_steps: u64,
 ) {
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input_a, &test_data.input_a);
-        sim.set_wire_drive(input_b, &test_data.input_b);
+        sim.set_wire_drive(input_a, &test_data.input_a).unwrap();
+        sim.set_wire_drive(input_b, &test_data.input_b).unwrap();
 
         match sim.run_sim(max_steps) {
             SimulationRunResult::Ok => {}
@@ -121,7 +121,7 @@ fn test_binary_module(
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, width),
@@ -170,7 +170,7 @@ fn test_unary_gate<F>(
     let mut sim = builder.build();
 
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input, &test_data.input);
+        sim.set_wire_drive(input, &test_data.input).unwrap();
 
         match sim.run_sim(max_steps) {
             SimulationRunResult::Ok => {}
@@ -178,7 +178,7 @@ fn test_unary_gate<F>(
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, width),
@@ -206,7 +206,7 @@ fn test_horizontal_gate<F>(
     let mut sim = builder.build();
 
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input, &test_data.input);
+        sim.set_wire_drive(input, &test_data.input).unwrap();
 
         match sim.run_sim(max_steps) {
             SimulationRunResult::Ok => {}
@@ -214,7 +214,7 @@ fn test_horizontal_gate<F>(
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, NonZeroU8::MIN),
@@ -257,7 +257,7 @@ where
             .iter()
             .map(|drive| {
                 let wire = builder.add_wire(width).unwrap();
-                builder.set_wire_drive(wire, drive);
+                builder.set_wire_drive(wire, drive).unwrap();
                 wire
             })
             .collect();
@@ -272,7 +272,7 @@ where
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, width),
@@ -315,8 +315,10 @@ where
 
     for a in 0..16 {
         for b in 0..16 {
-            sim.set_wire_drive(input_a, &LogicState::from_int(a));
-            sim.set_wire_drive(input_b, &LogicState::from_int(b));
+            sim.set_wire_drive(input_a, &LogicState::from_int(a))
+                .unwrap();
+            sim.set_wire_drive(input_b, &LogicState::from_int(b))
+                .unwrap();
 
             match sim.run_sim(2) {
                 SimulationRunResult::Ok => {}
@@ -327,7 +329,7 @@ where
             }
 
             let expected = LogicState::from_bool(compare_op(a, b));
-            let output_state = sim.get_wire_state(output);
+            let output_state = sim.get_wire_state(output).unwrap();
 
             assert!(
                 output_state.eq(&expected, NonZeroU8::MIN),
@@ -356,8 +358,10 @@ where
 
     for a in -8..8 {
         for b in -8..8 {
-            sim.set_wire_drive(input_a, &LogicState::from_int(a as u32));
-            sim.set_wire_drive(input_b, &LogicState::from_int(b as u32));
+            sim.set_wire_drive(input_a, &LogicState::from_int(a as u32))
+                .unwrap();
+            sim.set_wire_drive(input_b, &LogicState::from_int(b as u32))
+                .unwrap();
 
             match sim.run_sim(2) {
                 SimulationRunResult::Ok => {}
@@ -368,7 +372,7 @@ where
             }
 
             let expected = LogicState::from_bool(compare_op(a, b));
-            let output_state = sim.get_wire_state(output);
+            let output_state = sim.get_wire_state(output).unwrap();
 
             assert!(
                 output_state.eq(&expected, NonZeroU8::MIN),

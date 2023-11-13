@@ -21,7 +21,7 @@ fn generate_sim(first: bool) -> Simulator {
             2 => LogicState::LOGIC_1,
             _ => unreachable!(),
         };
-        builder.set_wire_drive(wire, &drive);
+        builder.set_wire_drive(wire, &drive).unwrap();
         wires.push(wire);
     }
 

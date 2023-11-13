@@ -741,8 +741,8 @@ fn buffer() {
         let mut sim = builder.build();
 
         for (i, test_data) in TEST_DATA.iter().enumerate() {
-            sim.set_wire_drive(input, &test_data.input_a);
-            sim.set_wire_drive(enable, &test_data.input_b);
+            sim.set_wire_drive(input, &test_data.input_a).unwrap();
+            sim.set_wire_drive(enable, &test_data.input_b).unwrap();
 
             match sim.run_sim(2) {
                 SimulationRunResult::Ok => {}
@@ -750,7 +750,7 @@ fn buffer() {
                 SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
             }
 
-            let output_state = sim.get_wire_state(output);
+            let output_state = sim.get_wire_state(output).unwrap();
 
             assert!(
                 output_state.eq(&test_data.output, width),
@@ -835,7 +835,7 @@ fn slice() {
 
         let mut sim = builder.build();
 
-        sim.set_wire_drive(input, &test_data.input);
+        sim.set_wire_drive(input, &test_data.input).unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -843,7 +843,7 @@ fn slice() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_1),
@@ -904,7 +904,7 @@ fn merge() {
             .iter()
             .map(|drive| {
                 let wire = builder.add_wire(WIDTH_1).unwrap();
-                builder.set_wire_drive(wire, drive);
+                builder.set_wire_drive(wire, drive).unwrap();
                 wire
             })
             .collect();
@@ -920,7 +920,7 @@ fn merge() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, output_width),
@@ -1208,9 +1208,9 @@ fn adder() {
     let mut sim = builder.build();
 
     for (i, test_data) in TEST_DATA_1.iter().enumerate() {
-        sim.set_wire_drive(input_a, &test_data.input_a);
-        sim.set_wire_drive(input_b, &test_data.input_b);
-        sim.set_wire_drive(carry_in, &test_data.carry_in);
+        sim.set_wire_drive(input_a, &test_data.input_a).unwrap();
+        sim.set_wire_drive(input_b, &test_data.input_b).unwrap();
+        sim.set_wire_drive(carry_in, &test_data.carry_in).unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -1218,8 +1218,8 @@ fn adder() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
-        let carry_out_state = sim.get_wire_state(carry_out);
+        let output_state = sim.get_wire_state(output).unwrap();
+        let carry_out_state = sim.get_wire_state(carry_out).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_32),
@@ -1302,9 +1302,9 @@ fn adder() {
     let mut sim = builder.build();
 
     for (i, test_data) in TEST_DATA_2.iter().enumerate() {
-        sim.set_wire_drive(input_a, &test_data.input_a);
-        sim.set_wire_drive(input_b, &test_data.input_b);
-        sim.set_wire_drive(carry_in, &test_data.carry_in);
+        sim.set_wire_drive(input_a, &test_data.input_a).unwrap();
+        sim.set_wire_drive(input_b, &test_data.input_b).unwrap();
+        sim.set_wire_drive(carry_in, &test_data.carry_in).unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -1312,8 +1312,8 @@ fn adder() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
-        let carry_out_state = sim.get_wire_state(carry_out);
+        let output_state = sim.get_wire_state(output).unwrap();
+        let carry_out_state = sim.get_wire_state(carry_out).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_16),
@@ -1392,14 +1392,14 @@ fn multiplexer() {
             .iter()
             .map(|drive| {
                 let wire = builder.add_wire(WIDTH_32).unwrap();
-                builder.set_wire_drive(wire, drive);
+                builder.set_wire_drive(wire, drive).unwrap();
                 wire
             })
             .collect();
         let select = builder
             .add_wire(NonZeroU8::new(inputs.len().ilog2() as u8).unwrap())
             .unwrap();
-        builder.set_wire_drive(select, &test_data.select);
+        builder.set_wire_drive(select, &test_data.select).unwrap();
         let output = builder.add_wire(WIDTH_32).unwrap();
         let _mux = builder.add_multiplexer(&inputs, select, output).unwrap();
 
@@ -1410,7 +1410,7 @@ fn multiplexer() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_32),
@@ -1544,7 +1544,7 @@ fn priority_decoder() {
             .iter()
             .map(|drive| {
                 let wire = builder.add_wire(WIDTH_1).unwrap();
-                builder.set_wire_drive(wire, drive);
+                builder.set_wire_drive(wire, drive).unwrap();
                 wire
             })
             .collect();
@@ -1559,7 +1559,7 @@ fn priority_decoder() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, output_width),
@@ -1639,9 +1639,11 @@ fn register() {
     ];
 
     for (i, test_data) in TEST_DATA.iter().enumerate() {
-        sim.set_wire_drive(data_in, &test_data.data_in);
-        sim.set_wire_drive(enable, &LogicState::from_bool(test_data.enable));
-        sim.set_wire_drive(clock, &LogicState::from_bool(test_data.clock));
+        sim.set_wire_drive(data_in, &test_data.data_in).unwrap();
+        sim.set_wire_drive(enable, &LogicState::from_bool(test_data.enable))
+            .unwrap();
+        sim.set_wire_drive(clock, &LogicState::from_bool(test_data.clock))
+            .unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -1649,7 +1651,7 @@ fn register() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(data_out);
+        let output_state = sim.get_wire_state(data_out).unwrap();
 
         assert!(
             output_state.eq(&test_data.data_out, WIDTH_32),
@@ -1658,7 +1660,7 @@ fn register() {
             output_state.display_string(WIDTH_32),
         );
 
-        let register_data = sim.get_component_data(register);
+        let register_data = sim.get_component_data(register).unwrap();
         let ComponentData::RegisterValue(register_data) = register_data else {
             panic!("[TEST {i}] invalid component data");
         };
@@ -2141,7 +2143,7 @@ fn zero_extend() {
     let mut sim = builder.build();
 
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input, &test_data.input);
+        sim.set_wire_drive(input, &test_data.input).unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -2149,7 +2151,7 @@ fn zero_extend() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_2),
@@ -2178,7 +2180,7 @@ fn sign_extend() {
     let mut sim = builder.build();
 
     for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input, &test_data.input);
+        sim.set_wire_drive(input, &test_data.input).unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -2186,7 +2188,7 @@ fn sign_extend() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(output);
+        let output_state = sim.get_wire_state(output).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_2),
@@ -2299,11 +2301,15 @@ fn ram() {
     ];
 
     for (i, test_data) in TEST_DATA.iter().enumerate() {
-        sim.set_wire_drive(write_addr, &LogicState::from_int(test_data.write_addr));
-        sim.set_wire_drive(data_in, &test_data.data_in);
-        sim.set_wire_drive(read_addr, &LogicState::from_int(test_data.read_addr));
-        sim.set_wire_drive(write, &LogicState::from_bool(test_data.write));
-        sim.set_wire_drive(clock, &LogicState::from_bool(test_data.clock));
+        sim.set_wire_drive(write_addr, &LogicState::from_int(test_data.write_addr))
+            .unwrap();
+        sim.set_wire_drive(data_in, &test_data.data_in).unwrap();
+        sim.set_wire_drive(read_addr, &LogicState::from_int(test_data.read_addr))
+            .unwrap();
+        sim.set_wire_drive(write, &LogicState::from_bool(test_data.write))
+            .unwrap();
+        sim.set_wire_drive(clock, &LogicState::from_bool(test_data.clock))
+            .unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -2311,7 +2317,7 @@ fn ram() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(data_out);
+        let output_state = sim.get_wire_state(data_out).unwrap();
 
         assert!(
             output_state.eq(&test_data.data_out, WIDTH_32),
@@ -2320,7 +2326,7 @@ fn ram() {
             output_state.display_string(WIDTH_32),
         );
 
-        let mem_data = sim.get_component_data(ram);
+        let mem_data = sim.get_component_data(ram).unwrap();
         let ComponentData::MemoryBlock(mem_data) = mem_data else {
             panic!("[TEST {i}] invalid component data");
         };
@@ -2344,7 +2350,7 @@ fn rom() {
     let data = builder.add_wire(WIDTH_32).unwrap();
     let rom = builder.add_rom(addr, data).unwrap();
 
-    let mem_data = builder.get_component_data_mut(rom);
+    let mem_data = builder.get_component_data_mut(rom).unwrap();
     let ComponentData::MemoryBlock(mut mem_data) = mem_data else {
         panic!("[TEST] invalid component data");
     };
@@ -2367,7 +2373,7 @@ fn rom() {
     ];
 
     for (i, test_data) in TEST_DATA.iter().enumerate() {
-        sim.set_wire_drive(addr, &test_data.input);
+        sim.set_wire_drive(addr, &test_data.input).unwrap();
 
         match sim.run_sim(2) {
             SimulationRunResult::Ok => {}
@@ -2375,7 +2381,7 @@ fn rom() {
             SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
         }
 
-        let output_state = sim.get_wire_state(data);
+        let output_state = sim.get_wire_state(data).unwrap();
 
         assert!(
             output_state.eq(&test_data.output, WIDTH_32),

@@ -35,7 +35,9 @@ enum FfiError {
     InvalidComponentType  = -0x0001_0007,
 
     // Simulator errors
-    Conflict = -0x0002_0001,
+    Conflict           = -0x0002_0001,
+    InvalidWireId      = -0x0002_0002,
+    InvalidComponentId = -0x0002_0003,
 
     // Import errors
     MalformedFormat = 0x0003_0001,
@@ -98,12 +100,27 @@ impl From<AddComponentError> for FfiError {
     fn from(value: AddComponentError) -> Self {
         match value {
             AddComponentError::TooManyComponents => Self::ResourceLimitReached,
+            AddComponentError::InvalidWireId => Self::InvalidWireId,
             AddComponentError::WireWidthMismatch => Self::WireWidthMismatch,
             AddComponentError::WireWidthIncompatible => Self::WireWidthIncompatible,
             AddComponentError::OffsetOutOfRange => Self::OffsetOutOfRange,
             AddComponentError::TooFewInputs => Self::TooFewInputs,
             AddComponentError::InvalidInputCount => Self::InvalidInputCount,
         }
+    }
+}
+
+impl From<InvalidWireIdError> for FfiError {
+    #[inline]
+    fn from(_: InvalidWireIdError) -> Self {
+        Self::InvalidWireId
+    }
+}
+
+impl From<InvalidComponentIdError> for FfiError {
+    #[inline]
+    fn from(_: InvalidComponentIdError) -> Self {
+        Self::InvalidComponentId
     }
 }
 

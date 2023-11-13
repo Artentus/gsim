@@ -16,6 +16,7 @@ name = "sim"
 harness = false
 
 [features]
+default = ["yosys-import", "dot-export", "tracing"]
 yosys-import = ["serde", "dep:serde_json", "dep:indexmap"]
 dot-export = []
 tracing = ["dep:chrono", "dep:cow-utils"]

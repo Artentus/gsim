@@ -22,6 +22,20 @@ create_exception!(
 
 create_exception!(
     gsim,
+    InvalidWireIdError,
+    PyException,
+    "Wire ID is not part of the simulation."
+);
+
+create_exception!(
+    gsim,
+    InvalidComponentIdError,
+    PyException,
+    "Component ID is not part of the simulation."
+);
+
+create_exception!(
+    gsim,
     WireWidthMismatchError,
     PyException,
     "Wire widths didn't match."
@@ -89,6 +103,32 @@ create_exception!(
     PyException,
     "Netgraph is not supported."
 );
+
+impl From<AddComponentError> for PyErr {
+    fn from(err: AddComponentError) -> Self {
+        match err {
+            AddComponentError::TooManyComponents => ResourceLimitReachedError::new_err(()),
+            AddComponentError::InvalidWireId => InvalidWireIdError::new_err(()),
+            AddComponentError::WireWidthMismatch => WireWidthMismatchError::new_err(()),
+            AddComponentError::WireWidthIncompatible => WireWidthIncompatibleError::new_err(()),
+            AddComponentError::OffsetOutOfRange => OffsetOutOfRangeError::new_err(()),
+            AddComponentError::TooFewInputs => TooFewInputsError::new_err(()),
+            AddComponentError::InvalidInputCount => InvalidInputCountError::new_err(()),
+        }
+    }
+}
+
+impl From<crate::InvalidWireIdError> for PyErr {
+    fn from(_: crate::InvalidWireIdError) -> Self {
+        InvalidWireIdError::new_err(())
+    }
+}
+
+impl From<crate::InvalidComponentIdError> for PyErr {
+    fn from(_: crate::InvalidComponentIdError) -> Self {
+        InvalidComponentIdError::new_err(())
+    }
+}
 
 macro_rules! def_py_id {
     ($name:ident($id:ident), $py_name:literal) => {
@@ -284,31 +324,31 @@ impl PySimulator {
         })
     }
 
-    fn get_wire_width(&self, wire: &PyWireId) -> u8 {
-        with_simulator!(self.0, simulator => simulator.get_wire_width(wire.0).get())
+    fn get_wire_width(&self, wire: &PyWireId) -> PyResult<u8> {
+        with_simulator!(self.0, simulator => Ok(simulator.get_wire_width(wire.0)?.get()))
     }
 
-    fn set_wire_drive(&mut self, wire: &PyWireId, new_drive: &PyLogicState) {
-        with_simulator!(self.0, mut simulator => simulator.set_wire_drive(wire.0, &new_drive.state));
+    fn set_wire_drive(&mut self, wire: &PyWireId, new_drive: &PyLogicState) -> PyResult<()> {
+        with_simulator!(self.0, mut simulator => Ok(simulator.set_wire_drive(wire.0, &new_drive.state)?))
     }
 
-    fn get_wire_drive(&self, wire: &PyWireId) -> PyLogicState {
-        with_simulator!(self.0, simulator => PyLogicState {
-            width: simulator.get_wire_width(wire.0),
-            state: simulator.get_wire_drive(wire.0),
-        })
+    fn get_wire_drive(&self, wire: &PyWireId) -> PyResult<PyLogicState> {
+        with_simulator!(self.0, simulator => Ok(PyLogicState {
+            width: simulator.get_wire_width(wire.0)?,
+            state: simulator.get_wire_drive(wire.0)?,
+        }))
     }
 
-    fn get_wire_state(&self, wire: &PyWireId) -> PyLogicState {
-        with_simulator!(self.0, simulator => PyLogicState {
-            width: simulator.get_wire_width(wire.0),
-            state: simulator.get_wire_state(wire.0),
-        })
+    fn get_wire_state(&self, wire: &PyWireId) -> PyResult<PyLogicState> {
+        with_simulator!(self.0, simulator => Ok(PyLogicState {
+            width: simulator.get_wire_width(wire.0)?,
+            state: simulator.get_wire_state(wire.0)?,
+        }))
     }
 
     fn read_register_state(&self, register: &PyComponentId) -> PyResult<PyLogicState> {
         with_simulator!(self.0, simulator => {
-            let data = simulator.get_component_data(register.0);
+            let data = simulator.get_component_data(register.0)?;
             if let ComponentData::RegisterValue(data) = data {
                 Ok(PyLogicState {
                     width: data.width(),
@@ -326,7 +366,7 @@ impl PySimulator {
         state: &PyLogicState,
     ) -> PyResult<()> {
         with_simulator!(self.0, mut simulator => {
-            let data = simulator.get_component_data_mut(register.0);
+            let data = simulator.get_component_data_mut(register.0)?;
             if let ComponentData::RegisterValue(mut data) = data {
                 data.write(&state.state);
                 Ok(())
@@ -338,7 +378,7 @@ impl PySimulator {
 
     fn get_memory_size(&self, register: &PyComponentId) -> PyResult<usize> {
         with_simulator!(self.0, simulator => {
-            let data = simulator.get_component_data(register.0);
+            let data = simulator.get_component_data(register.0)?;
             if let ComponentData::MemoryBlock(data) = data {
                 Ok(data.len())
             } else {
@@ -349,7 +389,7 @@ impl PySimulator {
 
     fn read_memory_state(&self, register: &PyComponentId, addr: usize) -> PyResult<PyLogicState> {
         with_simulator!(self.0, simulator => {
-            let data = simulator.get_component_data(register.0);
+            let data = simulator.get_component_data(register.0)?;
             if let ComponentData::MemoryBlock(data) = data {
                 Ok(PyLogicState {
                     width: data.width(),
@@ -368,7 +408,7 @@ impl PySimulator {
         state: &PyLogicState,
     ) -> PyResult<()> {
         with_simulator!(self.0, mut simulator => {
-            let data = simulator.get_component_data_mut(register.0);
+            let data = simulator.get_component_data_mut(register.0)?;
             if let ComponentData::MemoryBlock(mut data) = data {
                 data.write(addr, &state.state).map_err(|_| PyIndexError::new_err(()))
             } else {
@@ -393,9 +433,12 @@ impl PySimulator {
     }
 }
 
+#[allow(dead_code)]
 type PyPortMap = std::collections::HashMap<String, PyWireId>;
+#[allow(dead_code)]
 type PyModuleConnections = (PyPortMap, PyPortMap);
 
+#[allow(dead_code)]
 fn convert_module_connections(
     connections: crate::import::ModuleConnections,
 ) -> PyModuleConnections {
@@ -412,19 +455,6 @@ fn convert_module_connections(
         .collect();
 
     (inputs, outputs)
-}
-
-impl From<AddComponentError> for PyErr {
-    fn from(err: AddComponentError) -> Self {
-        match err {
-            AddComponentError::TooManyComponents => ResourceLimitReachedError::new_err(()),
-            AddComponentError::WireWidthMismatch => WireWidthMismatchError::new_err(()),
-            AddComponentError::WireWidthIncompatible => WireWidthIncompatibleError::new_err(()),
-            AddComponentError::OffsetOutOfRange => OffsetOutOfRangeError::new_err(()),
-            AddComponentError::TooFewInputs => TooFewInputsError::new_err(()),
-            AddComponentError::InvalidInputCount => InvalidInputCountError::new_err(()),
-        }
-    }
 }
 
 #[pyclass(name = "SimulatorBuilder")]
@@ -465,25 +495,25 @@ impl PySimulatorBuilder {
 
     fn get_wire_width(&self, wire: &PyWireId) -> PyResult<u8> {
         let builder = get_builder(self)?;
-        Ok(builder.get_wire_width(wire.0).get())
+        Ok(builder.get_wire_width(wire.0)?.get())
     }
 
     fn set_wire_drive(&mut self, wire: &PyWireId, new_drive: &PyLogicState) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
-        builder.set_wire_drive(wire.0, &new_drive.state);
+        builder.set_wire_drive(wire.0, &new_drive.state)?;
         Ok(())
     }
 
     fn get_wire_drive(&self, wire: &PyWireId) -> PyResult<PyLogicState> {
         let builder = get_builder(self)?;
-        let width = builder.get_wire_width(wire.0);
-        let state = builder.get_wire_drive(wire.0);
+        let width = builder.get_wire_width(wire.0)?;
+        let state = builder.get_wire_drive(wire.0)?;
         Ok(PyLogicState { width, state })
     }
 
     fn read_register_state(&self, register: &PyComponentId) -> PyResult<PyLogicState> {
         let builder = get_builder(self)?;
-        let data = builder.get_component_data(register.0);
+        let data = builder.get_component_data(register.0)?;
         if let ComponentData::RegisterValue(data) = data {
             Ok(PyLogicState {
                 width: data.width(),
@@ -500,7 +530,7 @@ impl PySimulatorBuilder {
         state: &PyLogicState,
     ) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
-        let data = builder.get_component_data_mut(register.0);
+        let data = builder.get_component_data_mut(register.0)?;
         if let ComponentData::RegisterValue(mut data) = data {
             data.write(&state.state);
             Ok(())
@@ -511,7 +541,7 @@ impl PySimulatorBuilder {
 
     fn get_memory_size(&self, register: &PyComponentId) -> PyResult<usize> {
         let builder = get_builder(self)?;
-        let data = builder.get_component_data(register.0);
+        let data = builder.get_component_data(register.0)?;
         if let ComponentData::MemoryBlock(data) = data {
             Ok(data.len())
         } else {
@@ -521,7 +551,7 @@ impl PySimulatorBuilder {
 
     fn read_memory_state(&self, register: &PyComponentId, addr: usize) -> PyResult<PyLogicState> {
         let builder = get_builder(self)?;
-        let data = builder.get_component_data(register.0);
+        let data = builder.get_component_data(register.0)?;
         if let ComponentData::MemoryBlock(data) = data {
             Ok(PyLogicState {
                 width: data.width(),
@@ -539,7 +569,7 @@ impl PySimulatorBuilder {
         state: &PyLogicState,
     ) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
-        let data = builder.get_component_data_mut(register.0);
+        let data = builder.get_component_data_mut(register.0)?;
         if let ComponentData::MemoryBlock(mut data) = data {
             data.write(addr, &state.state)
                 .map_err(|_| PyIndexError::new_err(()))
@@ -550,13 +580,13 @@ impl PySimulatorBuilder {
 
     fn set_wire_name(&mut self, wire: &PyWireId, name: &str) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
-        builder.set_wire_name(wire.0, name);
+        builder.set_wire_name(wire.0, name)?;
         Ok(())
     }
 
     fn set_component_name(&mut self, component: &PyComponentId, name: &str) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
-        builder.set_component_name(component.0, name);
+        builder.set_component_name(component.0, name)?;
         Ok(())
     }
 
@@ -823,6 +853,8 @@ fn gsim(py: Python, m: &PyModule) -> PyResult<()> {
 
     add_error!(SimulatorAlreadyBuiltError);
     add_error!(ResourceLimitReachedError);
+    add_error!(InvalidWireIdError);
+    add_error!(InvalidComponentIdError);
     add_error!(WireWidthMismatchError);
     add_error!(WireWidthIncompatibleError);
     add_error!(OffsetOutOfRangeError);

@@ -1,6 +1,5 @@
 use super::{AllocationSize, Atom, Component, SafeDivCeil, Wire};
 use std::num::NonZeroU8;
-use std::ops::{Index, IndexMut};
 use sync_unsafe_cell::SyncUnsafeCell;
 
 // SAFETY:
@@ -137,6 +136,19 @@ macro_rules! def_id_list {
                 self.0.shrink_to_fit()
             }
 
+            #[inline]
+            pub(crate) fn get(&self, id: $id_name) -> Option<&$t> {
+                self.0.get(id.0 as usize).map(|t| unsafe {
+                    // SAFETY: since we have a shared reference to `self`, no mutable references exist
+                    &*t.get()
+                })
+            }
+
+            #[inline]
+            pub(crate) fn get_mut(&mut self, id: $id_name) -> Option<&mut $t> {
+                self.0.get_mut(id.0 as usize).map(SyncUnsafeCell::get_mut)
+            }
+
             /// SAFETY: caller must ensure there are no other references to the item with this ID
             #[allow(clippy::mut_from_ref)]
             #[inline]
@@ -152,44 +164,6 @@ macro_rules! def_id_list {
             #[inline]
             pub(crate) fn ids(&self) -> impl Iterator<Item = $id_name> + '_ {
                 self.0.iter().enumerate().map(|(i, _)| $id_name(i as u32))
-            }
-        }
-
-        impl Index<$id_name> for $list_name {
-            type Output = $t;
-
-            #[inline]
-            fn index(&self, id: $id_name) -> &Self::Output {
-                unsafe {
-                    // SAFETY: since we have a shared reference to `self`, no mutable references exist
-                    &*self.0[id.0 as usize].get()
-                }
-            }
-        }
-
-        impl IndexMut<$id_name> for $list_name {
-            #[inline]
-            fn index_mut(&mut self, id: $id_name) -> &mut Self::Output {
-                self.0[id.0 as usize].get_mut()
-            }
-        }
-
-        impl Index<($id_name, u8)> for $list_name {
-            type Output = $t;
-
-            #[inline]
-            fn index(&self, (id, offset): ($id_name, u8)) -> &Self::Output {
-                unsafe {
-                    // SAFETY: since we have a shared reference to `self`, no mutable references exist
-                    &*self.0[(id.0 as usize) + (offset as usize)].get()
-                }
-            }
-        }
-
-        impl IndexMut<($id_name, u8)> for $list_name {
-            #[inline]
-            fn index_mut(&mut self, (id, offset): ($id_name, u8)) -> &mut Self::Output {
-                self.0[(id.0 as usize) + (offset as usize)].get_mut()
             }
         }
     };
