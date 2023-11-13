@@ -963,9 +963,6 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         }
     }
 
-    /// Begins simulating
-    ///
-    /// Must be called before any calls to `step_sim`
     fn begin_sim(&mut self) -> SimulationStepResult {
         // We have to perform the first update step on all nodes in the graph,
         // so we insert all IDs into the queues.
@@ -983,9 +980,6 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         self.update_components()
     }
 
-    /// Performs one simulation step
-    ///
-    /// Must only be called after `begin_sim`
     fn step_sim(&mut self) -> SimulationStepResult {
         match self.update_wires() {
             SimulationStepResult::Unchanged => SimulationStepResult::Unchanged,
@@ -995,8 +989,6 @@ impl<VCD: std::io::Write> Simulator<VCD> {
     }
 
     /// Runs the simulation until it settles, but at most for `max_steps` steps
-    ///
-    /// It is **not** necessary to call `begin_sim` before this function
     pub fn run_sim(&mut self, max_steps: u64) -> SimulationRunResult {
         let mut steps = 0;
         let mut result = self.begin_sim();
