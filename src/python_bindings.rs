@@ -431,6 +431,11 @@ impl PySimulator {
             }
         })
     }
+
+    #[cfg(feature = "tracing")]
+    fn trace(&mut self, time: u64) -> PyResult<()> {
+        with_simulator!(self.0, mut simulator => Ok(simulator.trace(time)?))
+    }
 }
 
 #[allow(dead_code)]

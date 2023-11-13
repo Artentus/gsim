@@ -304,6 +304,20 @@ ffi_fn! {
     }
 }
 
+#[cfg(feature = "tracing")]
+ffi_fn! {
+    simulator_trace(simulator: *mut FfiSimulator, time: u64) {
+        let simulator = cast_mut_ptr(simulator)?;
+        match simulator {
+            FfiSimulator::NoTrace(simulator) => simulator.trace(time)?,
+            #[cfg(feature = "tracing")]
+            FfiSimulator::Trace(simulator) => simulator.trace(time)?,
+        }
+        
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
 ffi_fn! {
     simulator_free(simulator: *mut FfiSimulator) {
         let simulator = check_ptr(simulator)?;
