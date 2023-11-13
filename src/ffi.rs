@@ -5,43 +5,43 @@ use std::ffi::{c_char, CStr, CString};
 use std::ptr::NonNull;
 
 mod ffi_status {
-    pub const SUCCESS: i32 = 0;
+    pub const SUCCESS: u32 = 0;
 
-    pub const MAX_STEPS_REACHED: i32 = 1;
+    pub const MAX_STEPS_REACHED: u32 = 1;
 
-    pub const FALSE: i32 = 0;
-    pub const TRUE: i32 = 1;
+    pub const FALSE: u32 = 0;
+    pub const TRUE: u32 = 1;
 }
 
 #[allow(dead_code)]
 #[rustfmt::skip]
-#[repr(i32)]
+#[repr(u32)]
 enum FfiError {
     // Generic errors
-    NullPointer        = -0x0000_0001,
-    PointerMisaligned  = -0x0000_0002,
-    InvalidArgument    = -0x0000_0003,
-    ArgumentOutOfRange = -0x0000_0004,
-    Utf8Encoding       = -0x0000_0005,
-    Io                 = -0x0000_0006,
+    NullPointer        = 0x0000_0001,
+    PointerMisaligned  = 0x0000_0002,
+    InvalidArgument    = 0x0000_0003,
+    ArgumentOutOfRange = 0x0000_0004,
+    Utf8Encoding       = 0x0000_0005,
+    Io                 = 0x0000_0006,
 
     // Builder errors
-    ResourceLimitReached  = -0x0001_0001,
-    WireWidthMismatch     = -0x0001_0002,
-    WireWidthIncompatible = -0x0001_0003,
-    OffsetOutOfRange      = -0x0001_0004,
-    TooFewInputs          = -0x0001_0005,
-    InvalidInputCount     = -0x0001_0006,
-    InvalidComponentType  = -0x0001_0007,
+    ResourceLimitReached  = 0x0001_0001,
+    WireWidthMismatch     = 0x0001_0002,
+    WireWidthIncompatible = 0x0001_0003,
+    OffsetOutOfRange      = 0x0001_0004,
+    TooFewInputs          = 0x0001_0005,
+    InvalidInputCount     = 0x0001_0006,
+    InvalidComponentType  = 0x0001_0007,
 
     // Simulator errors
-    Conflict           = -0x0002_0001,
-    InvalidWireId      = -0x0002_0002,
-    InvalidComponentId = -0x0002_0003,
+    Conflict           = 0x0002_0001,
+    InvalidWireId      = 0x0002_0002,
+    InvalidComponentId = 0x0002_0003,
 
     // Import errors
-    MalformedFormat = -0x0003_0001,
-    Unsupported     = -0x0003_0002,
+    MalformedFormat = 0x0003_0001,
+    Unsupported     = 0x0003_0002,
 }
 
 impl From<std::str::Utf8Error> for FfiError {
@@ -127,12 +127,12 @@ impl From<InvalidComponentIdError> for FfiError {
 #[repr(transparent)]
 struct FfiResult(i32);
 
-impl From<Result<i32, FfiError>> for FfiResult {
+impl From<Result<u32, FfiError>> for FfiResult {
     #[inline]
-    fn from(value: Result<i32, FfiError>) -> Self {
+    fn from(value: Result<u32, FfiError>) -> Self {
         match value {
-            Ok(stat) => FfiResult(stat),
-            Err(err) => FfiResult(err as i32),
+            Ok(stat) => FfiResult(i32::try_from(stat).unwrap()),
+            Err(err) => FfiResult(-i32::try_from(err as u32).unwrap()),
         }
     }
 }
@@ -172,7 +172,7 @@ macro_rules! ffi_fn {
         #[no_mangle]
         unsafe extern "C" fn $name($($param_name : $param_ty),*) -> FfiResult {
             #[inline]
-            unsafe fn fn_impl($($param_name : $param_ty),*) -> Result<i32, FfiError> $body
+            unsafe fn fn_impl($($param_name : $param_ty),*) -> Result<u32, FfiError> $body
 
             fn_impl($($param_name),*).into()
         }
