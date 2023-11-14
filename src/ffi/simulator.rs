@@ -315,7 +315,7 @@ impl SimulationErrors {
 }
 
 ffi_fn! {
-    simulation_error_free(error: SimulationErrors) {
+    simulation_errors_free(error: SimulationErrors) {
         error.free()?;
         Ok(ffi_status::SUCCESS)
     }
