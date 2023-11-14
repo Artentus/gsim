@@ -195,13 +195,15 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    simulator_get_memory_size(
+    simulator_get_memory_metrics(
         simulator: *const FfiSimulator,
         memory: ComponentId,
         size: *mut usize,
+        width: *mut u8,
     ) {
         let simulator = cast_ptr(simulator)?;
         let size_outer = check_ptr(size)?;
+        let width_outer = check_ptr(width)?;
 
         let data = match simulator {
             FfiSimulator::NoTrace(simulator) => simulator.get_component_data(memory)?,
@@ -213,6 +215,7 @@ ffi_fn! {
         };
 
         size_outer.as_ptr().write(data.len());
+        width_outer.as_ptr().write(data.width().get());
 
         Ok(ffi_status::SUCCESS)
     }
@@ -223,11 +226,9 @@ ffi_fn! {
         simulator: *const FfiSimulator,
         memory: ComponentId,
         addr: usize,
-        width: *mut u8,
         state: *mut *const LogicState,
     ) {
         let simulator = cast_ptr(simulator)?;
-        let width_outer = check_ptr(width)?;
         let state_outer = check_ptr(state)?;
 
         let data = match simulator {
@@ -241,7 +242,6 @@ ffi_fn! {
 
         let state_box = Box::new(data.read(addr).ok_or(FfiError::ArgumentOutOfRange)?);
         let state_inner = Box::into_raw(state_box).cast_const();
-        width_outer.as_ptr().write(data.width().get());
         state_outer.as_ptr().write(state_inner);
 
         Ok(ffi_status::SUCCESS)

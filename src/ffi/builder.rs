@@ -66,14 +66,32 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    builder_read_register_state(
+    builder_get_register_width(
         builder: *const SimulatorBuilder,
         register: ComponentId,
         width: *mut u8,
-        state: *mut *const LogicState,
     ) {
         let builder = cast_ptr(builder)?;
         let width_outer = check_ptr(width)?;
+
+        let data = builder.get_component_data(register)?;
+        let ComponentData::RegisterValue(data) = data else {
+            return Err(FfiError::InvalidComponentType);
+        };
+
+        width_outer.as_ptr().write(data.width().get());
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
+    builder_read_register_state(
+        builder: *const SimulatorBuilder,
+        register: ComponentId,
+        state: *mut *const LogicState,
+    ) {
+        let builder = cast_ptr(builder)?;
         let state_outer = check_ptr(state)?;
 
         let data = builder.get_component_data(register)?;
@@ -83,7 +101,6 @@ ffi_fn! {
 
         let state_box = Box::new(data.read());
         let state_inner = Box::into_raw(state_box).cast_const();
-        width_outer.as_ptr().write(data.width().get());
         state_outer.as_ptr().write(state_inner);
 
         Ok(ffi_status::SUCCESS)
@@ -111,13 +128,15 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    builder_get_memory_size(
+    builder_get_memory_metrics(
         builder: *const SimulatorBuilder,
         memory: ComponentId,
         size: *mut usize,
+        width: *mut u8,
     ) {
         let builder = cast_ptr(builder)?;
         let size_outer = check_ptr(size)?;
+        let width_outer = check_ptr(width)?;
 
         let data = builder.get_component_data(memory)?;
         let ComponentData::MemoryBlock(data) = data else {
@@ -125,6 +144,7 @@ ffi_fn! {
         };
 
         size_outer.as_ptr().write(data.len());
+        width_outer.as_ptr().write(data.width().get());
 
         Ok(ffi_status::SUCCESS)
     }
@@ -135,11 +155,9 @@ ffi_fn! {
         builder: *const SimulatorBuilder,
         memory: ComponentId,
         addr: usize,
-        width: *mut u8,
         state: *mut *const LogicState,
     ) {
         let builder = cast_ptr(builder)?;
-        let width_outer = check_ptr(width)?;
         let state_outer = check_ptr(state)?;
 
         let data = builder.get_component_data(memory)?;
@@ -149,7 +167,6 @@ ffi_fn! {
 
         let state_box = Box::new(data.read(addr).ok_or(FfiError::ArgumentOutOfRange)?);
         let state_inner = Box::into_raw(state_box).cast_const();
-        width_outer.as_ptr().write(data.width().get());
         state_outer.as_ptr().write(state_inner);
 
         Ok(ffi_status::SUCCESS)
