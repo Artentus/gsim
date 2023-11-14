@@ -275,6 +275,52 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    simulator_get_wire_name(
+        simulator: *mut FfiSimulator,
+        wire: WireId,
+        name: *mut *const c_char,
+    ) {
+        let simulator = cast_mut_ptr(simulator)?;
+        let name_outer = check_ptr(name)?;
+
+        let name_inner = match simulator {
+            FfiSimulator::NoTrace(simulator) => simulator.get_wire_name(wire)?,
+            #[cfg(feature = "tracing")]
+            FfiSimulator::Trace(simulator) => simulator.get_wire_name(wire)?,
+        };
+        let name_inner = name_inner
+            .map(|s| CString::new(s).unwrap().into_raw().cast_const())
+            .unwrap_or(std::ptr::null());
+        name_outer.as_ptr().write(name_inner);
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
+    simulator_get_component_name(
+        simulator: *mut FfiSimulator,
+        component: ComponentId,
+        name: *mut *const c_char,
+    ) {
+        let simulator = cast_mut_ptr(simulator)?;
+        let name_outer = check_ptr(name)?;
+
+        let name_inner = match simulator {
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_name(component)?,
+            #[cfg(feature = "tracing")]
+            FfiSimulator::Trace(simulator) => simulator.get_component_name(component)?,
+        };
+        let name_inner = name_inner
+            .map(|s| CString::new(s).unwrap().into_raw().cast_const())
+            .unwrap_or(std::ptr::null());
+        name_outer.as_ptr().write(name_inner);
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
     simulator_reset(simulator: *mut FfiSimulator) {
         let simulator = cast_mut_ptr(simulator)?;
         match simulator {
