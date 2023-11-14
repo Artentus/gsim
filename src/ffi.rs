@@ -184,6 +184,16 @@ macro_rules! ffi_fn {
     };
 }
 
+ffi_fn! {
+    string_free(s: *const c_char) {
+        let s = check_ptr(s.cast_mut())?;
+        let s = CString::from_raw(s.as_ptr());
+        std::mem::drop(s);
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
 mod builder;
 mod logic;
 mod simulator;

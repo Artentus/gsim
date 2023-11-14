@@ -210,6 +210,25 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    builder_get_wire_name(
+        builder: *const SimulatorBuilder,
+        wire: WireId,
+        name: *mut *const c_char,
+    ) {
+        let builder = cast_ptr(builder)?;
+        let name_outer = check_ptr(name)?;
+
+        let name_inner = builder.get_wire_name(wire)?;
+        let name_inner = name_inner
+            .map(|s| CString::new(s).unwrap().into_raw().cast_const())
+            .unwrap_or(std::ptr::null());
+        name_outer.as_ptr().write(name_inner);
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
     builder_set_component_name(
         builder: *mut SimulatorBuilder,
         component: ComponentId,
@@ -218,6 +237,25 @@ ffi_fn! {
         let builder = cast_mut_ptr(builder)?;
         let name = cast_c_str(name)?;
         builder.set_component_name(component, name)?;
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
+    builder_get_component_name(
+        builder: *const SimulatorBuilder,
+        component: ComponentId,
+        name: *mut *const c_char,
+    ) {
+        let builder = cast_ptr(builder)?;
+        let name_outer = check_ptr(name)?;
+
+        let name_inner = builder.get_component_name(component)?;
+        let name_inner = name_inner
+            .map(|s| CString::new(s).unwrap().into_raw().cast_const())
+            .unwrap_or(std::ptr::null());
+        name_outer.as_ptr().write(name_inner);
 
         Ok(ffi_status::SUCCESS)
     }

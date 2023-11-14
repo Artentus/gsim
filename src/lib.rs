@@ -567,6 +567,14 @@ impl SimulatorData {
         Ok(())
     }
 
+    fn get_wire_name(&self, wire: WireId) -> Result<Option<&str>, InvalidWireIdError> {
+        if self.wires.get(wire).is_none() {
+            return Err(InvalidWireIdError);
+        }
+
+        Ok(self.wire_names.get(&wire).map(|name| &**name))
+    }
+
     fn set_component_name<S: Into<Arc<str>>>(
         &mut self,
         component: ComponentId,
@@ -578,6 +586,17 @@ impl SimulatorData {
 
         self.component_names.insert(component, name.into());
         Ok(())
+    }
+
+    fn get_component_name(
+        &self,
+        component: ComponentId,
+    ) -> Result<Option<&str>, InvalidComponentIdError> {
+        if self.components.get(component).is_none() {
+            return Err(InvalidComponentIdError);
+        }
+
+        Ok(self.component_names.get(&component).map(|name| &**name))
     }
 
     fn stats(&self) -> SimulationStats {
@@ -785,6 +804,21 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         component: ComponentId,
     ) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
         self.data.get_component_data_mut(component)
+    }
+
+    /// Gets the name of a wire, if one has been assigned
+    #[inline]
+    pub fn get_wire_name(&self, wire: WireId) -> Result<Option<&str>, InvalidWireIdError> {
+        self.data.get_wire_name(wire)
+    }
+
+    /// Gets the name of a component, if one has been assigned
+    #[inline]
+    pub fn get_component_name(
+        &self,
+        component: ComponentId,
+    ) -> Result<Option<&str>, InvalidComponentIdError> {
+        self.data.get_component_name(component)
     }
 
     /// Collects statistics of the simulation
@@ -1098,6 +1132,41 @@ impl SimulatorBuilder {
         self.data.get_component_data_mut(component)
     }
 
+    /// Assigns a name to a wire
+    #[inline]
+    pub fn set_wire_name<S: Into<Arc<str>>>(
+        &mut self,
+        wire: WireId,
+        name: S,
+    ) -> Result<(), InvalidWireIdError> {
+        self.data.set_wire_name(wire, name)
+    }
+
+    /// Gets the name of a wire, if one has been assigned
+    #[inline]
+    pub fn get_wire_name(&self, wire: WireId) -> Result<Option<&str>, InvalidWireIdError> {
+        self.data.get_wire_name(wire)
+    }
+
+    /// Assigns a name to a component
+    #[inline]
+    pub fn set_component_name<S: Into<Arc<str>>>(
+        &mut self,
+        component: ComponentId,
+        name: S,
+    ) -> Result<(), InvalidComponentIdError> {
+        self.data.set_component_name(component, name)
+    }
+
+    /// Gets the name of a component, if one has been assigned
+    #[inline]
+    pub fn get_component_name(
+        &self,
+        component: ComponentId,
+    ) -> Result<Option<&str>, InvalidComponentIdError> {
+        self.data.get_component_name(component)
+    }
+
     /// Collects statistics of the simulation
     #[inline]
     pub fn stats(&self) -> SimulationStats {
@@ -1317,26 +1386,6 @@ impl SimulatorBuilder {
         let state_id = self.data.wire_states.push(width)?;
         let wire = Wire::new(state_id);
         self.data.wires.push(wire)
-    }
-
-    /// Assigns a name to a wire
-    #[inline]
-    pub fn set_wire_name<S: Into<Arc<str>>>(
-        &mut self,
-        wire: WireId,
-        name: S,
-    ) -> Result<(), InvalidWireIdError> {
-        self.data.set_wire_name(wire, name)
-    }
-
-    /// Assigns a name to a component
-    #[inline]
-    pub fn set_component_name<S: Into<Arc<str>>>(
-        &mut self,
-        component: ComponentId,
-        name: S,
-    ) -> Result<(), InvalidComponentIdError> {
-        self.data.set_component_name(component, name)
     }
 
     #[inline]
