@@ -287,9 +287,44 @@ ffi_fn! {
     }
 }
 
+#[repr(C)]
+struct SimulationErrors {
+    conflicts_len: usize,
+    conflicts: *const WireId,
+}
+
+impl SimulationErrors {
+    #[allow(dead_code)]
+    fn create(conflicts: Box<[WireId]>) -> Self {
+        let conflicts_len = conflicts.len();
+        let conflicts: *const WireId = Box::into_raw(conflicts) as _;
+        Self {
+            conflicts_len,
+            conflicts,
+        }
+    }
+
+    unsafe fn free(self) -> Result<(), FfiError> {
+        let conflicts = check_ptr(self.conflicts.cast_mut())?.as_ptr().cast_const();
+        let conflicts = std::ptr::slice_from_raw_parts(conflicts, self.conflicts_len);
+        let conflicts = Box::from_raw(conflicts.cast_mut());
+        std::mem::drop(conflicts);
+
+        Ok(())
+    }
+}
+
 ffi_fn! {
-    simulator_run_sim(simulator: *mut FfiSimulator, max_steps: u64) {
+    simulation_error_free(error: SimulationErrors) {
+        error.free()?;
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
+    simulator_run_sim(simulator: *mut FfiSimulator, max_steps: u64, errors: *mut SimulationErrors) {
         let simulator = cast_mut_ptr(simulator)?;
+        let errors = check_ptr(errors)?;
         let result = match simulator {
             FfiSimulator::NoTrace(simulator) => simulator.run_sim(max_steps),
             #[cfg(feature = "tracing")]
@@ -299,7 +334,10 @@ ffi_fn! {
         match result {
             SimulationRunResult::Ok => Ok(ffi_status::SUCCESS),
             SimulationRunResult::MaxStepsReached => Ok(ffi_status::MAX_STEPS_REACHED),
-            SimulationRunResult::Err(_) => Err(FfiError::Conflict),
+            SimulationRunResult::Err(err) => {
+                errors.as_ptr().write(SimulationErrors::create(err.conflicts));
+                Err(FfiError::Conflict)
+            }
         }
     }
 }

@@ -575,13 +575,15 @@ ffi_fn! {
         use crate::import::yosys::YosysModuleImporter;
 
         let builder = cast_mut_ptr(builder)?;
+        let inputs = check_ptr(inputs)?;
+        let outputs = check_ptr(outputs)?;
         let json_file = BufReader::new(File::open(cast_c_str(json_file)?)?);
 
         let importer = YosysModuleImporter::from_json_reader(json_file)?;
         let connections = builder.import_module(&importer)?;
 
-        inputs.write(PortList::create(connections.inputs));
-        outputs.write(PortList::create(connections.outputs));
+        inputs.as_ptr().write(PortList::create(connections.inputs));
+        outputs.as_ptr().write(PortList::create(connections.outputs));
 
         Ok(ffi_status::SUCCESS)
     }
