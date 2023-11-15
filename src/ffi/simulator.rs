@@ -142,14 +142,36 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    simulator_read_register_state(
+    simulator_get_register_width(
         simulator: *const FfiSimulator,
         register: ComponentId,
         width: *mut u8,
-        state: *mut *const LogicState,
     ) {
         let simulator = cast_ptr(simulator)?;
         let width_outer = check_ptr(width)?;
+
+        let data = match simulator {
+            FfiSimulator::NoTrace(simulator) => simulator.get_component_data(register)?,
+            #[cfg(feature = "tracing")]
+            FfiSimulator::Trace(simulator) => simulator.get_component_data(register)?,
+        };
+        let ComponentData::RegisterValue(data) = data else {
+            return Err(FfiError::InvalidComponentType);
+        };
+
+        width_outer.as_ptr().write(data.width().get());
+
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
+    simulator_read_register_state(
+        simulator: *const FfiSimulator,
+        register: ComponentId,
+        state: *mut *const LogicState,
+    ) {
+        let simulator = cast_ptr(simulator)?;
         let state_outer = check_ptr(state)?;
 
         let data = match simulator {
@@ -163,7 +185,6 @@ ffi_fn! {
 
         let state_box = Box::new(data.read());
         let state_inner = Box::into_raw(state_box).cast_const();
-        width_outer.as_ptr().write(data.width().get());
         state_outer.as_ptr().write(state_inner);
 
         Ok(ffi_status::SUCCESS)
