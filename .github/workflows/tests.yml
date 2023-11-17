@@ -1,0 +1,54 @@
+name: Tests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: build
+      run: cargo build --all-features --verbose
+    - name: test
+      run: cargo test --all-features --verbose
+
+  tools:
+    name: tools
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-hack,cargo-msrv
+    - name: hack
+      run: cargo hack check --feature-powerset --no-dev-deps
+    - name: msrv
+      run: cargo msrv verify -- cargo check --all-features
+
+  format:
+    name: format
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        components: rustfmt
+    - uses: actions-rust-lang/rustfmt@v1
+
+  maturin:
+    name: maturin
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: PyO3/maturin-action@v1
+      with:
+        command: build
