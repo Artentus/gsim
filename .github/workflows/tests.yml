@@ -17,9 +17,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: build
-      run: cargo build --all-features --verbose
+      run: cargo build
     - name: test
-      run: cargo test --all-features --verbose
+      run: cargo test
+    - name: build c-api
+      run: cargo build --features=c-api
 
   tools:
     name: tools
@@ -52,3 +54,4 @@ jobs:
     - uses: PyO3/maturin-action@v1
       with:
         command: build
+        args: --features python-bindings
