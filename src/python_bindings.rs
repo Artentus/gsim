@@ -173,92 +173,52 @@ def_py_id!(PyWireId(WireId), "WireId");
 def_py_id!(PyComponentId(ComponentId), "ComponentId");
 
 #[pyclass(name = "LogicState", frozen)]
-struct PyLogicState {
-    width: NonZeroU8,
-    state: LogicState,
-}
+struct PyLogicState(LogicState);
 
 #[pymethods]
 impl PyLogicState {
     #[staticmethod]
-    fn high_z(width: u8) -> PyResult<Self> {
-        Ok(Self {
-            width: NonZeroU8::try_from(width)?,
-            state: LogicState::HIGH_Z,
-        })
+    fn high_z() -> Self {
+        Self(LogicState::HIGH_Z)
     }
 
     #[staticmethod]
-    fn undefined(width: u8) -> PyResult<Self> {
-        Ok(Self {
-            width: NonZeroU8::try_from(width)?,
-            state: LogicState::UNDEFINED,
-        })
+    fn undefined() -> Self {
+        Self(LogicState::UNDEFINED)
     }
 
     #[staticmethod]
-    fn logic_0(width: u8) -> PyResult<Self> {
-        Ok(Self {
-            width: NonZeroU8::try_from(width)?,
-            state: LogicState::LOGIC_0,
-        })
+    fn logic_0() -> Self {
+        Self(LogicState::LOGIC_0)
     }
 
     #[staticmethod]
-    fn logic_1(width: u8) -> PyResult<Self> {
-        Ok(Self {
-            width: NonZeroU8::try_from(width)?,
-            state: LogicState::LOGIC_1,
-        })
+    fn logic_1() -> Self {
+        Self(LogicState::LOGIC_1)
     }
 
     #[new]
-    fn new(value: &PyAny, width: u8) -> PyResult<Self> {
-        let width = NonZeroU8::try_from(width)?;
-
+    fn new(value: &PyAny) -> PyResult<Self> {
         if let Ok(value) = value.extract::<bool>() {
-            Ok(Self {
-                width,
-                state: LogicState::from_bool(value),
-            })
+            Ok(Self(LogicState::from_bool(value)))
         } else if let Ok(value) = value.extract::<u32>() {
-            Ok(Self {
-                width,
-                state: LogicState::from_int(value),
-            })
+            Ok(Self(LogicState::from_int(value)))
         } else if let Ok(value) = value.extract::<&str>() {
-            Ok(Self {
-                width,
-                state: LogicState::parse(value).ok_or_else(|| PyValueError::new_err(()))?,
-            })
-        } else if let Ok(value) = value.extract::<PyRef<PyLogicState>>() {
-            Ok(Self {
-                width,
-                state: value.state.clone(),
-            })
+            let state = LogicState::parse(value).ok_or_else(|| PyValueError::new_err(()))?;
+            Ok(Self(state))
         } else {
             Err(PyTypeError::new_err(()))
         }
     }
 
-    fn width(&self) -> u8 {
-        self.width.get()
+    fn to_string(&self, width: u8) -> PyResult<String> {
+        let width = width.try_into().map_err(|_| PyValueError::new_err(()))?;
+        Ok(self.0.display_string(width))
     }
 
-    fn __str__(&self) -> String {
-        self.state.display_string(self.width)
-    }
-
-    fn __repr__(&self) -> String {
-        self.state.display_string(self.width)
-    }
-
-    fn __eq__(&self, other: &PyLogicState) -> bool {
-        (self.width == other.width) && self.state.eq(&other.state, self.width)
-    }
-
-    fn __ne__(&self, other: &PyLogicState) -> bool {
-        (self.width != other.width) || !self.state.eq(&other.state, self.width)
+    fn eq(&self, other: &PyLogicState, width: u8) -> PyResult<bool> {
+        let width = width.try_into().map_err(|_| PyValueError::new_err(()))?;
+        Ok(self.0.eq(&other.0, width))
     }
 }
 
@@ -330,31 +290,28 @@ impl PySimulator {
     }
 
     fn set_wire_drive(&mut self, wire: &PyWireId, new_drive: &PyLogicState) -> PyResult<()> {
-        with_simulator!(self.0, mut simulator => Ok(simulator.set_wire_drive(wire.0, &new_drive.state)?))
+        with_simulator!(self.0, mut simulator => Ok(
+            simulator.set_wire_drive(wire.0, &new_drive.0)?
+        ))
     }
 
     fn get_wire_drive(&self, wire: &PyWireId) -> PyResult<PyLogicState> {
-        with_simulator!(self.0, simulator => Ok(PyLogicState {
-            width: simulator.get_wire_width(wire.0)?,
-            state: simulator.get_wire_drive(wire.0)?,
-        }))
+        with_simulator!(self.0, simulator => Ok(PyLogicState(
+            simulator.get_wire_drive(wire.0)?
+        )))
     }
 
     fn get_wire_state(&self, wire: &PyWireId) -> PyResult<PyLogicState> {
-        with_simulator!(self.0, simulator => Ok(PyLogicState {
-            width: simulator.get_wire_width(wire.0)?,
-            state: simulator.get_wire_state(wire.0)?,
-        }))
+        with_simulator!(self.0, simulator => Ok(PyLogicState(
+            simulator.get_wire_state(wire.0)?
+        )))
     }
 
     fn read_register_state(&self, register: &PyComponentId) -> PyResult<PyLogicState> {
         with_simulator!(self.0, simulator => {
             let data = simulator.get_component_data(register.0)?;
             if let ComponentData::RegisterValue(data) = data {
-                Ok(PyLogicState {
-                    width: data.width(),
-                    state: data.read(),
-                })
+                Ok(PyLogicState(data.read()))
             } else {
                 Err(ComponentTypeError::new_err(()))
             }
@@ -369,7 +326,7 @@ impl PySimulator {
         with_simulator!(self.0, mut simulator => {
             let data = simulator.get_component_data_mut(register.0)?;
             if let ComponentData::RegisterValue(mut data) = data {
-                data.write(&state.state);
+                data.write(&state.0);
                 Ok(())
             } else {
                 Err(ComponentTypeError::new_err(()))
@@ -392,10 +349,8 @@ impl PySimulator {
         with_simulator!(self.0, simulator => {
             let data = simulator.get_component_data(register.0)?;
             if let ComponentData::MemoryBlock(data) = data {
-                Ok(PyLogicState {
-                    width: data.width(),
-                    state: data.read(addr).ok_or_else(|| PyIndexError::new_err(()))?,
-                })
+                let state = data.read(addr).ok_or_else(|| PyIndexError::new_err(()))?;
+                Ok(PyLogicState(state))
             } else {
                 Err(ComponentTypeError::new_err(()))
             }
@@ -411,10 +366,24 @@ impl PySimulator {
         with_simulator!(self.0, mut simulator => {
             let data = simulator.get_component_data_mut(register.0)?;
             if let ComponentData::MemoryBlock(mut data) = data {
-                data.write(addr, &state.state).map_err(|_| PyIndexError::new_err(()))
+                data.write(addr, &state.0).map_err(|_| PyIndexError::new_err(()))
             } else {
                 Err(ComponentTypeError::new_err(()))
             }
+        })
+    }
+
+    fn get_wire_name(&mut self, wire: &PyWireId) -> PyResult<String> {
+        with_simulator!(self.0, mut simulator => {
+            let name = simulator.get_wire_name(wire.0)?;
+            Ok(name.unwrap_or("").to_owned())
+        })
+    }
+
+    fn get_component_name(&mut self, component: &PyComponentId) -> PyResult<String> {
+        with_simulator!(self.0, mut simulator => {
+            let name = simulator.get_component_name(component.0)?;
+            Ok(name.unwrap_or("").to_owned())
         })
     }
 
@@ -506,25 +475,31 @@ impl PySimulatorBuilder {
 
     fn set_wire_drive(&mut self, wire: &PyWireId, new_drive: &PyLogicState) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
-        builder.set_wire_drive(wire.0, &new_drive.state)?;
+        builder.set_wire_drive(wire.0, &new_drive.0)?;
         Ok(())
     }
 
     fn get_wire_drive(&self, wire: &PyWireId) -> PyResult<PyLogicState> {
         let builder = get_builder(self)?;
-        let width = builder.get_wire_width(wire.0)?;
         let state = builder.get_wire_drive(wire.0)?;
-        Ok(PyLogicState { width, state })
+        Ok(PyLogicState(state))
+    }
+
+    fn get_register_width(&self, register: &PyComponentId) -> PyResult<u8> {
+        let builder = get_builder(self)?;
+        let data = builder.get_component_data(register.0)?;
+        if let ComponentData::RegisterValue(data) = data {
+            Ok(data.width().get())
+        } else {
+            Err(ComponentTypeError::new_err(()))
+        }
     }
 
     fn read_register_state(&self, register: &PyComponentId) -> PyResult<PyLogicState> {
         let builder = get_builder(self)?;
         let data = builder.get_component_data(register.0)?;
         if let ComponentData::RegisterValue(data) = data {
-            Ok(PyLogicState {
-                width: data.width(),
-                state: data.read(),
-            })
+            Ok(PyLogicState(data.read()))
         } else {
             Err(ComponentTypeError::new_err(()))
         }
@@ -538,18 +513,18 @@ impl PySimulatorBuilder {
         let builder = get_builder_mut(self)?;
         let data = builder.get_component_data_mut(register.0)?;
         if let ComponentData::RegisterValue(mut data) = data {
-            data.write(&state.state);
+            data.write(&state.0);
             Ok(())
         } else {
             Err(ComponentTypeError::new_err(()))
         }
     }
 
-    fn get_memory_size(&self, register: &PyComponentId) -> PyResult<usize> {
+    fn get_memory_metrics(&self, register: &PyComponentId) -> PyResult<(usize, u8)> {
         let builder = get_builder(self)?;
         let data = builder.get_component_data(register.0)?;
         if let ComponentData::MemoryBlock(data) = data {
-            Ok(data.len())
+            Ok((data.len(), data.width().get()))
         } else {
             Err(ComponentTypeError::new_err(()))
         }
@@ -559,10 +534,8 @@ impl PySimulatorBuilder {
         let builder = get_builder(self)?;
         let data = builder.get_component_data(register.0)?;
         if let ComponentData::MemoryBlock(data) = data {
-            Ok(PyLogicState {
-                width: data.width(),
-                state: data.read(addr).ok_or_else(|| PyIndexError::new_err(()))?,
-            })
+            let state = data.read(addr).ok_or_else(|| PyIndexError::new_err(()))?;
+            Ok(PyLogicState(state))
         } else {
             Err(ComponentTypeError::new_err(()))
         }
@@ -577,17 +550,29 @@ impl PySimulatorBuilder {
         let builder = get_builder_mut(self)?;
         let data = builder.get_component_data_mut(register.0)?;
         if let ComponentData::MemoryBlock(mut data) = data {
-            data.write(addr, &state.state)
+            data.write(addr, &state.0)
                 .map_err(|_| PyIndexError::new_err(()))
         } else {
             Err(ComponentTypeError::new_err(()))
         }
     }
 
+    fn get_wire_name(&mut self, wire: &PyWireId) -> PyResult<String> {
+        let builder = get_builder_mut(self)?;
+        let name = builder.get_wire_name(wire.0)?;
+        Ok(name.unwrap_or("").to_owned())
+    }
+
     fn set_wire_name(&mut self, wire: &PyWireId, name: &str) -> PyResult<()> {
         let builder = get_builder_mut(self)?;
         builder.set_wire_name(wire.0, name)?;
         Ok(())
+    }
+
+    fn get_component_name(&mut self, component: &PyComponentId) -> PyResult<String> {
+        let builder = get_builder_mut(self)?;
+        let name = builder.get_component_name(component.0)?;
+        Ok(name.unwrap_or("").to_owned())
     }
 
     fn set_component_name(&mut self, component: &PyComponentId, name: &str) -> PyResult<()> {
