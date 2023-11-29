@@ -58,12 +58,12 @@ jobs:
     - name: update pip
       run: pip install --upgrade pip
     - name: setup venv
-      run: |
-        python3.8 -m venv .venv
-        source .venv/bin/activate
+      run: python3.8 -m venv .venv
     - uses: PyO3/maturin-action@v1
       with:
         command: develop
         args: --features python-bindings
     - name: test
-      run: python3.8 ./python_tests/main.py -v
+      run: |
+        source .venv/bin/activate
+        python3.8 ./python_tests/main.py -v
