@@ -1,3 +1,7 @@
+[<img alt="crates.io" src="https://img.shields.io/crates/v/gsim?style=for-the-badge&logo=rust" height="20">](https://crates.io/crates/gsim)
+[<img alt="docs.rs" src="https://img.shields.io/docsrs/gsim?style=for-the-badge&logo=docs.rs" height="20">](https://docs.rs/gsim)
+<img alt="build status" src="https://img.shields.io/github/actions/workflow/status/Artentus/gsim/tests.yml?branch=master&style=for-the-badge" height="20">
+
 # About
 
 Gsim is a digital circuit simulation engine optimized for high simulation speed.  
