@@ -3,4 +3,3 @@ target/
 Cargo.lock
 flamegraph.svg
 expanded.rs
-test.py
