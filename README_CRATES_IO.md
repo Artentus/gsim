@@ -1,11 +1,7 @@
-# About
-
-Gsim is a digital circuit simulation engine optimized for high simulation speed.  
-This repository contains the simulation backend in form of a Rust library, a circuit editor using this engine can be found at https://github.com/Artentus/gsim-gui.  
-The library also implements a C-API as well a a Python module.
+Gsim is a digital circuit simulation engine optimized for high simulation speed.
 
 
-# Usage Example
+### Usage Example
 
 ```rust
 use gsim::*;
@@ -42,14 +38,3 @@ pub fn main() {
     assert!(output_state.eq(&LogicState::from_bool(false), wire_width));
 }
 ```
-
-
-# Contributing
-
-Contributions are always welcome, but please follow these steps before submitting a PR:
-
-- Run `cargo fmt` using the default Rust formatting style
-- Run `cargo clippy` and make sure there are no warnings in your code (warnings that existed before are ok)
-- Run `cargo test` to make sure you didn't break anything
-- Run `cargo bench` before and after to ensure your changes didn't cause a performance regression
-- Consider writing a test if applicable to your change (e.g. you added a new component type)

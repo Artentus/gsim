@@ -1,0 +1,79 @@
+name: Build
+
+on:
+  push:
+    branches: [ "master" ]
+    tags:
+      - '*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+
+  crate:
+    name: Crate
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: publish
+      run: cargo publish --package=gsim
+      env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  lib-linux:
+    name: Linux library
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: build
+      run: cargo build --release --features=c-api
+    - uses: thedoctor0/zip-release@0.7.5
+      with:
+        type: 'tar'
+        filename: 'gsim_linux64.tar.gz'
+        directory: 'target/release/'
+        path: 'libgsim.so'
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: 'target/release/gsim_linux64.tar.gz'
+
+  lib-win:
+    name: Windows library
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: build
+      run: cargo build --release --features=c-api
+    - uses: thedoctor0/zip-release@0.7.5
+      with:
+        type: 'zip'
+        filename: 'gsim_win64.zip'
+        directory: 'target/release/'
+        path: 'gsim.dll'
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: 'target/release/gsim_win64.zip'
+
+  lib-mac:
+    name: MacOS library
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    - name: build
+      run: cargo build --release --features=c-api
+    - uses: thedoctor0/zip-release@0.7.5
+      with:
+        type: 'zip'
+        filename: 'gsim_osx.zip'
+        directory: 'target/release/'
+        path: 'libgsim.dylib'
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: 'target/release/gsim_osx.zip'
