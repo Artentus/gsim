@@ -38,6 +38,7 @@ jobs:
     - uses: ncipollo/release-action@v1
       with:
         artifacts: 'target/release/gsim_linux64.tar.gz'
+        allowUpdates: true
 
   lib-win:
     name: Windows library
@@ -57,6 +58,7 @@ jobs:
     - uses: ncipollo/release-action@v1
       with:
         artifacts: 'target/release/gsim_win64.zip'
+        allowUpdates: true
 
   lib-mac:
     name: MacOS library
@@ -76,3 +78,4 @@ jobs:
     - uses: ncipollo/release-action@v1
       with:
         artifacts: 'target/release/gsim_osx.zip'
+        allowUpdates: true
