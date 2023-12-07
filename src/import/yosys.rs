@@ -1170,6 +1170,18 @@ impl ModuleImporter for YosysModuleImporter {
                         input_b
                     };
 
+                    let output = if o_width < max_width {
+                        let o_ext = builder
+                            .add_wire(max_width)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+
+                        builder.add_slice(o_ext, 0, output).unwrap();
+
+                        o_ext
+                    } else {
+                        output
+                    };
+
                     builder.$add_gate(input_a, input_b, output).map_err(|_| {
                         YosysModuleImportError::InvalidCellPorts {
                             cell_name: Arc::clone(cell_name),
@@ -1212,8 +1224,7 @@ impl ModuleImporter for YosysModuleImporter {
 
                     let a_width = builder.get_wire_width(input_a).unwrap();
                     let b_width = builder.get_wire_width(input_b).unwrap();
-                    let o_width = builder.get_wire_width(output).unwrap();
-                    let max_width = a_width.max(b_width).max(o_width);
+                    let max_width = a_width.max(b_width);
 
                     let input_a = if a_width < max_width {
                         let a_ext = builder
