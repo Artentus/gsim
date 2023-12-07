@@ -1291,8 +1291,8 @@ impl ModuleImporter for YosysModuleImporter {
                 CellType::Sshr => binary_op_cell!(add_arithmetic_right_shift),
                 CellType::Add => binary_op_cell!(add_add),
                 CellType::Sub => binary_op_cell!(add_sub),
-                CellType::Eq => binary_op_cell!(add_compare_equal),
-                CellType::Ne => binary_op_cell!(add_compare_not_equal),
+                CellType::Eq => cmp_op_cell!(add_compare_equal, add_compare_equal),
+                CellType::Ne => cmp_op_cell!(add_compare_not_equal, add_compare_not_equal),
                 CellType::Lt => cmp_op_cell!(add_compare_less_than, add_compare_less_than_signed),
                 CellType::Gt => {
                     cmp_op_cell!(add_compare_greater_than, add_compare_greater_than_signed)
