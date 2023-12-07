@@ -1103,6 +1103,104 @@ impl ModuleImporter for YosysModuleImporter {
                 }};
             }
 
+            macro_rules! shift_op_cell {
+                ($add_gate:ident) => {{
+                    if input_ports.len() != 2 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        });
+                    }
+
+                    if output_ports.len() != 1 {
+                        return Err(YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        });
+                    }
+
+                    let input_a = *input_ports.get("A").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        }
+                    })?;
+
+                    let input_b = *input_ports.get("B").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        }
+                    })?;
+
+                    let output = *output_ports.get("Y").ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        }
+                    })?;
+
+                    let a_width = builder.get_wire_width(input_a).unwrap();
+                    let o_width = builder.get_wire_width(output).unwrap();
+                    let max_width = a_width.max(o_width);
+
+                    let input_a = if a_width < max_width {
+                        let a_ext = builder
+                            .add_wire(max_width)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+
+                        if cell.ports["A"].signed == Some(true) {
+                            builder.add_sign_extend(input_a, a_ext).unwrap();
+                        } else {
+                            builder.add_zero_extend(input_a, a_ext).unwrap();
+                        }
+                        a_ext
+                    } else {
+                        input_a
+                    };
+
+                    let output = if o_width < max_width {
+                        let o_ext = builder
+                            .add_wire(max_width)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+
+                        builder.add_slice(o_ext, 0, output).unwrap();
+
+                        o_ext
+                    } else {
+                        output
+                    };
+
+                    let b_width = builder.get_wire_width(input_b).unwrap();
+                    let target_b_width = NonZeroU8::new(max_width.clog2()).ok_or_else(|| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        }
+                    })?;
+
+                    let input_b = if b_width < target_b_width {
+                        let b_ext = builder
+                            .add_wire(target_b_width)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+
+                        builder.add_zero_extend(input_b, b_ext).unwrap();
+
+                        b_ext
+                    } else if b_width > target_b_width {
+                        let b_ext = builder
+                            .add_wire(target_b_width)
+                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
+
+                        builder.add_slice(input_b, 0, b_ext).unwrap();
+
+                        b_ext
+                    } else {
+                        input_b
+                    };
+
+                    builder.$add_gate(input_a, input_b, output).map_err(|_| {
+                        YosysModuleImportError::InvalidCellPorts {
+                            cell_name: Arc::clone(cell_name),
+                        }
+                    })?
+                }};
+            }
+
             macro_rules! binary_op_cell {
                 ($add_gate:ident) => {{
                     if input_ports.len() != 2 {
@@ -1286,9 +1384,9 @@ impl ModuleImporter for YosysModuleImporter {
                 CellType::Or => binary_gate_cell!(add_or_gate),
                 CellType::Xor => binary_gate_cell!(add_xor_gate),
                 CellType::Xnor => binary_gate_cell!(add_xnor_gate),
-                CellType::Shl | CellType::Sshl => binary_op_cell!(add_left_shift),
-                CellType::Shr => binary_op_cell!(add_logical_right_shift),
-                CellType::Sshr => binary_op_cell!(add_arithmetic_right_shift),
+                CellType::Shl | CellType::Sshl => shift_op_cell!(add_left_shift),
+                CellType::Shr => shift_op_cell!(add_logical_right_shift),
+                CellType::Sshr => shift_op_cell!(add_arithmetic_right_shift),
                 CellType::Add => binary_op_cell!(add_add),
                 CellType::Sub => binary_op_cell!(add_sub),
                 CellType::Eq => cmp_op_cell!(add_compare_equal, add_compare_equal),
