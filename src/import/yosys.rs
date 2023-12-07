@@ -537,29 +537,33 @@ impl WireMap {
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<Option<WireId>, YosysModuleImportError> {
         if self.bus_map.get(bits).is_none() {
-            let all_nets_invalid = bits.iter().all(|&bit| match bit {
-                Signal::Value(_) => false,
-                Signal::Net(net_id) => {
-                    let mapping = self.net_map[net_id];
-                    mapping.wire.is_invalid()
-                }
-            });
-
-            if all_nets_invalid {
-                let bus_wire = add_wire(bits, None, builder)?;
-
-                self.bus_map.insert(bits.clone(), bus_wire);
-                for (offset, &bit) in bits.iter().enumerate() {
-                    if let Signal::Net(net_id) = bit {
-                        self.net_map[net_id] = NetMapping {
-                            wire: bus_wire,
-                            offset: offset as u8,
+            for bit in bits.iter() {
+                if let &Signal::Net(net_id) = bit {
+                    if let Some(mapping) = self.net_map.get(net_id) {
+                        if !mapping.wire.is_invalid() {
+                            // Net is already assigned to a bus, abort
+                            return Ok(None);
                         }
+                    } else {
+                        // Named bus refers to a net that doesn't actually exist, abort
+                        return Ok(None);
                     }
                 }
-
-                return Ok(Some(bus_wire));
             }
+
+            let bus_wire = add_wire(bits, None, builder)?;
+            self.bus_map.insert(bits.clone(), bus_wire);
+
+            for (offset, &bit) in bits.iter().enumerate() {
+                if let Signal::Net(net_id) = bit {
+                    self.net_map[net_id] = NetMapping {
+                        wire: bus_wire,
+                        offset: offset as u8,
+                    }
+                }
+            }
+
+            return Ok(Some(bus_wire));
         }
 
         Ok(None)
