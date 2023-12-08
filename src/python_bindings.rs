@@ -1,6 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
 use crate::*;
+use num_bigint::BigUint;
 use pyo3::create_exception;
 use pyo3::exceptions::*;
 use pyo3::prelude::*;
@@ -203,6 +204,9 @@ impl PyLogicState {
             Ok(Self(LogicState::from_bool(value)))
         } else if let Ok(value) = value.extract::<u32>() {
             Ok(Self(LogicState::from_int(value)))
+        } else if let Ok(value) = value.extract::<BigUint>() {
+            let vec: SmallVec<_> = value.iter_u32_digits().collect();
+            Ok(Self(LogicState::from_big_int(vec)))
         } else if let Ok(value) = value.extract::<&str>() {
             let state = LogicState::parse(value).ok_or_else(|| PyValueError::new_err(()))?;
             Ok(Self(state))
