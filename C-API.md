@@ -383,6 +383,13 @@ Returns `0` on success.
 Adds a subtraction component to the simulation.  
 Returns `0` on success.
 
+### `builder_add_mul`
+
+`Result builder_add_mul(Builder* builder, WireId input_a, WireId input_b, WireId output, ComponentId* component)`
+
+Adds a multiplication component to the simulation.  
+Returns `0` on success.
+
 ### `builder_add_left_shift`
 
 `Result builder_add_left_shift(Builder* builder, WireId input_a, WireId input_b, WireId output, ComponentId* component)`

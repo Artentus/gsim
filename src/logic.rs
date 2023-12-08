@@ -641,6 +641,8 @@ impl std::fmt::Display for Atom {
     }
 }
 
+pub(crate) const MAX_ATOM_COUNT: usize = NonZeroU8::MAX.get().div_ceil(Atom::BITS.get()) as usize;
+
 #[derive(Debug, Clone)]
 pub(crate) enum LogicStateRepr {
     HighZ,

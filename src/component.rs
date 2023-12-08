@@ -53,6 +53,10 @@ pub(crate) enum SmallComponentKind {
         input_a: WireStateId,
         input_b: WireStateId,
     },
+    Mul {
+        input_a: WireStateId,
+        input_b: WireStateId,
+    },
     LeftShift {
         input_a: WireStateId,
         input_b: WireStateId,
@@ -156,6 +160,7 @@ impl SmallComponent {
             SmallComponentKind::Slice { .. } => "[:]",
             SmallComponentKind::Add { .. } => "ADD",
             SmallComponentKind::Sub { .. } => "SUB",
+            SmallComponentKind::Mul { .. } => "MUL",
             SmallComponentKind::LeftShift { .. } => "<<",
             SmallComponentKind::LogicalRightShift { .. } => ">>",
             SmallComponentKind::ArithmeticRightShift { .. } => ">>>",
@@ -191,6 +196,7 @@ impl SmallComponent {
             | SmallComponentKind::XnorGate { input_a, input_b }
             | SmallComponentKind::Add { input_a, input_b }
             | SmallComponentKind::Sub { input_a, input_b }
+            | SmallComponentKind::Mul { input_a, input_b }
             | SmallComponentKind::CompareEqual { input_a, input_b }
             | SmallComponentKind::CompareNotEqual { input_a, input_b }
             | SmallComponentKind::CompareLessThan { input_a, input_b }
@@ -312,6 +318,12 @@ impl SmallComponent {
                     rhs,
                     LogicBitState::Logic1,
                 )
+            }
+            SmallComponentKind::Mul { input_a, input_b } => {
+                let lhs = wire_states.get_state(input_a);
+                let rhs = wire_states.get_state(input_b);
+                let (width, out) = output_states.get_data(output_base);
+                mul(width, out, lhs, rhs)
             }
             SmallComponentKind::LeftShift { input_a, input_b } => {
                 let val = wire_states.get_state(input_a);

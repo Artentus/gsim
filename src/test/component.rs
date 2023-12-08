@@ -8,6 +8,7 @@ const WIDTH_16: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(16) };
 const WIDTH_32: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(32) };
 const WIDTH_33: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(33) };
 const WIDTH_64: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(64) };
+const WIDTH_128: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(128) };
 
 #[test]
 fn and_gate() {
@@ -689,6 +690,38 @@ fn sub() {
 
     test_binary_gate(SimulatorBuilder::add_sub, WIDTH_16, TEST_DATA, 2);
     test_binary_gate(SimulatorBuilder::add_sub, WIDTH_32, TEST_DATA, 2);
+}
+
+#[test]
+fn mul() {
+    let test_data: &[BinaryGateTestData] = binary_gate_test_data!(
+        (HIGH_Z, HIGH_Z) -> UNDEFINED,
+        (HIGH_Z, UNDEFINED) -> UNDEFINED,
+        (UNDEFINED, HIGH_Z) -> UNDEFINED,
+        (UNDEFINED, UNDEFINED) -> UNDEFINED,
+        (HIGH_Z, 0) -> UNDEFINED,
+        (UNDEFINED, 0) -> UNDEFINED,
+        (0, HIGH_Z) -> UNDEFINED,
+        (0, UNDEFINED) -> UNDEFINED,
+
+        (0, 0) -> 0,
+        (0, 1) -> 0,
+        (1, 0) -> 0,
+        (1, 1) -> 1,
+        (0, {u32::MAX}) -> 0,
+        ({u32::MAX}, 0) -> 0,
+        (1, {u32::MAX}) -> {u32::MAX},
+        ({u32::MAX}, 1) -> {u32::MAX},
+        ({u32::MAX}, {u32::MAX}) -> [1, u32::MAX - 1],
+        ([u32::MAX, u32::MAX], [u32::MAX, u32::MAX]) -> [1, 0, u32::MAX - 1, u32::MAX],
+        ([0x658c0c38, 0xd50cebfb], [0x901cfad8, 0xc0083189]) -> [0x4838ff40, 0x2201c171, 0xe109006d, 0x9fd0829d],
+    );
+
+    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_16, test_data, 2);
+    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_32, test_data, 2);
+    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_33, test_data, 2);
+    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_64, test_data, 2);
+    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_128, test_data, 2);
 }
 
 #[test]

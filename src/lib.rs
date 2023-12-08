@@ -338,8 +338,6 @@ impl Wire {
             (result, conflict)
         }
 
-        const MAX_ATOM_COUNT: usize = NonZeroU8::MAX.get().div_ceil(Atom::BITS.get()) as usize;
-
         let mut tmp_state = [Atom::UNDEFINED; MAX_ATOM_COUNT];
         let tmp_state = get_mut!(tmp_state, ..drive.len());
         tmp_state.copy_from_slice(drive);
@@ -1544,6 +1542,12 @@ impl SimulatorBuilder {
         /// Adds a `SUB` component to the simulation
         add_sub,
         Sub
+    );
+
+    def_add_binary_gate!(
+        /// Adds a `MUL` component to the simulation
+        add_mul,
+        Mul
     );
 
     def_add_shifter!(

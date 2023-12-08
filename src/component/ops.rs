@@ -1,4 +1,4 @@
-use crate::logic::{Atom, AtomOffset, AtomWidth, LogicBitState, LogicStorage};
+use crate::logic::*;
 use crate::{CLog2, SafeDivCeil};
 use itertools::izip;
 use std::num::NonZeroU8;
@@ -523,24 +523,67 @@ pub(super) fn sub(
     result
 }
 
-//#[inline]
-//pub(super) fn mul(a: Atom, b: Atom, width: LogicWidth) -> Atom {
-//    let mask = LogicStorage::mask(width);
-//    let a_state = a.state & mask;
-//    let b_state = b.state & mask;
-//    let a_valid = a.valid | !mask;
-//    let b_valid = b.valid | !mask;
-//
-//    if (a_valid == LogicStorage::ALL_ONE) && (b_valid == LogicStorage::ALL_ONE) {
-//        Atom {
-//            state: a_state * b_state,
-//            valid: LogicStorage::ALL_ONE,
-//        }
-//    } else {
-//        Atom::UNDEFINED
-//    }
-//}
-//
+#[inline]
+fn mul_impl(width: AtomWidth, prev: Atom, a: Atom, b: Atom, c: Atom) -> (Atom, Atom) {
+    let mask = LogicStorage::mask(width);
+
+    let prev_valid = prev.valid | !mask;
+    let a_valid = a.valid | !mask;
+    let b_valid = b.valid | !mask;
+    let c_valid = c.valid | !mask;
+
+    if (prev_valid != LogicStorage::ALL_ONE)
+        | (a_valid != LogicStorage::ALL_ONE)
+        | (b_valid != LogicStorage::ALL_ONE)
+        | (c_valid != LogicStorage::ALL_ONE)
+    {
+        return (Atom::UNDEFINED, Atom::UNDEFINED);
+    }
+
+    let prev_state = prev.state & mask;
+    let a_state = a.state & mask;
+    let b_state = b.state & mask;
+    let c_state = c.state & mask;
+
+    let product = (prev_state.get() as u64)
+        + (a_state.get() as u64) * (b_state.get() as u64)
+        + (c_state.get() as u64);
+
+    (
+        Atom::from_int(product as u32),
+        Atom::from_int((product >> 32) as u32),
+    )
+}
+
+pub(super) fn mul(width: NonZeroU8, out: &mut [Atom], lhs: &[Atom], rhs: &[Atom]) -> OpResult {
+    debug_assert_eq!(out.len(), width.safe_div_ceil(Atom::BITS).get() as usize);
+    debug_assert_eq!(out.len(), lhs.len());
+    debug_assert_eq!(out.len(), rhs.len());
+
+    let mut tmp_state = [Atom::LOGIC_0; MAX_ATOM_COUNT];
+    let tmp_state = get_mut!(tmp_state, ..out.len());
+
+    let mut total_width = width.get();
+    for (i, lhs) in lhs.iter().copied().enumerate() {
+        let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+        total_width -= width.get();
+
+        let mut carry = Atom::LOGIC_0;
+        for (j, rhs) in rhs.iter().copied().enumerate() {
+            if let Some(dst) = tmp_state.get_mut(i + j) {
+                (*dst, carry) = mul_impl(width, *dst, lhs, rhs, carry);
+            } else {
+                break;
+            }
+        }
+    }
+
+    let mut iter = (*tmp_state).into_iter().copied();
+    let result = perform_1(width, out, |_, _| iter.next().unwrap());
+
+    result
+}
+
 //#[inline]
 //pub(super) fn div(a: Atom, b: Atom, width: LogicWidth) -> Atom {
 //    let mask = LogicStorage::mask(width);

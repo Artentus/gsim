@@ -797,6 +797,7 @@ macro_rules! impl_add_binary_gate {
 impl_add_binary_gate!(add_buffer);
 impl_add_binary_gate!(add_add);
 impl_add_binary_gate!(add_sub);
+impl_add_binary_gate!(add_mul);
 impl_add_binary_gate!(add_left_shift);
 impl_add_binary_gate!(add_logical_right_shift);
 impl_add_binary_gate!(add_arithmetic_right_shift);
