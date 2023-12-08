@@ -227,6 +227,7 @@ pub struct SimulationStats {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
 enum WireUpdateResult {
     Unchanged,
     Changed,
@@ -404,6 +405,7 @@ pub struct SimulationErrors {
 
 /// The result of a single simulation step
 #[derive(Debug, Clone)]
+#[must_use]
 enum SimulationStepResult {
     /// The simulation did not change during this update
     Unchanged,
@@ -415,6 +417,7 @@ enum SimulationStepResult {
 
 /// The result of running a simulation
 #[derive(Debug, Clone)]
+#[must_use]
 pub enum SimulationRunResult {
     /// The simulation settled
     Ok,
@@ -422,6 +425,23 @@ pub enum SimulationRunResult {
     MaxStepsReached,
     /// The simulation produced an error
     Err(SimulationErrors),
+}
+
+impl SimulationRunResult {
+    /// Panics if the value is not `Ok`
+    #[inline(never)]
+    #[track_caller]
+    pub fn unwrap(self) {
+        match self {
+            SimulationRunResult::Ok => (),
+            SimulationRunResult::MaxStepsReached => panic!(
+                "called `unwrap()` on a `MaxStepsReached` value: simulation exceeded allowed steps"
+            ),
+            SimulationRunResult::Err(_) => {
+                panic!("called `unwrap()` on an `Err` value: driver conflict occurred")
+            }
+        }
+    }
 }
 
 /// Errors that can occur when adding a component to a simulator

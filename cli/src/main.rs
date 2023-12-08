@@ -195,12 +195,23 @@ fn drive(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
 }
 
 fn eval(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
-    context.sim.run_sim(
+    match context.sim.run_sim(
         args.try_get_one(EVAL_MAX_STEPS_ARG)
             .unwrap()
             .copied()
             .unwrap_or(10000),
-    );
+    ) {
+        SimulationRunResult::Ok => (),
+        SimulationRunResult::MaxStepsReached => {
+            return Ok(Some("Error: simulation exceeded allowed steps".to_owned()))
+        }
+        SimulationRunResult::Err(_) => {
+            context.sim.reset();
+            return Ok(Some(
+                "Error: driver conflict occurred, resetting".to_owned(),
+            ));
+        }
+    }
 
     let mut result = String::new();
 
