@@ -647,7 +647,7 @@ pub(crate) enum LogicStateRepr {
     Undefined,
     Logic0,
     Logic1,
-    Int(LogicStorage),
+    Int(inline_vec!(u32)),
     Bits(inline_vec!(Atom)),
 }
 
@@ -674,7 +674,14 @@ impl LogicState {
     /// Bits past the first 32 are implicitely assigned the value 0
     #[inline]
     pub const fn from_int(value: u32) -> Self {
-        Self(LogicStateRepr::Int(LogicStorage(value)))
+        use crate::InlineCount;
+
+        let mut array = [0; u32::INLINE_COUNT];
+        array[0] = value;
+
+        // TODO: if smallvec ever supports it, construct a length 1 vector instead
+        let vec = smallvec::SmallVec::from_const(array);
+        Self(LogicStateRepr::Int(vec))
     }
 
     /// Creates a new logic state representing the given boolean value
@@ -682,7 +689,15 @@ impl LogicState {
     /// Bits past the first one are implicitely assigned the value 0
     #[inline]
     pub const fn from_bool(value: bool) -> Self {
-        Self(LogicStateRepr::Int(LogicStorage(value as u32)))
+        Self::from_int(value as u32)
+    }
+
+    /// Creates a new logic state representing the given integer value
+    ///
+    /// Integer words are given in little endian order, bits past the end are implicitely assigned the value 0
+    #[inline]
+    pub fn from_big_int<T: Into<inline_vec!(u32)>>(value: T) -> Self {
+        Self(LogicStateRepr::Int(value.into()))
     }
 
     /// Creates a new logic state from the given bits (most significant bit first)
@@ -771,9 +786,13 @@ impl LogicState {
             LogicStateRepr::Undefined => LogicBitState::Undefined,
             LogicStateRepr::Logic0 => LogicBitState::Logic0,
             LogicStateRepr::Logic1 => LogicBitState::Logic1,
-            LogicStateRepr::Int(value) => {
-                if let Some(bit_index) = AtomOffset::new(bit_index) {
-                    let state_bit = value.get_bit(bit_index);
+            LogicStateRepr::Int(ref list) => {
+                let item_index = (bit_index / Atom::BITS.get()) as usize;
+                let bit_index = AtomOffset::new(bit_index % Atom::BITS.get()).unwrap();
+
+                if let Some(&item) = list.get(item_index) {
+                    let item = LogicStorage(item);
+                    let state_bit = item.get_bit(bit_index);
                     LogicBitState::from_bits(state_bit, true)
                 } else {
                     LogicBitState::Logic0
@@ -783,8 +802,11 @@ impl LogicState {
                 let item_index = (bit_index / Atom::BITS.get()) as usize;
                 let bit_index = AtomOffset::new(bit_index % Atom::BITS.get()).unwrap();
 
-                let item = list[item_index];
-                item.get_bit_state(bit_index)
+                if let Some(item) = list.get(item_index) {
+                    item.get_bit_state(bit_index)
+                } else {
+                    LogicBitState::HighZ
+                }
             }
         }
     }
@@ -808,8 +830,8 @@ impl LogicState {
             LogicStateRepr::Undefined => LogicStateIter::Undefined,
             LogicStateRepr::Logic0 => LogicStateIter::Logic0,
             LogicStateRepr::Logic1 => LogicStateIter::Logic1,
-            LogicStateRepr::Int(value) => LogicStateIter::Int(Some(value)),
-            LogicStateRepr::Bits(ref atoms) => LogicStateIter::Bits { atoms, current: 0 },
+            LogicStateRepr::Int(ref list) => LogicStateIter::Int { list, current: 0 },
+            LogicStateRepr::Bits(ref list) => LogicStateIter::Bits { list, current: 0 },
         }
     }
 
@@ -871,8 +893,8 @@ pub(crate) enum LogicStateIter<'a> {
     Undefined,
     Logic0,
     Logic1,
-    Int(Option<LogicStorage>),
-    Bits { atoms: &'a [Atom], current: usize },
+    Int { list: &'a [u32], current: usize },
+    Bits { list: &'a [Atom], current: usize },
 }
 
 impl Iterator for LogicStateIter<'_> {
@@ -884,16 +906,19 @@ impl Iterator for LogicStateIter<'_> {
             LogicStateIter::Undefined => Some(Atom::UNDEFINED),
             LogicStateIter::Logic0 => Some(Atom::LOGIC_0),
             LogicStateIter::Logic1 => Some(Atom::LOGIC_1),
-            LogicStateIter::Int(value) => Some(Atom {
-                state: value.take().unwrap_or(LogicStorage::ALL_ZERO),
-                valid: LogicStorage::ALL_ONE,
-            }),
-            LogicStateIter::Bits { atoms, current } => {
-                let atom = atoms.get(*current).copied();
-                if atom.is_some() {
+            LogicStateIter::Int { list, current } => {
+                let item = list.get(*current).copied();
+                if item.is_some() {
                     *current += 1;
                 }
-                atom
+                item.map(Atom::from_int)
+            }
+            LogicStateIter::Bits { list, current } => {
+                let item = list.get(*current).copied();
+                if item.is_some() {
+                    *current += 1;
+                }
+                item
             }
         }
     }
