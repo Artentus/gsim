@@ -147,41 +147,50 @@ impl SmallComponent {
     }
 
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
+    fn node_name(
+        &self,
+        output_base: OutputStateId,
+        output_states: &OutputStateList,
+    ) -> Cow<'static, str> {
         match self.kind {
-            SmallComponentKind::AndGate { .. } => "AND",
-            SmallComponentKind::OrGate { .. } => "OR",
-            SmallComponentKind::XorGate { .. } => "XOR",
-            SmallComponentKind::NandGate { .. } => "NAND",
-            SmallComponentKind::NorGate { .. } => "NOR",
-            SmallComponentKind::XnorGate { .. } => "XNOR",
-            SmallComponentKind::NotGate { .. } => "NOT",
-            SmallComponentKind::Buffer { .. } => "Buffer",
-            SmallComponentKind::Slice { .. } => "[:]",
-            SmallComponentKind::Add { .. } => "ADD",
-            SmallComponentKind::Sub { .. } => "SUB",
-            SmallComponentKind::Mul { .. } => "MUL",
-            SmallComponentKind::LeftShift { .. } => "<<",
-            SmallComponentKind::LogicalRightShift { .. } => ">>",
-            SmallComponentKind::ArithmeticRightShift { .. } => ">>>",
-            SmallComponentKind::HorizontalAnd { .. } => "AND",
-            SmallComponentKind::HorizontalOr { .. } => "OR",
-            SmallComponentKind::HorizontalXor { .. } => "XOR",
-            SmallComponentKind::HorizontalNand { .. } => "NAND",
-            SmallComponentKind::HorizontalNor { .. } => "NOR",
-            SmallComponentKind::HorizontalXnor { .. } => "XNOR",
-            SmallComponentKind::CompareEqual { .. } => "==",
-            SmallComponentKind::CompareNotEqual { .. } => "!=",
-            SmallComponentKind::CompareLessThan { .. } => "<",
-            SmallComponentKind::CompareGreaterThan { .. } => ">",
-            SmallComponentKind::CompareLessThanOrEqual { .. } => "<=",
-            SmallComponentKind::CompareGreaterThanOrEqual { .. } => ">=",
-            SmallComponentKind::CompareLessThanSigned { .. } => "<",
-            SmallComponentKind::CompareGreaterThanSigned { .. } => ">",
-            SmallComponentKind::CompareLessThanOrEqualSigned { .. } => "<=",
-            SmallComponentKind::CompareGreaterThanOrEqualSigned { .. } => ">=",
-            SmallComponentKind::ZeroExtend { .. } => "ZEXT",
-            SmallComponentKind::SignExtend { .. } => "SEXT",
+            SmallComponentKind::AndGate { .. } => "AND".into(),
+            SmallComponentKind::OrGate { .. } => "OR".into(),
+            SmallComponentKind::XorGate { .. } => "XOR".into(),
+            SmallComponentKind::NandGate { .. } => "NAND".into(),
+            SmallComponentKind::NorGate { .. } => "NOR".into(),
+            SmallComponentKind::XnorGate { .. } => "XNOR".into(),
+            SmallComponentKind::NotGate { .. } => "NOT".into(),
+            SmallComponentKind::Buffer { .. } => "Buffer".into(),
+            SmallComponentKind::Slice { offset, .. } => {
+                let output_width = output_states.get_width(output_base);
+                let start = offset;
+                let end = (offset as u32) + (output_width.get() as u32) - 1;
+                format!("[{end}:{start}]").into()
+            }
+            SmallComponentKind::Add { .. } => "ADD".into(),
+            SmallComponentKind::Sub { .. } => "SUB".into(),
+            SmallComponentKind::Mul { .. } => "MUL".into(),
+            SmallComponentKind::LeftShift { .. } => "<<".into(),
+            SmallComponentKind::LogicalRightShift { .. } => ">>".into(),
+            SmallComponentKind::ArithmeticRightShift { .. } => ">>>".into(),
+            SmallComponentKind::HorizontalAnd { .. } => "AND".into(),
+            SmallComponentKind::HorizontalOr { .. } => "OR".into(),
+            SmallComponentKind::HorizontalXor { .. } => "XOR".into(),
+            SmallComponentKind::HorizontalNand { .. } => "NAND".into(),
+            SmallComponentKind::HorizontalNor { .. } => "NOR".into(),
+            SmallComponentKind::HorizontalXnor { .. } => "XNOR".into(),
+            SmallComponentKind::CompareEqual { .. } => "==".into(),
+            SmallComponentKind::CompareNotEqual { .. } => "!=".into(),
+            SmallComponentKind::CompareLessThan { .. } => "<".into(),
+            SmallComponentKind::CompareGreaterThan { .. } => ">".into(),
+            SmallComponentKind::CompareLessThanOrEqual { .. } => "<=".into(),
+            SmallComponentKind::CompareGreaterThanOrEqual { .. } => ">=".into(),
+            SmallComponentKind::CompareLessThanSigned { .. } => "<".into(),
+            SmallComponentKind::CompareGreaterThanSigned { .. } => ">".into(),
+            SmallComponentKind::CompareLessThanOrEqualSigned { .. } => "<=".into(),
+            SmallComponentKind::CompareGreaterThanOrEqualSigned { .. } => ">=".into(),
+            SmallComponentKind::ZeroExtend { .. } => "ZEXT".into(),
+            SmallComponentKind::SignExtend { .. } => "SEXT".into(),
         }
     }
 
@@ -554,10 +563,10 @@ pub enum ComponentData<'a, M: Mutability> {
 
 pub(crate) trait LargeComponent: Send + Sync {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str;
+    fn node_name(&self) -> Cow<'static, str>;
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)>;
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)>;
 
     #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)>;
@@ -609,13 +618,13 @@ macro_rules! wide_gate {
 
         impl LargeComponent for $name {
             #[cfg(feature = "dot-export")]
-            fn node_name(&self) -> &'static str {
-                $node_name
+            fn node_name(&self) -> Cow<'static, str> {
+                $node_name.into()
             }
 
             #[cfg(feature = "dot-export")]
-            fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-                vec![(self.output_wire, "Out")]
+            fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+                vec![(self.output_wire, "Out".into())]
             }
 
             #[cfg(feature = "dot-export")]
@@ -683,13 +692,13 @@ macro_rules! wide_gate_inv {
 
         impl LargeComponent for $name {
             #[cfg(feature = "dot-export")]
-            fn node_name(&self) -> &'static str {
-                $node_name
+            fn node_name(&self) -> Cow<'static, str> {
+                $node_name.into()
             }
 
             #[cfg(feature = "dot-export")]
-            fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-                vec![(self.output_wire, "Out")]
+            fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+                vec![(self.output_wire, "Out".into())]
             }
 
             #[cfg(feature = "dot-export")]
@@ -765,13 +774,13 @@ impl Merge {
 
 impl LargeComponent for Merge {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "{,}"
+    fn node_name(&self) -> Cow<'static, str> {
+        "{,}".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-        vec![(self.output_wire, "Out")]
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+        vec![(self.output_wire, "Out".into())]
     }
 
     #[cfg(feature = "dot-export")]
@@ -848,15 +857,15 @@ impl Adder {
 
 impl LargeComponent for Adder {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "Adder"
+    fn node_name(&self) -> Cow<'static, str> {
+        "Adder".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
         vec![
-            (self.output_wire, "Sum"),
-            (self.carry_out_wire, "Carry out"),
+            (self.output_wire, "Sum".into()),
+            (self.carry_out_wire, "Carry out".into()),
         ]
     }
 
@@ -929,13 +938,13 @@ impl Multiplexer {
 
 impl LargeComponent for Multiplexer {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "MUX"
+    fn node_name(&self) -> Cow<'static, str> {
+        "MUX".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-        vec![(self.output_wire, "Out")]
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+        vec![(self.output_wire, "Out".into())]
     }
 
     #[cfg(feature = "dot-export")]
@@ -1025,13 +1034,13 @@ impl PriorityDecoder {
 
 impl LargeComponent for PriorityDecoder {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "Decoder"
+    fn node_name(&self) -> Cow<'static, str> {
+        "Decoder".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-        vec![(self.output_wire, "Out")]
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+        vec![(self.output_wire, "Out".into())]
     }
 
     #[cfg(feature = "dot-export")]
@@ -1152,13 +1161,13 @@ impl Register {
 
 impl LargeComponent for Register {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "Register"
+    fn node_name(&self) -> Cow<'static, str> {
+        "Register".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-        vec![(self.data_out_wire, "Data out")]
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+        vec![(self.data_out_wire, "Data out".into())]
     }
 
     #[cfg(feature = "dot-export")]
@@ -1481,13 +1490,13 @@ impl Ram {
 
 impl LargeComponent for Ram {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "RAM"
+    fn node_name(&self) -> Cow<'static, str> {
+        "RAM".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-        vec![(self.data_out_wire, "Data out")]
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+        vec![(self.data_out_wire, "Data out".into())]
     }
 
     #[cfg(feature = "dot-export")]
@@ -1626,13 +1635,13 @@ impl Rom {
 
 impl LargeComponent for Rom {
     #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> &'static str {
-        "ROM"
+    fn node_name(&self) -> Cow<'static, str> {
+        "ROM".into()
     }
 
     #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> Vec<(WireId, &'static str)> {
-        vec![(self.data_wire, "Data")]
+    fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
+        vec![(self.data_wire, "Data".into())]
     }
 
     #[cfg(feature = "dot-export")]
@@ -1744,9 +1753,9 @@ impl Component {
     }
 
     #[cfg(feature = "dot-export")]
-    pub(crate) fn output_wires(&self) -> Vec<(WireId, &'static str)> {
+    pub(crate) fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)> {
         match self {
-            Component::Small { component, .. } => vec![(component.output, "Out")],
+            Component::Small { component, .. } => vec![(component.output, "Out".into())],
             Component::Large { component, .. } => component.output_wires(),
         }
     }
@@ -1760,9 +1769,13 @@ impl Component {
     }
 
     #[cfg(feature = "dot-export")]
-    pub(crate) fn node_name(&self) -> &'static str {
+    pub(crate) fn node_name(&self, output_states: &OutputStateList) -> Cow<'static, str> {
         match self {
-            Component::Small { component, .. } => component.node_name(),
+            Component::Small {
+                component,
+                output_base,
+                ..
+            } => component.node_name(*output_base, output_states),
             Component::Large { component, .. } => component.node_name(),
         }
     }

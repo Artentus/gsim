@@ -652,13 +652,24 @@ impl SimulatorData {
             #[allow(clippy::collapsible_else_if)]
             if show_states {
                 if let Some(name) = self.wire_names.get(&wire_id) {
-                    writeln!(
-                        writer,
-                        "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
-                        wire_id.to_u32(),
-                        name,
-                        self.get_wire_state(wire_id).unwrap().display_string(width),
-                    )?;
+                    let state = self.get_wire_state(wire_id).unwrap().display_string(width);
+                    if &**name == state.as_str() {
+                        // Don't print constant wire states twice
+                        writeln!(
+                            writer,
+                            "    W{}[label=\"{}\" shape=\"diamond\"];",
+                            wire_id.to_u32(),
+                            name,
+                        )?;
+                    } else {
+                        writeln!(
+                            writer,
+                            "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
+                            wire_id.to_u32(),
+                            name,
+                            state,
+                        )?;
+                    }
                 } else {
                     writeln!(
                         writer,
@@ -707,8 +718,8 @@ impl SimulatorData {
             let name = self
                 .component_names
                 .get(&component_id)
-                .map(|name| &**name)
-                .unwrap_or_else(|| component.node_name());
+                .map(|name| (&**name).into())
+                .unwrap_or_else(|| component.node_name(&self.output_states));
 
             'print: {
                 if show_states {
@@ -737,7 +748,7 @@ impl SimulatorData {
 
         for wire_id in self.wires.ids() {
             if let Some(drivers) = wire_drivers.get(&wire_id) {
-                for &(driver, port_name) in drivers {
+                for (driver, port_name) in drivers {
                     writeln!(
                         writer,
                         "    C{} -> W{}[taillabel=\"{}\"];",
