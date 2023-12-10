@@ -1,0 +1,16 @@
+{
+  "modules": {
+    "Top": {
+      "ports": {
+        "i": {
+          "direction": "input",
+          "bits": [ 1 ]
+        },
+        "o": {
+          "direction": "output",
+          "bits": [ 1, 1, 1 ]
+        }
+      }
+    }
+  }
+}

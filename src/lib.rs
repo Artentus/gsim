@@ -72,7 +72,10 @@ pub use component::ComponentData;
 pub use id_lists::{ComponentId, Id, WireId};
 pub use logic::{LogicBitState, LogicState};
 
+#[allow(dead_code)]
 type HashMap<K, V> = ahash::AHashMap<K, V>;
+#[allow(dead_code)]
+type HashSet<T> = ahash::AHashSet<T>;
 
 const fn const_max(a: usize, b: usize) -> usize {
     if a >= b {

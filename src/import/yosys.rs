@@ -487,7 +487,7 @@ struct NetMapping {
     offset: u8,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BusDirection {
     Read,
     Write,
@@ -503,6 +503,20 @@ struct WireMap {
     bus_map: HashMap<Bits, WireId>,
     net_map: Vec<NetMapping>,
     fixups: Vec<WireFixup>,
+}
+
+fn has_duplicate_net_ids(bits: &Bits) -> bool {
+    let mut set = HashSet::new();
+
+    for bit in bits {
+        if let &Signal::Net(net_id) = bit {
+            if !set.insert(net_id) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 impl WireMap {
@@ -602,20 +616,36 @@ impl WireMap {
                     });
 
                 if all_nets_invalid {
-                    // None of the wires are part of a bus yet, so we create a new one
-                    let bus_wire = add_wire(bits, Some(direction), builder)?;
+                    if has_duplicate_net_ids(bits) {
+                        // The bus contains duplicate bits, so those must come from somewhere
+                        // else we haven't discovered yet (meaning this must be a read connection)
+                        assert_eq!(direction, BusDirection::Read);
 
-                    self.bus_map.insert(bits.clone(), bus_wire);
-                    for (offset, &bit) in bits.iter().enumerate() {
-                        if let Signal::Net(net_id) = bit {
-                            self.net_map[net_id] = NetMapping {
-                                wire: bus_wire,
-                                offset: offset as u8,
+                        let bus_wire = add_wire(bits, None, builder)?;
+
+                        self.fixups.push(WireFixup {
+                            bus_wire,
+                            direction,
+                            bits: bits.clone(),
+                        });
+
+                        Ok(bus_wire)
+                    } else {
+                        // None of the wires are part of a bus yet, so we create a new one
+                        let bus_wire = add_wire(bits, Some(direction), builder)?;
+
+                        self.bus_map.insert(bits.clone(), bus_wire);
+                        for (offset, &bit) in bits.iter().enumerate() {
+                            if let Signal::Net(net_id) = bit {
+                                self.net_map[net_id] = NetMapping {
+                                    wire: bus_wire,
+                                    offset: offset as u8,
+                                }
                             }
                         }
-                    }
 
-                    Ok(bus_wire)
+                        Ok(bus_wire)
+                    }
                 } else {
                     // Some of the wires are already part of a bus, so we
                     // create a dummy bus and postpone the connection
