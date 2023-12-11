@@ -501,6 +501,7 @@ impl Mutability for Mutable {
 pub struct MemoryCell<'a, M: Mutability> {
     width: NonZeroU8,
     mem: M::Ref<'a, [Atom]>,
+    reset_value: M::Ref<'a, LogicState>,
 }
 
 impl<M: Mutability> MemoryCell<'_, M> {
@@ -512,6 +513,11 @@ impl<M: Mutability> MemoryCell<'_, M> {
     pub fn read(&self) -> LogicState {
         LogicState(LogicStateRepr::Bits(self.mem.iter().copied().collect()))
     }
+
+    #[inline]
+    pub fn reset_value(&self) -> &LogicState {
+        &*self.reset_value
+    }
 }
 
 impl MemoryCell<'_, Mutable> {
@@ -520,11 +526,23 @@ impl MemoryCell<'_, Mutable> {
             *dst = src;
         }
     }
+
+    #[inline]
+    pub fn set_reset_value(&mut self, value: LogicState) {
+        *self.reset_value = value;
+    }
+
+    pub fn reset(&mut self) {
+        for (dst, src) in self.mem.iter_mut().zip(self.reset_value.iter_atoms()) {
+            *dst = src;
+        }
+    }
 }
 
 pub struct MemoryBlock<'a, M: Mutability> {
     width: NonZeroU8,
     mem: M::Ref<'a, Memory>,
+    clear_value: M::Ref<'a, LogicState>,
 }
 
 impl<M: Mutability> MemoryBlock<'_, M> {
@@ -542,12 +560,27 @@ impl<M: Mutability> MemoryBlock<'_, M> {
     pub fn read(&self, addr: usize) -> Option<LogicState> {
         self.mem.read(addr)
     }
+
+    #[inline]
+    pub fn clear_value(&self) -> &LogicState {
+        &*self.clear_value
+    }
 }
 
 impl MemoryBlock<'_, Mutable> {
     #[inline]
     pub fn write(&mut self, addr: usize, value: &LogicState) -> Result<(), ()> {
         self.mem.write(addr, value.iter_atoms()).ok_or(())
+    }
+
+    #[inline]
+    pub fn set_clear_value(&mut self, value: LogicState) {
+        *self.clear_value = value;
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.mem.fill(self.clear_value);
     }
 }
 
@@ -1130,6 +1163,7 @@ pub(crate) struct Register {
     enable: WireStateId,
     clock: WireStateId,
     clock_trigger: ClockTrigger,
+    reset_value: LogicState,
     data: inline_vec!(Atom),
 }
 
@@ -1154,7 +1188,26 @@ impl Register {
             enable,
             clock,
             clock_trigger: ClockTrigger::new(clock_polarity),
+            reset_value: LogicState::UNDEFINED,
             data: smallvec![Atom::UNDEFINED; atom_count],
+        }
+    }
+
+    #[inline]
+    fn cell(&self) -> MemoryCell<'_, Immutable> {
+        MemoryCell {
+            width: self.width,
+            mem: &self.data,
+            reset_value: &self.reset_value,
+        }
+    }
+
+    #[inline]
+    fn cell_mut(&mut self) -> MemoryCell<'_, Mutable> {
+        MemoryCell {
+            width: self.width,
+            mem: &mut self.data,
+            reset_value: &mut self.reset_value,
         }
     }
 }
@@ -1184,22 +1237,16 @@ impl LargeComponent for Register {
     }
 
     fn get_data(&self) -> ComponentData<'_, Immutable> {
-        ComponentData::RegisterValue(MemoryCell {
-            width: self.width,
-            mem: &self.data,
-        })
+        ComponentData::RegisterValue(self.cell())
     }
 
     fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
-        ComponentData::RegisterValue(MemoryCell {
-            width: self.width,
-            mem: &mut self.data,
-        })
+        ComponentData::RegisterValue(self.cell_mut())
     }
 
     fn reset(&mut self) {
         self.clock_trigger.reset();
-        self.data.fill(Atom::UNDEFINED);
+        self.cell_mut().reset();
     }
 
     fn update(
@@ -1381,23 +1428,33 @@ impl Memory {
     }
 
     #[allow(clippy::unnecessary_cast)]
-    fn clear(&mut self) {
-        const VALUE: (u32, u32) = Atom::UNDEFINED.to_state_valid();
-        const STATE: u32 = VALUE.0;
-        const VALID: u32 = VALUE.1;
-
+    fn fill(&mut self, value: &LogicState) {
         match self {
             Self::U8(atoms) => {
-                atoms.fill([STATE as u8, VALID as u8]);
+                let (state, valid) = value.iter_atoms().next().unwrap().to_state_valid();
+                atoms.fill([state as u8, valid as u8]);
             }
             Self::U16(atoms) => {
-                atoms.fill([STATE as u16, VALID as u16]);
+                let (state, valid) = value.iter_atoms().next().unwrap().to_state_valid();
+                atoms.fill([state as u16, valid as u16]);
             }
             Self::U32(atoms) => {
-                atoms.fill([STATE as u32, VALID as u32]);
+                let (state, valid) = value.iter_atoms().next().unwrap().to_state_valid();
+                atoms.fill([state as u32, valid as u32]);
             }
-            Self::Big { atoms, .. } => {
-                atoms.fill(Atom::UNDEFINED);
+            &mut Self::Big {
+                atom_width,
+                ref mut atoms,
+            } => {
+                let len = atoms.len() / (atom_width.get() as usize);
+                let mut atoms = atoms.iter_mut();
+                for _ in 0..len {
+                    atoms
+                        .by_ref()
+                        .zip(value.iter_atoms())
+                        .take(atom_width.get() as usize)
+                        .for_each(|(dst, src)| *dst = src);
+                }
             }
         }
     }
@@ -1456,6 +1513,7 @@ pub(crate) struct Ram {
     clock: WireStateId,
     clock_trigger: ClockTrigger,
     data_width: NonZeroU8,
+    clear_value: LogicState,
     mem: Memory,
 }
 
@@ -1483,7 +1541,26 @@ impl Ram {
             clock,
             clock_trigger: ClockTrigger::new(clock_polarity),
             data_width,
+            clear_value: LogicState::UNDEFINED,
             mem: Memory::new(data_width, 1usize << addr_width.get()),
+        }
+    }
+
+    #[inline]
+    fn block(&self) -> MemoryBlock<'_, Immutable> {
+        MemoryBlock {
+            width: self.data_width,
+            mem: &self.mem,
+            clear_value: &self.clear_value,
+        }
+    }
+
+    #[inline]
+    fn block_mut(&mut self) -> MemoryBlock<'_, Mutable> {
+        MemoryBlock {
+            width: self.data_width,
+            mem: &mut self.mem,
+            clear_value: &mut self.clear_value,
         }
     }
 }
@@ -1515,22 +1592,16 @@ impl LargeComponent for Ram {
     }
 
     fn get_data(&self) -> ComponentData<'_, Immutable> {
-        ComponentData::MemoryBlock(MemoryBlock {
-            width: self.data_width,
-            mem: &self.mem,
-        })
+        ComponentData::MemoryBlock(self.block())
     }
 
     fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
-        ComponentData::MemoryBlock(MemoryBlock {
-            width: self.data_width,
-            mem: &mut self.mem,
-        })
+        ComponentData::MemoryBlock(self.block_mut())
     }
 
     fn reset(&mut self) {
         self.clock_trigger.reset();
-        self.mem.clear();
+        self.block_mut().clear();
     }
 
     fn update(
@@ -1611,6 +1682,7 @@ pub(crate) struct Rom {
     data: OutputStateId,
     data_wire: WireId,
     data_width: NonZeroU8,
+    clear_value: LogicState,
     mem: Memory,
 }
 
@@ -1628,7 +1700,26 @@ impl Rom {
             data,
             data_wire,
             data_width,
+            clear_value: LogicState::UNDEFINED,
             mem: Memory::new(data_width, 1usize << addr_width.get()),
+        }
+    }
+
+    #[inline]
+    fn block(&self) -> MemoryBlock<'_, Immutable> {
+        MemoryBlock {
+            width: self.data_width,
+            mem: &self.mem,
+            clear_value: &self.clear_value,
+        }
+    }
+
+    #[inline]
+    fn block_mut(&mut self) -> MemoryBlock<'_, Mutable> {
+        MemoryBlock {
+            width: self.data_width,
+            mem: &mut self.mem,
+            clear_value: &mut self.clear_value,
         }
     }
 }
@@ -1654,17 +1745,11 @@ impl LargeComponent for Rom {
     }
 
     fn get_data(&self) -> ComponentData<'_, Immutable> {
-        ComponentData::MemoryBlock(MemoryBlock {
-            width: self.data_width,
-            mem: &self.mem,
-        })
+        ComponentData::MemoryBlock(self.block())
     }
 
     fn get_data_mut(&mut self) -> ComponentData<'_, Mutable> {
-        ComponentData::MemoryBlock(MemoryBlock {
-            width: self.data_width,
-            mem: &mut self.mem,
-        })
+        ComponentData::MemoryBlock(self.block_mut())
     }
 
     fn reset(&mut self) {}

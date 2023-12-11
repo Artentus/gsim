@@ -1991,7 +1991,8 @@ impl ModuleImporter for YosysModuleImporter {
             {
                 // Yosys optimizes designs in a way that doesn't account for undefined register values,
                 // so we have to set registers to a valid logic state to make the design work in the simulation.
-                reg.write(&LogicState::LOGIC_0);
+                reg.set_reset_value(LogicState::LOGIC_0);
+                reg.reset();
             }
 
             if !cell.hide_name {
