@@ -444,7 +444,7 @@ pub enum YosysModuleImportError {
 }
 
 fn add_wire(
-    bits: &Bits,
+    bits: &[Signal],
     set_drive: Option<BusDirection>,
     builder: &mut crate::SimulatorBuilder,
 ) -> Result<WireId, YosysModuleImportError> {
@@ -506,7 +506,7 @@ struct WireMap {
     fixups: Vec<WireFixup>,
 }
 
-fn has_duplicate_net_ids(bits: &Bits) -> bool {
+fn has_duplicate_net_ids(bits: &[Signal]) -> bool {
     let mut set = HashSet::new();
 
     for bit in bits {
@@ -586,7 +586,7 @@ impl WireMap {
 
     fn get_bus_wire(
         &mut self,
-        bits: &Bits,
+        bits: &[Signal],
         direction: BusDirection,
         builder: &mut crate::SimulatorBuilder,
     ) -> Result<WireId, YosysModuleImportError> {
@@ -627,7 +627,7 @@ impl WireMap {
                         self.fixups.push(WireFixup {
                             bus_wire,
                             direction,
-                            bits: bits.clone(),
+                            bits: bits.to_vec(),
                         });
 
                         Ok(bus_wire)
@@ -635,7 +635,7 @@ impl WireMap {
                         // None of the wires are part of a bus yet, so we create a new one
                         let bus_wire = add_wire(bits, Some(direction), builder)?;
 
-                        self.bus_map.insert(bits.clone(), bus_wire);
+                        self.bus_map.insert(bits.to_vec(), bus_wire);
                         for (offset, &bit) in bits.iter().enumerate() {
                             if let Signal::Net(net_id) = bit {
                                 self.net_map[net_id] = NetMapping {
@@ -655,7 +655,7 @@ impl WireMap {
                     self.fixups.push(WireFixup {
                         bus_wire,
                         direction,
-                        bits: bits.clone(),
+                        bits: bits.to_vec(),
                     });
 
                     Ok(bus_wire)
@@ -1008,9 +1008,46 @@ impl ModuleImporter for YosysModuleImporter {
 
                 match port_direction {
                     PortDirection::Input => {
-                        let port_wire =
-                            wire_map.get_bus_wire(&port.bits, BusDirection::Read, builder)?;
-                        input_ports.insert(Arc::clone(port_name), port_wire);
+                        'get_wire: {
+                            // The B input of the procmux cell can become really large and exceed the maximum wire width.
+                            // Since we need to split it up anyway we can special-case it here to avoid unnecessary errors.
+                            if let CellType::Pmux = cell.cell_type {
+                                if &**port_name == "B" {
+                                    let input_width = cell
+                                        .ports
+                                        .get("A")
+                                        .ok_or_else(|| YosysModuleImportError::InvalidCellPorts {
+                                            cell_name: Arc::clone(cell_name),
+                                        })?
+                                        .bits
+                                        .len();
+
+                                    if (port.bits.len() % input_width) != 0 {
+                                        return Err(YosysModuleImportError::InvalidCellPorts {
+                                            cell_name: Arc::clone(cell_name),
+                                        });
+                                    }
+
+                                    let input_count = port.bits.len() / input_width;
+                                    for i in 0..input_count {
+                                        let bits =
+                                            &port.bits[(i * input_width)..((i + 1) * input_width)];
+                                        let port_wire = wire_map.get_bus_wire(
+                                            bits,
+                                            BusDirection::Read,
+                                            builder,
+                                        )?;
+                                        input_ports.insert(format!("B{i}").into(), port_wire);
+                                    }
+
+                                    break 'get_wire;
+                                }
+                            }
+
+                            let port_wire =
+                                wire_map.get_bus_wire(&port.bits, BusDirection::Read, builder)?;
+                            input_ports.insert(Arc::clone(port_name), port_wire);
+                        }
                     }
                     PortDirection::Output => {
                         let port_wire =
@@ -1479,7 +1516,7 @@ impl ModuleImporter for YosysModuleImporter {
                         })?
                 }
                 CellType::Pmux => {
-                    if input_ports.len() != 3 {
+                    if input_ports.len() < 3 {
                         return Err(YosysModuleImportError::InvalidCellPorts {
                             cell_name: Arc::clone(cell_name),
                         });
@@ -1492,12 +1529,6 @@ impl ModuleImporter for YosysModuleImporter {
                     }
 
                     let input_a = *input_ports.get("A").ok_or_else(|| {
-                        YosysModuleImportError::InvalidCellPorts {
-                            cell_name: Arc::clone(cell_name),
-                        }
-                    })?;
-
-                    let input_b = *input_ports.get("B").ok_or_else(|| {
                         YosysModuleImportError::InvalidCellPorts {
                             cell_name: Arc::clone(cell_name),
                         }
@@ -1516,8 +1547,6 @@ impl ModuleImporter for YosysModuleImporter {
                     })?;
 
                     let input_count = builder.get_wire_width(select).unwrap().get() as usize;
-                    let input_width = builder.get_wire_width(input_a).unwrap();
-
                     let mut decoder_inputs = Vec::with_capacity(input_count);
                     let mut mux_inputs = Vec::with_capacity(input_count + 1);
                     mux_inputs.push(input_a);
@@ -1529,15 +1558,12 @@ impl ModuleImporter for YosysModuleImporter {
                         decoder_inputs.push(select_bi);
                         builder.add_slice(select, i as u8, select_bi).unwrap();
 
-                        let offset = (i * (input_width.get() as usize)) as u8;
-                        let input_bi = builder
-                            .add_wire(input_width)
-                            .ok_or(YosysModuleImportError::ResourceLimitReached)?;
-                        builder.add_slice(input_b, offset, input_bi).map_err(|_| {
-                            YosysModuleImportError::InvalidCellPorts {
-                                cell_name: Arc::clone(cell_name),
-                            }
-                        })?;
+                        let input_bi =
+                            *input_ports.get(format!("B{i}").as_str()).ok_or_else(|| {
+                                YosysModuleImportError::InvalidCellPorts {
+                                    cell_name: Arc::clone(cell_name),
+                                }
+                            })?;
 
                         mux_inputs.push(input_bi);
                     }
