@@ -6,6 +6,7 @@
 use super::*;
 use crate::*;
 use serde::Deserialize;
+use std::collections::VecDeque;
 use std::num::NonZeroU8;
 use std::sync::Arc;
 
@@ -713,19 +714,19 @@ impl WireMap {
                 while let Some(first) = iter.next() {
                     match first {
                         Signal::Value(first_bit) => {
-                            let mut bits = Vec::new();
-                            bits.push(first_bit);
+                            let mut bits = VecDeque::new();
+                            bits.push_front(first_bit);
 
                             // Advance until we find a bit that is not a value
                             while let Some(&Signal::Value(bit)) = iter.peek() {
-                                bits.push(bit);
+                                bits.push_front(bit);
                                 iter.next();
                             }
 
                             // We didn't find any more bits that are part of this slice, so add it to the list
                             slices.push(Slice::Value {
                                 width: NonZeroU8::new(bits.len() as u8).unwrap(),
-                                drive: LogicState::from_bits(&bits).unwrap(),
+                                drive: LogicState::from_bits(bits.make_contiguous()).unwrap(),
                             });
                         }
                         Signal::Net(first_net_id) => {

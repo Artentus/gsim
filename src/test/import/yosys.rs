@@ -348,3 +348,42 @@ fn duplicate_net_ids() {
         );
     }
 }
+
+#[test]
+fn constant_order() {
+    const JSON: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/import_tests/yosys/constant_order.json"
+    ));
+
+    let i_width = NonZeroU8::new(1).unwrap();
+    let o_width = NonZeroU8::new(3).unwrap();
+    let (connections, mut sim) = test_yosys_import(JSON, &[("i", i_width)], &[("o", o_width)]);
+
+    let test_data = unary_gate_test_data!(
+        HIGH_Z -> {% 1, 0, X},
+        UNDEFINED -> {% 1, 0, X},
+        LOGIC_0 -> {% 1, 0, 0},
+        LOGIC_1 -> {% 1, 0, 1},
+    );
+
+    for (i, test_data) in test_data.iter().enumerate() {
+        sim.set_wire_drive(connections.inputs["i"], &test_data.input)
+            .unwrap();
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let output_state = sim.get_wire_state(connections.outputs["o"]).unwrap();
+
+        assert!(
+            output_state.eq(&test_data.output, o_width),
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output.display_string(o_width),
+            output_state.display_string(o_width),
+        );
+    }
+}

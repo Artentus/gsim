@@ -1,0 +1,33 @@
+{
+  "modules": {
+    "Top": {
+      "ports": {
+        "i": {
+          "direction": "input",
+          "bits": [ 1 ]
+        },
+        "o": {
+          "direction": "output",
+          "bits": [ 2, 3, 4 ]
+        }
+      },
+      "cells": {
+        "mux": {
+          "type": "$mux",
+          "port_directions": {
+            "A": "input",
+            "B": "input",
+            "S": "input",
+            "Y": "output"
+          },
+          "connections": {
+            "A": [ 1, "0", "1" ],
+            "B": [ "x", "x", "x" ],
+            "S": [ "0" ],
+            "Y": [ 2, 3, 4 ]
+          }
+        }
+      }
+    }
+  }
+}
