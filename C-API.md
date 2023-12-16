@@ -488,6 +488,13 @@ Returns `0` on success.
 Adds a NOT gate component to the simulation.  
 Returns `0` on success.
 
+### `builder_add_neg`
+
+`Result builder_add_neg(Builder* builder, WireId input, WireId output, ComponentId* component)`
+
+Adds a negation component to the simulation.  
+Returns `0` on success.
+
 ### `builder_add_horizontal_and_gate`
 
 `Result builder_add_horizontal_and_gate(Builder* builder, WireId input, WireId output, ComponentId* component)`

@@ -1443,6 +1443,7 @@ impl ModuleImporter for YosysModuleImporter {
             // https://yosyshq.readthedocs.io/projects/yosys/en/latest/CHAPTER_CellLib.html
             let cell_id = match &cell.cell_type {
                 CellType::Not => unary_gate_cell!(add_not_gate),
+                CellType::Neg => unary_gate_cell!(add_neg),
                 CellType::ReduceAnd => horizontal_gate_cell!(add_horizontal_and_gate),
                 CellType::ReduceOr | CellType::ReduceBool => {
                     horizontal_gate_cell!(add_horizontal_or_gate)

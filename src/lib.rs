@@ -1608,6 +1608,12 @@ impl SimulatorBuilder {
         NotGate
     );
 
+    def_add_unary_gate!(
+        /// Adds a `NEG` component to the simulation
+        add_neg,
+        Neg
+    );
+
     /// Adds a `Buffer` component to the simulation
     pub fn add_buffer(
         &mut self,

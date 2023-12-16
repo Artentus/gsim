@@ -830,6 +830,7 @@ macro_rules! impl_add_unary_gate {
 }
 
 impl_add_unary_gate!(add_not_gate);
+impl_add_unary_gate!(add_neg);
 impl_add_unary_gate!(add_horizontal_and_gate);
 impl_add_unary_gate!(add_horizontal_or_gate);
 impl_add_unary_gate!(add_horizontal_xor_gate);

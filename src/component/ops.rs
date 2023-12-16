@@ -523,6 +523,25 @@ pub(super) fn sub(
     result
 }
 
+pub(super) fn neg(
+    width: NonZeroU8,
+    out: &mut [Atom],
+    carry_out: &mut LogicBitState,
+    val: &[Atom],
+    carry_in: LogicBitState,
+) -> OpResult {
+    let mut carry = carry_in;
+    let result = perform_2(width, out, val, |width, _, mut v| {
+        let sum;
+        v.state = !v.state;
+        (sum, carry) = add_impl(width, Atom::LOGIC_0, v, carry);
+        sum
+    });
+
+    *carry_out = carry;
+    result
+}
+
 #[inline]
 fn mul_impl(width: AtomWidth, prev: Atom, a: Atom, b: Atom, c: Atom) -> (Atom, Atom) {
     let mask = LogicStorage::mask(width);

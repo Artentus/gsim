@@ -693,6 +693,23 @@ fn sub() {
 }
 
 #[test]
+fn neg() {
+    const TEST_DATA: &[UnaryGateTestData] = unary_gate_test_data!(
+        HIGH_Z -> UNDEFINED,
+        UNDEFINED -> UNDEFINED,
+
+        0 -> 0,
+        1 -> LOGIC_1,
+        LOGIC_1 -> 1,
+    );
+
+    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_16, TEST_DATA, 2);
+    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_32, TEST_DATA, 2);
+    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_33, TEST_DATA, 2);
+    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_64, TEST_DATA, 2);
+}
+
+#[test]
 fn mul() {
     let test_data: &[BinaryGateTestData] = binary_gate_test_data!(
         (HIGH_Z, HIGH_Z) -> UNDEFINED,

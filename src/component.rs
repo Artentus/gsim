@@ -53,6 +53,9 @@ pub(crate) enum SmallComponentKind {
         input_a: WireStateId,
         input_b: WireStateId,
     },
+    Neg {
+        input: WireStateId,
+    },
     Mul {
         input_a: WireStateId,
         input_b: WireStateId,
@@ -169,6 +172,7 @@ impl SmallComponent {
             }
             SmallComponentKind::Add { .. } => "ADD".into(),
             SmallComponentKind::Sub { .. } => "SUB".into(),
+            SmallComponentKind::Neg { .. } => "NEG".into(),
             SmallComponentKind::Mul { .. } => "MUL".into(),
             SmallComponentKind::LeftShift { .. } => "<<".into(),
             SmallComponentKind::LogicalRightShift { .. } => ">>".into(),
@@ -219,6 +223,7 @@ impl SmallComponent {
                 vec![(input_a, "A".into()), (input_b, "B".into())]
             }
             SmallComponentKind::NotGate { input }
+            | SmallComponentKind::Neg { input }
             | SmallComponentKind::HorizontalAnd { input }
             | SmallComponentKind::HorizontalOr { input }
             | SmallComponentKind::HorizontalXor { input }
@@ -325,6 +330,18 @@ impl SmallComponent {
                     &mut LogicBitState::Undefined,
                     lhs,
                     rhs,
+                    LogicBitState::Logic1,
+                )
+            }
+            SmallComponentKind::Neg { input } => {
+                let val = wire_states.get_state(input);
+                let (width, out) = output_states.get_data(output_base);
+
+                neg(
+                    width,
+                    out,
+                    &mut LogicBitState::Undefined,
+                    val,
                     LogicBitState::Logic1,
                 )
             }
