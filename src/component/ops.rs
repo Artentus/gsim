@@ -597,10 +597,8 @@ pub(super) fn mul(width: NonZeroU8, out: &mut [Atom], lhs: &[Atom], rhs: &[Atom]
         }
     }
 
-    let mut iter = (*tmp_state).into_iter().copied();
-    let result = perform_1(width, out, |_, _| iter.next().unwrap());
-
-    result
+    let mut iter = tmp_state.iter().copied();
+    perform_1(width, out, |_, _| iter.next().unwrap())
 }
 
 //#[inline]

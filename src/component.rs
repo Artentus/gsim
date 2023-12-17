@@ -533,7 +533,7 @@ impl<M: Mutability> MemoryCell<'_, M> {
 
     #[inline]
     pub fn reset_value(&self) -> &LogicState {
-        &*self.reset_value
+        &self.reset_value
     }
 }
 
@@ -580,7 +580,7 @@ impl<M: Mutability> MemoryBlock<'_, M> {
 
     #[inline]
     pub fn clear_value(&self) -> &LogicState {
-        &*self.clear_value
+        &self.clear_value
     }
 }
 
