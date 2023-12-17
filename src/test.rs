@@ -17,7 +17,7 @@ macro_rules! logic_state {
         LogicState::from_int($value)
     };
     ([$($value:expr),+ $(,)?]) => {
-        LogicState::from_big_int([$($value),+].as_slice())
+        LogicState::from_big_int([$($value),+].as_slice()).unwrap()
     };
     ($value:expr) => {
         LogicState::from_int($value)

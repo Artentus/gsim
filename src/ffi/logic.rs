@@ -36,7 +36,7 @@ ffi_fn! {
         let s = cast_c_str(s)?;
         let state_outer = check_ptr(state)?;
 
-        let state_box = Box::new(LogicState::parse(s).ok_or(FfiError::InvalidArgument)?);
+        let state_box = Box::new(LogicState::parse(s).map_err(|_| FfiError::InvalidArgument)?);
         let state_inner = Box::into_raw(state_box).cast_const();
         state_outer.as_ptr().write(state_inner);
 
@@ -62,6 +62,17 @@ ffi_fn! {
         clone_outer.as_ptr().write(clone_inner);
 
         return Ok(ffi_status::SUCCESS);
+    }
+}
+
+ffi_fn! {
+    logic_state_to_int(state: *const LogicState, width: u8, value: *mut u32) {
+        let state = cast_ptr(state)?;
+        let value = check_ptr(value)?;
+        let width = width.try_into()?;
+
+        value.as_ptr().write(state.to_int(width)?);
+        Ok(ffi_status::SUCCESS)
     }
 }
 

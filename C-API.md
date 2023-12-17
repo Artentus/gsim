@@ -11,6 +11,7 @@ Name                    | Value          | Description
 `ArgumentOutOfRange`    | `-0x0000_0004` | An argument was outside of its valid range
 `Utf8Encoding`          | `-0x0000_0005` | A string did not have valid UTF8 encoding
 `Io`                    | `-0x0000_0006` | An IO error occurred
+`InvalidOperation`      | `-0x0000_0007` | The operation was invalid
 `ResourceLimitReached`  | `-0x0001_0001` | The simulation reached its resource limit
 `WireWidthMismatch`     | `-0x0001_0002` | The width of two or more wires mismatched
 `WireWidthIncompatible` | `-0x0001_0003` | The width of a wire is incompatible with a component
@@ -135,6 +136,14 @@ The resulting `LogicState` must be freed by calling [`logic_state_free`](#logic_
 Clones a [`LogicState`](#logicstate) into a new allocation.  
 Returns `0` on success.  
 The cloned `LogicState` must be freed separately by calling [`logic_state_free`](#logic_state_free), only if the operation succeeded.
+
+### `logic_state_to_int`
+
+`Result logic_state_to_int(LogicState* state, u8 width, value: *mut u32)`
+
+Attempts to convert the first `width` bits of a [`LogicState`](#logicstate) to an integer.  
+`width`  must be between 1 and 32 inclusive. Will fail if any of the bits are either in the `Z` or `X` state.  
+Returns `0` on success.
 
 ### `logic_state_get_bit_state`
 

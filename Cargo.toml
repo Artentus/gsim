@@ -1,6 +1,6 @@
 [package]
 name = "gsim"
-version = "1.0.8"
+version = "1.1.0"
 edition = "2021"
 authors = ["Mathis Rech"]
 license = "MIT"

@@ -29,6 +29,7 @@ enum FfiError {
     ArgumentOutOfRange = 0x0000_0004,
     Utf8Encoding       = 0x0000_0005,
     Io                 = 0x0000_0006,
+    InvalidOperation   = 0x0000_0007,
 
     // Builder errors
     ResourceLimitReached  = 0x0001_0001,
@@ -67,6 +68,16 @@ impl From<std::num::TryFromIntError> for FfiError {
     #[inline]
     fn from(_: std::num::TryFromIntError) -> Self {
         Self::ArgumentOutOfRange
+    }
+}
+
+impl From<ToIntError> for FfiError {
+    #[inline]
+    fn from(value: ToIntError) -> Self {
+        match value {
+            ToIntError::InvalidWidth => Self::ArgumentOutOfRange,
+            ToIntError::Unrepresentable => Self::InvalidOperation,
+        }
     }
 }
 

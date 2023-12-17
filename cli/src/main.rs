@@ -175,7 +175,7 @@ fn drive(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
             .ok()
             .map(LogicState::from_int)
     } else {
-        LogicState::parse(new_state)
+        LogicState::parse(new_state).ok()
     };
 
     let Some(new_state) = new_state else {

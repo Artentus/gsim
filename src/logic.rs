@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use crate::{inline_vec, SafeDivCeil};
+use smallvec::{smallvec, SmallVec};
 use std::num::NonZeroU8;
 use std::ops::*;
 
@@ -550,7 +551,7 @@ impl Atom {
         }
     }
 
-    fn parse(s: &[u8]) -> Option<Self> {
+    fn parse(s: &[u8]) -> Result<Self, ParseError> {
         debug_assert!(!s.is_empty());
         debug_assert!(s.len() <= (Self::BITS.get() as usize));
 
@@ -561,7 +562,7 @@ impl Atom {
             state <<= 1;
             valid <<= 1;
 
-            let bit = LogicBitState::parse_byte(c)?;
+            let bit = LogicBitState::parse_byte(c).ok_or(ParseError::IllegalCharacter(c))?;
             let (bit_state, bit_valid) = match bit {
                 LogicBitState::HighZ => (0, 0),
                 LogicBitState::Undefined => (1, 0),
@@ -573,7 +574,7 @@ impl Atom {
             valid |= bit_valid;
         }
 
-        Some(Self {
+        Ok(Self {
             state: LogicStorage(state),
             valid: LogicStorage(valid),
         })
@@ -641,6 +642,46 @@ impl std::fmt::Display for Atom {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum FromBigIntError {
+    /// The number of words was not between 1 and 8 inclusive
+    InvalidWordCount,
+}
+
+#[derive(Debug, Clone)]
+pub enum FromBitsError {
+    /// The number of bits was not between 1 and 255 inclusive
+    InvalidBitCount,
+}
+
+#[derive(Debug, Clone)]
+pub enum ParseError {
+    /// The string contained a character other than `x`, `X`, `z`, `Z`, `0` or `1`
+    IllegalCharacter(u8),
+    /// The number of bits was not between 1 and 255 inclusive
+    InvalidBitCount,
+}
+
+#[derive(Debug, Clone)]
+pub enum ToIntError {
+    /// The specified width was bigger than 32
+    InvalidWidth,
+    /// The first `width` bits of the logic state are not representable by an integer
+    Unrepresentable,
+}
+
+#[derive(Debug, Clone)]
+pub enum ToBoolError {
+    /// The first bit of the logic state is not representable by a boolean
+    Unrepresentable,
+}
+
+#[derive(Debug, Clone)]
+pub enum ToBigIntError {
+    /// The first `width` bits of the logic state are not representable by an integer
+    Unrepresentable,
+}
+
 pub(crate) const MAX_ATOM_COUNT: usize = NonZeroU8::MAX.get().div_ceil(Atom::BITS.get()) as usize;
 
 #[derive(Debug, Clone)]
@@ -682,7 +723,7 @@ impl LogicState {
         array[0] = value;
 
         // TODO: if smallvec ever supports it, construct a length 1 vector instead
-        let vec = smallvec::SmallVec::from_const(array);
+        let vec = SmallVec::from_const(array);
         Self(LogicStateRepr::Int(vec))
     }
 
@@ -698,20 +739,28 @@ impl LogicState {
     ///
     /// Integer words are given in little endian order, bits past the end are implicitely assigned the value 0
     #[inline]
-    pub fn from_big_int<T: Into<inline_vec!(u32)>>(value: T) -> Self {
-        Self(LogicStateRepr::Int(value.into()))
+    pub fn from_big_int<T: Into<inline_vec!(u32)>>(value: T) -> Result<Self, FromBigIntError> {
+        let list = value.into();
+
+        if (1..=MAX_ATOM_COUNT).contains(&list.len()) {
+            Ok(Self(LogicStateRepr::Int(list)))
+        } else {
+            Err(FromBigIntError::InvalidWordCount)
+        }
     }
 
     /// Creates a new logic state from the given bits (most significant bit first)
     ///
     /// Bits past the specified ones are implicitely assigned the value Z
-    pub fn from_bits(bits: &[LogicBitState]) -> Option<Self> {
-        let width = u8::try_from(bits.len()).ok().and_then(NonZeroU8::new)?;
+    pub fn from_bits(bits: &[LogicBitState]) -> Result<Self, FromBitsError> {
+        let width = u8::try_from(bits.len())
+            .and_then(NonZeroU8::try_from)
+            .map_err(|_| FromBitsError::InvalidBitCount)?;
 
         let head_width = (width.get() % Atom::BITS.get()) as usize;
         let list_len = (width.get().div_ceil(Atom::BITS.get())) as usize;
 
-        let mut list = smallvec::smallvec![Atom::HIGH_Z; list_len];
+        let mut list = smallvec![Atom::HIGH_Z; list_len];
         let mut i = list_len;
 
         if head_width > 0 {
@@ -732,7 +781,7 @@ impl LogicState {
         }
         debug_assert_eq!(chunks.remainder().len(), 0);
 
-        Some(Self(LogicStateRepr::Bits(list)))
+        Ok(Self(LogicStateRepr::Bits(list)))
     }
 
     /// Constructs a logic state from a string of bits (most significant bit first)
@@ -747,28 +796,27 @@ impl LogicState {
     /// let state = LogicState::parse("10XZ").unwrap();
     /// assert_eq!(state.display_string(NonZeroU8::new(4).unwrap()), "10XZ");
     /// ```
-    pub fn parse(s: &str) -> Option<Self> {
-        let width = u8::try_from(s.len()).ok().and_then(NonZeroU8::new)?;
+    pub fn parse(s: &str) -> Result<Self, ParseError> {
+        let s = s.as_bytes();
 
-        if !s.is_ascii() {
-            return None;
-        }
-
+        let width = u8::try_from(s.len())
+            .and_then(NonZeroU8::try_from)
+            .map_err(|_| ParseError::InvalidBitCount)?;
         let head_width = (width.get() % Atom::BITS.get()) as usize;
         let list_len = (width.get().div_ceil(Atom::BITS.get())) as usize;
 
-        let mut list = smallvec::smallvec![Atom::HIGH_Z; list_len];
+        let mut list = smallvec![Atom::HIGH_Z; list_len];
         let mut i = list_len;
 
         if head_width > 0 {
-            let head_str = &s.as_bytes()[..head_width];
+            let head_str = &s[..head_width];
             let head = Atom::parse(head_str)?;
 
             i -= 1;
             list[i] = head;
         }
 
-        let tail_str = &s.as_bytes()[head_width..];
+        let tail_str = &s[head_width..];
         let mut chunks = tail_str.chunks_exact(Atom::BITS.get() as usize);
         for item_bits in chunks.by_ref() {
             let item = Atom::parse(item_bits)?;
@@ -778,7 +826,86 @@ impl LogicState {
         }
         debug_assert_eq!(chunks.remainder().len(), 0);
 
-        Some(Self(LogicStateRepr::Bits(list)))
+        Ok(Self(LogicStateRepr::Bits(list)))
+    }
+
+    /// Converts the first `width` bits of the logic state into an integer
+    pub fn to_int(&self, width: NonZeroU8) -> Result<u32, ToIntError> {
+        let Some(width) = AtomWidth::new(width.get()) else {
+            return Err(ToIntError::InvalidWidth);
+        };
+        let mask = LogicStorage::mask(width);
+
+        match &self.0 {
+            LogicStateRepr::HighZ | LogicStateRepr::Undefined => Err(ToIntError::Unrepresentable),
+            LogicStateRepr::Logic0 => Ok(0),
+            LogicStateRepr::Logic1 => Ok(mask.get()),
+            LogicStateRepr::Int(list) => Ok(list[0] & mask.get()),
+            LogicStateRepr::Bits(list) => {
+                if list[0].is_valid(width) {
+                    Ok((list[0].state & mask).get())
+                } else {
+                    Err(ToIntError::Unrepresentable)
+                }
+            }
+        }
+    }
+
+    /// Converts the first bit of the logic state into a boolean
+    pub fn to_bool(&self) -> Result<bool, ToBoolError> {
+        match &self.0 {
+            LogicStateRepr::HighZ | LogicStateRepr::Undefined => Err(ToBoolError::Unrepresentable),
+            LogicStateRepr::Logic0 => Ok(false),
+            LogicStateRepr::Logic1 => Ok(true),
+            LogicStateRepr::Int(list) => Ok((list[0] & 0x1) > 0),
+            LogicStateRepr::Bits(list) => match list[0].get_bit_state(AtomOffset::MIN) {
+                LogicBitState::HighZ | LogicBitState::Undefined => {
+                    Err(ToBoolError::Unrepresentable)
+                }
+                LogicBitState::Logic0 => Ok(false),
+                LogicBitState::Logic1 => Ok(true),
+            },
+        }
+    }
+
+    /// Converts the first `width` bits of the logic state into an integer
+    ///
+    /// Integer words are given in little endian order
+    pub fn to_big_int(&self, width: NonZeroU8) -> Result<inline_vec!(u32), ToBigIntError> {
+        let word_count = width.safe_div_ceil(Atom::BITS).get() as usize;
+
+        let mut words = match &self.0 {
+            LogicStateRepr::HighZ | LogicStateRepr::Undefined => {
+                return Err(ToBigIntError::Unrepresentable)
+            }
+            LogicStateRepr::Logic0 => smallvec![u32::MIN; word_count],
+            LogicStateRepr::Logic1 => smallvec![u32::MAX; word_count],
+            LogicStateRepr::Int(list) => list[..word_count].iter().copied().collect(),
+            LogicStateRepr::Bits(list) => {
+                let mut total_width = width.get();
+
+                list[..word_count]
+                    .iter()
+                    .map(|atom| {
+                        let width = AtomWidth::new(total_width).unwrap_or(AtomWidth::MAX);
+                        total_width -= width.get();
+
+                        if atom.is_valid(width) {
+                            Ok(atom.state.get())
+                        } else {
+                            Err(ToBigIntError::Unrepresentable)
+                        }
+                    })
+                    .collect::<Result<_, _>>()?
+            }
+        };
+
+        let last_width = width.get() % Atom::BITS.get();
+        if let Some(last_width) = AtomWidth::new(last_width) {
+            *words.last_mut().unwrap() &= LogicStorage::mask(last_width).get();
+        }
+
+        Ok(words)
     }
 
     /// Gets the logic state of a single bit
@@ -940,14 +1067,14 @@ impl<'de> serde::Deserialize<'de> for LogicState {
             type Value = LogicState;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string consisting of only the chars ['Z', 'z', 'X', 'x', '0', '1'] and length 1 to 32")
+                formatter.write_str("a string consisting of only the chars ['Z', 'z', 'X', 'x', '0', '1'] and length 1 to 255")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: Error,
             {
-                LogicState::parse(v).ok_or_else(|| E::invalid_value(Unexpected::Str(v), &self))
+                LogicState::parse(v).map_err(|_| E::invalid_value(Unexpected::Str(v), &self))
             }
         }
 

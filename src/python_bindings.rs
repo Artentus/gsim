@@ -202,17 +202,29 @@ impl PyLogicState {
     fn new(value: &PyAny) -> PyResult<Self> {
         if let Ok(value) = value.extract::<bool>() {
             Ok(Self(LogicState::from_bool(value)))
-        } else if let Ok(value) = value.extract::<u32>() {
-            Ok(Self(LogicState::from_int(value)))
         } else if let Ok(value) = value.extract::<BigUint>() {
             let vec: SmallVec<_> = value.iter_u32_digits().collect();
-            Ok(Self(LogicState::from_big_int(vec)))
+            let state = LogicState::from_big_int(vec).map_err(|_| PyValueError::new_err(()))?;
+            Ok(Self(state))
         } else if let Ok(value) = value.extract::<&str>() {
-            let state = LogicState::parse(value).ok_or_else(|| PyValueError::new_err(()))?;
+            let state = LogicState::parse(value).map_err(|_| PyValueError::new_err(()))?;
             Ok(Self(state))
         } else {
             Err(PyTypeError::new_err(()))
         }
+    }
+
+    fn to_bool(&self) -> PyResult<bool> {
+        self.0.to_bool().map_err(|_| PyValueError::new_err(()))
+    }
+
+    fn to_int(&self, width: u8) -> PyResult<BigUint> {
+        let width = width.try_into().map_err(|_| PyValueError::new_err(()))?;
+        let words = self
+            .0
+            .to_big_int(width)
+            .map_err(|_| PyValueError::new_err(()))?;
+        Ok(BigUint::from_slice(&words))
     }
 
     fn to_string(&self, width: u8) -> PyResult<String> {
