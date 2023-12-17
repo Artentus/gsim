@@ -203,7 +203,11 @@ impl PyLogicState {
         if let Ok(value) = value.extract::<bool>() {
             Ok(Self(LogicState::from_bool(value)))
         } else if let Ok(value) = value.extract::<BigUint>() {
-            let vec: SmallVec<_> = value.iter_u32_digits().collect();
+            let mut vec: SmallVec<_> = value.iter_u32_digits().collect();
+            if vec.len() == 0 {
+                // zero
+                vec.push(0);
+            }
             let state = LogicState::from_big_int(vec).map_err(|_| PyValueError::new_err(()))?;
             Ok(Self(state))
         } else if let Ok(value) = value.extract::<&str>() {
