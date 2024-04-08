@@ -47,9 +47,9 @@ pub unsafe extern "C" fn logic_state_from_int(value: u32) -> *const LogicState {
 }
 
 ffi_fn! {
-    /// Parses a `LogicState` from a string representation. High bits are set to high impedance.  
-    /// Will fail if the string is longer than 255 characters, shorter than one character, or contains characters other than `'z'`, `'Z'`, `'x'`, `'X'`, `'0'` and `'1'`.  
-    /// Returns `GSIM_RESULT_SUCCESS` on success.  
+    /// Parses a `LogicState` from a string representation. High bits are set to high impedance.
+    /// Will fail if the string is longer than 255 characters, shorter than one character, or contains characters other than `'z'`, `'Z'`, `'x'`, `'X'`, `'0'` and `'1'`.
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.
     logic_state_parse(s: *const c_char, state: *mut *const LogicState) {
         let s = cast_c_str(s)?;
@@ -64,8 +64,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    /// Clones a `LogicState` into a new allocation.  
-    /// Returns `GSIM_RESULT_SUCCESS` on success.  
+    /// Clones a `LogicState` into a new allocation.
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     /// The cloned `LogicState` must be freed separately by calling `logic_state_free`, only if the operation succeeded.
     logic_state_clone(state: *const LogicState, clone: *mut *const LogicState) {
         let clone_outer = check_ptr(clone)?;
@@ -88,8 +88,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    /// Attempts to convert the first `width` bits of a `LogicState` to an integer.  
-    /// `width`  must be between 1 and 32 inclusive. Will fail if any of the bits are either in the `Z` or `X` state.  
+    /// Attempts to convert the first `width` bits of a `LogicState` to an integer.
+    /// `width`  must be between 1 and 32 inclusive. Will fail if any of the bits are either in the `Z` or `X` state.
     /// Returns `GSIM_RESULT_SUCCESS` on success.
     logic_state_to_int(state: *const LogicState, width: u8, value: *mut u32) {
         let state = cast_ptr(state)?;
@@ -102,7 +102,7 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    /// Gets the state of a single bit in a `LogicState`.  
+    /// Gets the state of a single bit in a `LogicState`.
     /// On success, returns one of the following values: `GSIM_RESULT_HIGH_Z`, `GSIM_RESULT_UNDEFINED`, `GSIM_RESULT_LOGIC_0`, `GSIM_RESULT_LOGIC_1`
     logic_state_get_bit_state(state: *const LogicState, bit_index: u8) {
         let state = cast_ptr(state)?;
@@ -118,9 +118,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    /// Prints the string representation of a `LogicState` into a buffer.  
-    /// The buffer must be big enough to hold at least `width` bytes and will not be null terminated by this function.  
-    /// Since the buffer is owned by the caller, it must not be freed by `string_free`.  
+    /// Prints the string representation of a `LogicState` into a buffer.
+    /// The buffer must be big enough to hold at least `width` bytes and will not be null terminated by this function.
+    /// Since the buffer is owned by the caller, it must not be freed by `string_free`.
     /// Returns `GSIM_RESULT_SUCCESS` on success.
     logic_state_print(state: *const LogicState, width: u8, buffer: *mut c_char) {
         let state = cast_ptr(state)?;
@@ -136,7 +136,7 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    /// Checks the first `width` bits of two `LogicState` objects for equality.  
+    /// Checks the first `width` bits of two `LogicState` objects for equality.
     /// On success, returns one of the following values: `GSIM_RESULT_FALSE`, `GSIM_RESULT_TRUE`
     logic_state_eq(a: *const LogicState, b: *const LogicState, width: u8) {
         let a = cast_ptr(a)?;
@@ -151,7 +151,7 @@ ffi_fn! {
 }
 
 ffi_fn! {
-    /// Frees a `LogicState` that was returned by other functions in the API.  
+    /// Frees a `LogicState` that was returned by other functions in the API.
     /// Returns `GSIM_RESULT_SUCCESS` on success.
     logic_state_free(state: *mut LogicState) {
         if std::ptr::eq(state.cast_const(), HIGH_Z)
