@@ -1107,5 +1107,3 @@ macro_rules! bits {
         $crate::LogicState::from_bits(BITS).unwrap()
     }}
 }
-
-pub use bits;
