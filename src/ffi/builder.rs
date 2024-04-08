@@ -1,11 +1,14 @@
 use super::*;
 
 ffi_fn! {
-    builder_new(builder: *mut *const SimulatorBuilder) {
+    /// Creates a new `Builder` object.  
+    /// The resulting `Builder` must be freed by calling `simulator_build`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
+    builder_new(builder: *mut *mut SimulatorBuilder) {
         let builder_outer = check_ptr(builder)?;
 
         let builder_box = Box::<SimulatorBuilder>::default();
-        let builder_inner = Box::into_raw(builder_box).cast_const();
+        let builder_inner = Box::into_raw(builder_box);
         builder_outer.as_ptr().write(builder_inner);
 
         Ok(ffi_status::SUCCESS)
@@ -14,6 +17,8 @@ ffi_fn! {
 
 #[cfg(feature = "dot-export")]
 ffi_fn! {
+    /// Writes the simulation graph into a Graphviz DOT file.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_write_dot(
         builder: *const SimulatorBuilder,
         dot_file: *const c_char,
@@ -31,6 +36,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the width of a wire.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_get_wire_width(builder: *const SimulatorBuilder, wire: WireId, width: *mut u8) {
         let builder = cast_ptr(builder)?;
         let width_outer = check_ptr(width)?;
@@ -43,6 +50,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Drives a wire to a certain state without needing a component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_set_wire_drive(builder: *mut SimulatorBuilder, wire: WireId, drive: *const LogicState) {
         let builder = cast_mut_ptr(builder)?;
         let drive = cast_ptr(drive)?;
@@ -53,6 +62,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current drive of a wire.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_get_wire_drive(builder: *const SimulatorBuilder, wire: WireId, drive: *mut *const LogicState) {
         let builder = cast_ptr(builder)?;
         let drive_outer = check_ptr(drive)?;
@@ -66,6 +78,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the width of a register in the simulation.  
+    /// The ID passed to `register` must refer to a register component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_get_register_width(
         builder: *const SimulatorBuilder,
         register: ComponentId,
@@ -86,6 +101,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current state of a register in the simulation.  
+    /// The ID passed to `register` must refer to a register component.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_read_register_state(
         builder: *const SimulatorBuilder,
         register: ComponentId,
@@ -108,6 +127,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Sets the state of a register in the simulation.  
+    /// The ID passed to `register` must refer to a register component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_write_register_state(
         builder: *mut SimulatorBuilder,
         register: ComponentId,
@@ -128,6 +150,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the size and width of a memory block in the simulation.  
+    /// The ID passed to `memory` must refer to a memory component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_get_memory_metrics(
         builder: *const SimulatorBuilder,
         memory: ComponentId,
@@ -151,6 +176,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current state of a memory location in the simulation.  
+    /// The ID passed to `memory` must refer to a memory component.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_read_memory_state(
         builder: *const SimulatorBuilder,
         memory: ComponentId,
@@ -174,6 +203,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Sets the state of a memory location in the simulation.  
+    /// The ID passed to `memory` must refer to a memory component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_write_memory_state(
         builder: *mut SimulatorBuilder,
         memory: ComponentId,
@@ -196,6 +228,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Sets the name of a wire.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_set_wire_name(
         builder: *mut SimulatorBuilder,
         wire: WireId,
@@ -210,6 +244,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the name of a wire, if one has been assigned.  
+    /// If no name has been assigned to the wire, name will be set to `null`.  
+    /// The resulting string (if any) must be freed by calling `string_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_get_wire_name(
         builder: *const SimulatorBuilder,
         wire: WireId,
@@ -229,6 +267,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Sets the name of a wire.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_set_component_name(
         builder: *mut SimulatorBuilder,
         component: ComponentId,
@@ -243,6 +283,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the name of a component, if one has been assigned.  
+    /// If no name has been assigned to the component, name will be set to `null`.  
+    /// The resulting string (if any) must be freed by calling `string_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     builder_get_component_name(
         builder: *const SimulatorBuilder,
         component: ComponentId,
@@ -544,7 +588,7 @@ ffi_fn! {
 }
 
 #[repr(C)]
-struct PortList {
+pub struct PortList {
     len: usize,
     names: *const *const c_char,
     wires: *const WireId,
@@ -596,6 +640,8 @@ impl PortList {
 }
 
 ffi_fn! {
+    /// Frees all allocations of a `PortList` struct that was returned by other functions in the API.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     port_list_free(port_list: PortList) {
         port_list.free()?;
         Ok(ffi_status::SUCCESS)
@@ -604,6 +650,13 @@ ffi_fn! {
 
 #[cfg(feature = "yosys-import")]
 ffi_fn! {
+    /// Imports a module defined by a Yosys netgraph into the circuit.  
+    /// On success, `inputs` and `outputs` will contain a list of the imported modules ports.  
+    /// The resulting `PortList` objects must be freed by calling `port_list_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
+    /// 
+    /// Valid netgraphs can be generated with this command:  
+    /// `yosys -p "read_verilog <VERILOG-FILE>; synth -top <TOP-MODULE> -flatten -noalumacc -nordff -run begin:fine; hierarchy -check; check; write_json <OUTPUT-FILE>`
     builder_import_yosys_module(
         builder: *mut SimulatorBuilder,
         json_file: *const c_char,

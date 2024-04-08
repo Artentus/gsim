@@ -218,14 +218,6 @@ Gets the current drive of a wire.
 The resulting `LogicState` must be freed by calling [`logic_state_free`](#logic_state_free), only if the operation succeeded.  
 Returns `0` on success.
 
-### `builder_get_wire_state`
-
-`Result builder_get_wire_state(Builder* builder, WireId wire, LogicState** state)`
-
-Gets the current state of a wire.  
-The resulting `LogicState` must be freed by calling [`logic_state_free`](#logic_state_free), only if the operation succeeded.  
-Returns `0` on success.
-
 ### `builder_get_register_width`
 
 `Result builder_get_register_width(Builder* builder, ComponentId register, u8* width)`

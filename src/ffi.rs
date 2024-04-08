@@ -4,6 +4,7 @@ use crate::*;
 use std::ffi::{c_char, CStr, CString};
 use std::ptr::NonNull;
 
+/// cbindgen:ignore
 mod ffi_status {
     pub const SUCCESS: u32 = 0;
 
@@ -140,8 +141,9 @@ impl From<InvalidComponentIdError> for FfiError {
     }
 }
 
+/// One of the `GSIM_RESULT_*` constants
 #[repr(transparent)]
-struct FfiResult(i32);
+pub struct FfiResult(i32);
 
 impl From<Result<u32, FfiError>> for FfiResult {
     #[inline]
@@ -181,12 +183,15 @@ unsafe fn cast_c_str<'a>(ptr: *const c_char) -> Result<&'a str, FfiError> {
 
 macro_rules! ffi_fn {
     (
+        $(#[$attr:meta])*
         $name:ident(
             $($param_name:ident : $param_ty:ty),* $(,)?
         ) $body:block
     ) => {
+        $(#[$attr])*
         #[no_mangle]
-        unsafe extern "C" fn $name($($param_name : $param_ty),*) -> FfiResult {
+        #[must_use]
+        pub unsafe extern "C" fn $name($($param_name : $param_ty),*) -> FfiResult {
             #[inline]
             unsafe fn fn_impl($($param_name : $param_ty),*) -> Result<u32, FfiError> $body
 
@@ -196,6 +201,8 @@ macro_rules! ffi_fn {
 }
 
 ffi_fn! {
+    /// Frees a string that was returned by other functions in the API.
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     string_free(s: *const c_char) {
         let s = check_ptr(s.cast_mut())?;
         let s = CString::from_raw(s.as_ptr());

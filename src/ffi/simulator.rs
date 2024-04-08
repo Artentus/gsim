@@ -3,14 +3,20 @@ use super::*;
 #[cfg(feature = "tracing")]
 type TracedSimulator = Simulator<std::io::BufWriter<std::fs::File>>;
 
-enum FfiSimulator {
+/// An opaque type representing a simulation.  
+/// Use only behind a pointer.
+pub enum FfiSimulator {
     NoTrace(Simulator),
     #[cfg(feature = "tracing")]
     Trace(TracedSimulator),
 }
 
 ffi_fn! {
-    simulator_build(builder: *mut *mut SimulatorBuilder, simulator: *mut *const FfiSimulator) {
+    /// Creates a new `Simulator` object from a `Builder`.  
+    /// If the operation succeeded, the specified `Builder` will be freed and be set to `null`.  
+    /// The resulting `Simulator` must be freed by calling `simulator_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
+    simulator_build(builder: *mut *mut SimulatorBuilder, simulator: *mut *mut FfiSimulator) {
         let builder_outer = check_ptr(builder)?;
         let builder_inner = check_ptr(*builder_outer.as_ptr())?;
         let simulator_outer = check_ptr(simulator)?;
@@ -19,7 +25,7 @@ ffi_fn! {
         builder.write(std::ptr::null_mut());
 
         let simulator_box = Box::new(FfiSimulator::NoTrace(builder_box.build()));
-        let simulator_inner = Box::into_raw(simulator_box).cast_const();
+        let simulator_inner = Box::into_raw(simulator_box);
         simulator_outer.as_ptr().write(simulator_inner);
 
         Ok(ffi_status::SUCCESS)
@@ -28,6 +34,11 @@ ffi_fn! {
 
 #[cfg(feature = "tracing")]
 ffi_fn! {
+    /// Creates a new `Simulator` object from a `Builder`, with VCD tracing enabled.  
+    /// If the operation succeeded, the specified `Builder` will be freed and be set to `null`.  
+    /// The `Builder` may be freed even if the operation failed. In this case it will also be set to `null`.  
+    /// The resulting `Simulator` must be freed by calling `simulator_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_build_with_trace(
         builder: *mut *mut SimulatorBuilder,
         trace_file: *const c_char,
@@ -55,6 +66,8 @@ ffi_fn! {
 
 #[cfg(feature = "dot-export")]
 ffi_fn! {
+    /// Writes the simulation graph into a Graphviz DOT file.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_write_dot(
         simulator: *const FfiSimulator,
         dot_file: *const c_char,
@@ -78,6 +91,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the width of a wire.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_wire_width(simulator: *const FfiSimulator, wire: WireId, width: *mut u8) {
         let simulator = cast_ptr(simulator)?;
         let width_outer = check_ptr(width)?;
@@ -94,6 +109,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Drives a wire to a certain state without needing a component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_set_wire_drive(simulator: *mut FfiSimulator, wire: WireId, drive: *const LogicState) {
         let simulator = cast_mut_ptr(simulator)?;
         let drive = cast_ptr(drive)?;
@@ -108,6 +125,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current drive of a wire.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_wire_drive(simulator: *const FfiSimulator, wire: WireId, drive: *mut *const LogicState) {
         let simulator = cast_ptr(simulator)?;
         let drive_outer = check_ptr(drive)?;
@@ -125,6 +145,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current state of a wire.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_wire_state(simulator: *const FfiSimulator, wire: WireId, state: *mut *const LogicState) {
         let simulator = cast_ptr(simulator)?;
         let state_outer = check_ptr(state)?;
@@ -142,6 +165,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the width of a register in the simulation.  
+    /// The ID passed to `register` must refer to a register component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_register_width(
         simulator: *const FfiSimulator,
         register: ComponentId,
@@ -166,6 +192,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current state of a register in the simulation.  
+    /// The ID passed to `register` must refer to a register component.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_read_register_state(
         simulator: *const FfiSimulator,
         register: ComponentId,
@@ -192,6 +222,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Sets the state of a register in the simulation.  
+    /// The ID passed to `register` must refer to a register component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_write_register_state(
         simulator: *mut FfiSimulator,
         register: ComponentId,
@@ -216,6 +249,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the size and width of a memory block in the simulation.  
+    /// The ID passed to `memory` must refer to a memory component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_memory_metrics(
         simulator: *const FfiSimulator,
         memory: ComponentId,
@@ -243,6 +279,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the current state of a memory location in the simulation.  
+    /// The ID passed to `memory` must refer to a memory component.  
+    /// The resulting `LogicState` must be freed by calling `logic_state_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_read_memory_state(
         simulator: *const FfiSimulator,
         memory: ComponentId,
@@ -270,6 +310,9 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Sets the state of a memory location in the simulation.  
+    /// The ID passed to `memory` must refer to a memory component.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_write_memory_state(
         simulator: *mut FfiSimulator,
         memory: ComponentId,
@@ -296,6 +339,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the name of a wire, if one has been assigned.  
+    /// If no name has been assigned to the wire, name will be set to `null`.  
+    /// The resulting string (if any) must be freed by calling `string_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_wire_name(
         simulator: *mut FfiSimulator,
         wire: WireId,
@@ -319,6 +366,10 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Gets the name of a component, if one has been assigned.  
+    /// If no name has been assigned to the component, name will be set to `null`.  
+    /// The resulting string (if any) must be freed by calling `string_free`, only if the operation succeeded.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_get_component_name(
         simulator: *mut FfiSimulator,
         component: ComponentId,
@@ -342,6 +393,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Resets the simulation.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_reset(simulator: *mut FfiSimulator) {
         let simulator = cast_mut_ptr(simulator)?;
         match simulator {
@@ -355,7 +408,7 @@ ffi_fn! {
 }
 
 #[repr(C)]
-struct SimulationErrors {
+pub struct SimulationErrors {
     conflicts_len: usize,
     conflicts: *const WireId,
 }
@@ -382,6 +435,8 @@ impl SimulationErrors {
 }
 
 ffi_fn! {
+    /// Frees all allocations of a `SimulationErrors` struct that was returned by other functions in the API.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulation_errors_free(error: SimulationErrors) {
         error.free()?;
         Ok(ffi_status::SUCCESS)
@@ -389,6 +444,13 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Runs the simulation until it settles, but at most for `max_steps` steps.  
+    /// On success, returns one of the following values:
+    /// - `GSIM_RESULT_SUCCESS`: the simulation settled within `max_steps` steps
+    /// - `GSIM_RESULT_MAX_STEPS_REACHED`: the simulation did not settle within `max_steps` steps
+    /// 
+    /// If a `Conflict` failure is reported, `errors` will contain additional information about which wires had a driver conflict.  
+    /// In this case, `errors` must later be freed by calling `simulation_errors_free`.
     simulator_run_sim(simulator: *mut FfiSimulator, max_steps: u64, errors: *mut SimulationErrors) {
         let simulator = cast_mut_ptr(simulator)?;
         let errors = check_ptr(errors)?;
@@ -411,6 +473,9 @@ ffi_fn! {
 
 #[cfg(feature = "tracing")]
 ffi_fn! {
+    /// Writes the current state of the simulation into the simulators associated VCD file at the specified time in nanoseconds.  
+    /// Calling this function with a `Simulator` that was not constructed by `simulator_build_with_trace` is not illegal, but will have no effect.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_trace(simulator: *mut FfiSimulator, time: u64) {
         let simulator = cast_mut_ptr(simulator)?;
         match simulator {
@@ -424,6 +489,8 @@ ffi_fn! {
 }
 
 ffi_fn! {
+    /// Frees a `Simulator` object.  
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
     simulator_free(simulator: *mut FfiSimulator) {
         let simulator = check_ptr(simulator)?;
         let simulator_box = Box::from_raw(simulator.as_ptr());
