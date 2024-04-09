@@ -17,6 +17,9 @@
 #define GSIM_MUST_USE
 #endif
 
+#define INVALID_WIRE_ID      0xFFFFFFFF
+#define INVALID_COMPONENT_ID 0xFFFFFFFF
+
 #define GSIM_RESULT_SUCCESS 0
 
 #define GSIM_RESULT_MAX_STEPS_REACHED 1
@@ -580,8 +583,20 @@ GSIM_MUST_USE const LogicState *logic_state_logic_1(void);
 
 /**
  * Creates a `LogicState` representing the given integer. High bits are set to 0.
+ * The returned `LogicState` must be freed by calling `logic_state_free`.
  */
 GSIM_MUST_USE const LogicState *logic_state_from_int(uint32_t value);
+
+/**
+ * Creates a `LogicState` representing the given integer. Integer words are given in little endian order, high bits are set to 0.
+ * Will fail if `word_len` is not between 1 and 8 inclusive.
+ * Returns `GSIM_RESULT_SUCCESS` on success.
+ * The returned `LogicState` must be freed by calling `logic_state_free`.
+ */
+GSIM_MUST_USE
+GsimResult logic_state_from_big_int(const uint32_t *value,
+                                    size_t word_len,
+                                    const LogicState **state);
 
 /**
  * Parses a `LogicState` from a string representation. High bits are set to high impedance.
@@ -611,6 +626,16 @@ GSIM_MUST_USE
 GsimResult logic_state_to_int(const LogicState *state,
                               uint8_t width,
                               uint32_t *value);
+
+/**
+ * Attempts to convert the first `width` bits of a `LogicState` to an integer. Integer words are returned in little endian order.
+ * `value` must contain at least `width / 32` words rounded up. Will fail if any of the bits are either in the `Z` or `X` state.
+ * Returns `GSIM_RESULT_SUCCESS` on success.
+ */
+GSIM_MUST_USE
+GsimResult logic_state_to_big_int(const LogicState *state,
+                                  uint8_t width,
+                                  uint32_t *value);
 
 /**
  * Gets the state of a single bit in a `LogicState`.

@@ -38,12 +38,29 @@ pub unsafe extern "C" fn logic_state_logic_1() -> *const LogicState {
 }
 
 /// Creates a `LogicState` representing the given integer. High bits are set to 0.  
-// The returned `LogicState` must be freed by calling `logic_state_free`.
+/// The returned `LogicState` must be freed by calling `logic_state_free`.
 #[no_mangle]
 #[must_use]
 pub unsafe extern "C" fn logic_state_from_int(value: u32) -> *const LogicState {
     let state_box = Box::new(LogicState::from_int(value));
     Box::into_raw(state_box).cast_const()
+}
+
+ffi_fn! {
+    /// Creates a `LogicState` representing the given integer. Integer words are given in little endian order, high bits are set to 0.
+    /// Will fail if `word_len` is not between 1 and 8 inclusive.
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
+    /// The returned `LogicState` must be freed by calling `logic_state_free`.
+    logic_state_from_big_int(value: *const u32, word_len: usize, state: *mut *const LogicState) {
+        let value = cast_slice(value, word_len)?;
+        let state_outer = check_ptr(state)?;
+
+        let state_box = Box::new(LogicState::from_big_int(value).map_err(|_| FfiError::InvalidArgument)?);
+        let state_inner = Box::into_raw(state_box).cast_const();
+        state_outer.as_ptr().write(state_inner);
+
+        Ok(ffi_status::SUCCESS)
+    }
 }
 
 ffi_fn! {
@@ -97,6 +114,22 @@ ffi_fn! {
         let width = width.try_into()?;
 
         value.as_ptr().write(state.to_int(width)?);
+        Ok(ffi_status::SUCCESS)
+    }
+}
+
+ffi_fn! {
+    /// Attempts to convert the first `width` bits of a `LogicState` to an integer. Integer words are returned in little endian order.
+    /// `value` must contain at least `width / 32` words rounded up. Will fail if any of the bits are either in the `Z` or `X` state.
+    /// Returns `GSIM_RESULT_SUCCESS` on success.
+    logic_state_to_big_int(state: *const LogicState, width: u8, value: *mut u32) {
+        let state = cast_ptr(state)?;
+        let width: NonZeroU8 = width.try_into()?;
+        let value = cast_slice_mut(value, width.safe_div_ceil(Atom::BITS).get() as usize)?;
+
+        let words = state.to_big_int(width)?;
+        value.copy_from_slice(&words);
+
         Ok(ffi_status::SUCCESS)
     }
 }

@@ -120,6 +120,15 @@ The returned `LogicState` must be freed by calling [`logic_state_free`](#logic_s
 Creates a [`LogicState`](#logicstate) representing the given integer. High bits are set to 0.  
 The returned `LogicState` must be freed by calling [`logic_state_free`](#logic_state_free).
 
+### `logic_state_from_big_int`
+
+`Result logic_state_from_big_int(u32* value, usize word_len, LogicState** clone)`
+
+Creates a [`LogicState`](#logicstate) representing the given integer. Integer words are given in little endian order, high bits are set to 0.  
+Will fail if `word_len` is not between 1 and 8 inclusive.  
+Returns `0` on success.  
+The returned `LogicState` must be freed by calling [`logic_state_free`](#logic_state_free).
+
 ### `logic_state_parse`
 
 `Result logic_state_parse(char* s, LogicState** state)`
@@ -139,10 +148,18 @@ The cloned `LogicState` must be freed separately by calling [`logic_state_free`]
 
 ### `logic_state_to_int`
 
-`Result logic_state_to_int(LogicState* state, u8 width, value: *mut u32)`
+`Result logic_state_to_int(LogicState* state, u8 width, u32* value)`
 
 Attempts to convert the first `width` bits of a [`LogicState`](#logicstate) to an integer.  
 `width`  must be between 1 and 32 inclusive. Will fail if any of the bits are either in the `Z` or `X` state.  
+Returns `0` on success.
+
+### `logic_state_to_big_int`
+
+`Result logic_state_to_big_int(LogicState* state, u8 width, u32* value)`
+
+Attempts to convert the first `width` bits of a [`LogicState`](#logicstate) to an integer. Integer words are returned in little endian order.
+`value` must contain at least `width / 32` words rounded up. Will fail if any of the bits are either in the `Z` or `X` state.
 Returns `0` on success.
 
 ### `logic_state_get_bit_state`

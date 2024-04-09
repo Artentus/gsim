@@ -82,6 +82,15 @@ impl From<ToIntError> for FfiError {
     }
 }
 
+impl From<ToBigIntError> for FfiError {
+    #[inline]
+    fn from(value: ToBigIntError) -> Self {
+        match value {
+            ToBigIntError::Unrepresentable => Self::InvalidOperation,
+        }
+    }
+}
+
 #[cfg(feature = "yosys-import")]
 impl From<serde_json::Error> for FfiError {
     fn from(value: serde_json::Error) -> Self {
@@ -172,6 +181,16 @@ unsafe fn cast_ptr<'a, T>(ptr: *const T) -> Result<&'a T, FfiError> {
 #[inline]
 unsafe fn cast_mut_ptr<'a, T>(ptr: *mut T) -> Result<&'a mut T, FfiError> {
     Ok(&mut *check_ptr(ptr)?.as_ptr())
+}
+
+unsafe fn cast_slice<'a, T>(ptr: *const T, len: usize) -> Result<&'a [T], FfiError> {
+    let ptr = check_ptr(ptr.cast_mut())?.as_ptr().cast_const();
+    Ok(std::slice::from_raw_parts(ptr, len))
+}
+
+unsafe fn cast_slice_mut<'a, T>(ptr: *mut T, len: usize) -> Result<&'a mut [T], FfiError> {
+    let ptr = check_ptr(ptr)?.as_ptr();
+    Ok(std::slice::from_raw_parts_mut(ptr, len))
 }
 
 unsafe fn cast_c_str<'a>(ptr: *const c_char) -> Result<&'a str, FfiError> {

@@ -23,6 +23,9 @@ after_includes = """
 #define GSIM_MUST_USE
 #endif
 
+#define INVALID_WIRE_ID      0xFFFFFFFF
+#define INVALID_COMPONENT_ID 0xFFFFFFFF
+
 #define GSIM_RESULT_SUCCESS 0
 
 #define GSIM_RESULT_MAX_STEPS_REACHED 1
