@@ -119,6 +119,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 sim
             },
             |mut sim| {
+                sim.reset();
                 let result = sim.run_sim(u64::MAX);
                 assert!(matches!(result, SimulationRunResult::Ok));
             },
