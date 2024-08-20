@@ -517,6 +517,16 @@ impl SimulatorData {
         }
     }
 
+    #[inline]
+    fn iter_wire_ids(&self) -> impl Iterator<Item = WireId> + '_ {
+        self.wires.ids()
+    }
+
+    #[inline]
+    fn iter_component_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.components.ids()
+    }
+
     fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {
         let wire = &self.wires.get(wire).ok_or(InvalidWireIdError)?;
         Ok(self.wire_states.get_width(wire.state))
@@ -790,6 +800,18 @@ pub struct Simulator<VCD: std::io::Write = std::io::Sink> {
 }
 
 impl<VCD: std::io::Write> Simulator<VCD> {
+    /// Iterates over all wire IDs in the graph
+    #[inline]
+    pub fn iter_wire_ids(&self) -> impl Iterator<Item = WireId> + '_ {
+        self.data.iter_wire_ids()
+    }
+
+    /// Iterates over all component IDs in the graph
+    #[inline]
+    pub fn iter_component_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.data.iter_component_ids()
+    }
+
     /// Gets the width of a wire
     #[inline]
     pub fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {
@@ -1122,6 +1144,18 @@ impl Default for SimulatorBuilder {
 }
 
 impl SimulatorBuilder {
+    /// Iterates over all wire IDs in the graph
+    #[inline]
+    pub fn iter_wire_ids(&self) -> impl Iterator<Item = WireId> + '_ {
+        self.data.iter_wire_ids()
+    }
+
+    /// Iterates over all component IDs in the graph
+    #[inline]
+    pub fn iter_component_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+        self.data.iter_component_ids()
+    }
+    
     /// Gets the width of a wire
     #[inline]
     pub fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {
