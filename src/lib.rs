@@ -1155,7 +1155,7 @@ impl SimulatorBuilder {
     pub fn iter_component_ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
         self.data.iter_component_ids()
     }
-    
+
     /// Gets the width of a wire
     #[inline]
     pub fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {

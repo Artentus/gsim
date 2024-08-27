@@ -908,6 +908,56 @@ impl LogicState {
         Ok(words)
     }
 
+    /// Converts the first `width` bits of the logic state into bit planes
+    ///
+    /// Bit plane words are given in little endian order
+    ///
+    /// Bits in the planes correspond to logic state like so
+    ///  plane 0 | plane 1 | meaning
+    /// ---------|---------|---------
+    ///     0    |    0    | High-Z
+    ///     1    |    0    | Undefined
+    ///     0    |    1    | Logic 0
+    ///     1    |    1    | Logic 1
+    pub fn to_bit_planes(&self, width: NonZeroU8) -> (inline_vec!(u32), inline_vec!(u32)) {
+        let word_count = width.safe_div_ceil(Atom::BITS).get() as usize;
+
+        let (mut plane_0_words, mut plane_1_words) = match &self.0 {
+            LogicStateRepr::HighZ => (
+                smallvec![u32::MIN; word_count],
+                smallvec![u32::MIN; word_count],
+            ),
+            LogicStateRepr::Undefined => (
+                smallvec![u32::MAX; word_count],
+                smallvec![u32::MIN; word_count],
+            ),
+            LogicStateRepr::Logic0 => (
+                smallvec![u32::MIN; word_count],
+                smallvec![u32::MAX; word_count],
+            ),
+            LogicStateRepr::Logic1 => (
+                smallvec![u32::MAX; word_count],
+                smallvec![u32::MAX; word_count],
+            ),
+            LogicStateRepr::Int(list) => (
+                list[..word_count].iter().copied().collect(),
+                smallvec![u32::MAX; word_count],
+            ),
+            LogicStateRepr::Bits(list) => (
+                list[..word_count].iter().map(|atom| atom.state.0).collect(),
+                list[..word_count].iter().map(|atom| atom.valid.0).collect(),
+            ),
+        };
+
+        let last_width = width.get() % Atom::BITS.get();
+        if let Some(last_width) = AtomWidth::new(last_width) {
+            *plane_0_words.last_mut().unwrap() &= LogicStorage::mask(last_width).get();
+            *plane_1_words.last_mut().unwrap() &= LogicStorage::mask(last_width).get();
+        }
+
+        (plane_0_words, plane_1_words)
+    }
+
     /// Gets the logic state of a single bit
     pub fn get_bit_state(&self, bit_index: u8) -> LogicBitState {
         match self.0 {
