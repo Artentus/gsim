@@ -749,6 +749,27 @@ impl LogicState {
         }
     }
 
+    /// Creates a new logic state from the given bit planes
+    ///
+    /// Bit plane words are given in little endian order
+    ///
+    /// Bits in the planes correspond to logic state like so
+    ///  plane 0 | plane 1 | meaning
+    /// ---------|---------|---------
+    ///     0    |    0    | High-Z
+    ///     1    |    0    | Undefined
+    ///     0    |    1    | Logic 0
+    ///     1    |    1    | Logic 1
+    pub fn from_bit_planes(plane_0: &[u32], plane_1: &[u32]) -> Self {
+        Self(LogicStateRepr::Bits(
+            plane_0
+                .iter()
+                .zip(plane_1)
+                .map(|(&state, &valid)| Atom::from_state_valid(state, valid))
+                .collect(),
+        ))
+    }
+
     /// Creates a new logic state from the given bits (most significant bit first)
     ///
     /// Bits past the specified ones are implicitely assigned the value Z
