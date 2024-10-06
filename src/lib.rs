@@ -44,33 +44,31 @@
 extern crate static_assertions;
 
 mod component;
-mod id_lists;
-mod id_vec;
+mod id;
 pub mod import;
 mod logic;
+mod wire;
 
-#[cfg(feature = "c-api")]
-mod ffi;
+//#[cfg(feature = "c-api")]
+//mod ffi;
 
-#[cfg(feature = "python-bindings")]
-mod python_bindings;
+//#[cfg(feature = "python-bindings")]
+//mod python_bindings;
 
-#[cfg(test)]
-mod test;
+//#[cfg(test)]
+//mod test;
 
 use component::*;
-use id_lists::*;
-use id_vec::IdVec;
-use itertools::izip;
-use logic::*;
+use id::*;
 use smallvec::SmallVec;
 use std::num::NonZeroU8;
 use std::ops::{Add, AddAssign};
 use std::sync::{Arc, Mutex};
+use wire::*;
 
 pub use component::ComponentData;
-pub use id_lists::{ComponentId, Id, WireId};
-pub use logic::{LogicBitState, LogicState};
+pub use id::{ComponentId, WireId};
+pub use logic::*;
 
 #[allow(dead_code)]
 type HashMap<K, V> = ahash::AHashMap<K, V>;
@@ -229,176 +227,6 @@ pub struct SimulationStats {
     pub output_state_alloc_size: AllocationSize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[must_use]
-enum WireUpdateResult {
-    Unchanged,
-    Changed,
-    Conflict,
-}
-
-struct Wire {
-    state: WireStateId,
-    drivers: IdVec<OutputStateId>,
-    driving: IdVec<ComponentId>,
-}
-
-impl Wire {
-    #[inline]
-    fn new(state: WireStateId) -> Self {
-        Self {
-            state,
-            drivers: IdVec::new(),
-            driving: IdVec::new(),
-        }
-    }
-
-    fn add_driving(&mut self, component: ComponentId) {
-        // This is a linear search which may appear slow, but the list is usually very small so the overhead
-        // of a hashset is not actually worth it.
-        // In particular, the lookup only occurs while building the graph, whereas during simulation, when speed
-        // is important, reading a vector is much faster than reading a hashset.
-        if !self.driving.contains(component) {
-            self.driving.push(component);
-        }
-    }
-
-    #[inline]
-    fn update(
-        &self,
-        width: NonZeroU8,
-        drive: &[Atom],
-        state: &mut [Atom],
-        output_states: &OutputStateList,
-    ) -> WireUpdateResult {
-        // SAFETY:
-        // These functions are on the hot path of the simulation,
-        // so it is important to optimize them as much as possible.
-        // Therefore in release mode we turn off all bounds checks
-        // and assume our invariants hold. This is technically not
-        // safe so proper testing in debug mode is required.
-
-        #[cfg(not(debug_assertions))]
-        macro_rules! get {
-            ($slice:expr, $i:expr) => {
-                unsafe { *$slice.get_unchecked($i) }
-            };
-        }
-
-        #[cfg(debug_assertions)]
-        macro_rules! get {
-            ($slice:expr, $i:expr) => {
-                $slice[$i]
-            };
-        }
-
-        #[cfg(not(debug_assertions))]
-        macro_rules! get_mut {
-            ($slice:expr, $i:expr) => {
-                unsafe { $slice.get_unchecked_mut($i) }
-            };
-        }
-
-        #[cfg(debug_assertions)]
-        macro_rules! get_mut {
-            ($slice:expr, $i:expr) => {
-                &mut $slice[$i]
-            };
-        }
-
-        #[inline]
-        fn combine(a: Atom, b: Atom) -> (Atom, LogicStorage) {
-            //  A state | A valid | A meaning | B state | B valid | B meaning | O state | O valid | O meaning | conflict
-            // ---------|---------|-----------|---------|---------|-----------|---------|---------|-----------|----------
-            //     0    |    0    | High-Z    |    0    |    0    | High-Z    |    0    |    0    | High-Z    | no
-            //     1    |    0    | Undefined |    0    |    0    | High-Z    |    1    |    0    | Undefined | no
-            //     0    |    1    | Logic 0   |    0    |    0    | High-Z    |    0    |    1    | Logic 0   | no
-            //     1    |    1    | Logic 1   |    0    |    0    | High-Z    |    1    |    1    | Logic 1   | no
-            //     0    |    0    | High-Z    |    1    |    0    | Undefined |    1    |    0    | Undefined | no
-            //     1    |    0    | Undefined |    1    |    0    | Undefined |    -    |    -    | -         | yes
-            //     0    |    1    | Logic 0   |    1    |    0    | Undefined |    -    |    -    | -         | yes
-            //     1    |    1    | Logic 1   |    1    |    0    | Undefined |    -    |    -    | -         | yes
-            //     0    |    0    | High-Z    |    0    |    1    | Logic 0   |    0    |    1    | Logic 0   | no
-            //     1    |    0    | Undefined |    0    |    1    | Logic 0   |    -    |    -    | -         | yes
-            //     0    |    1    | Logic 0   |    0    |    1    | Logic 0   |    -    |    -    | -         | yes
-            //     1    |    1    | Logic 1   |    0    |    1    | Logic 0   |    -    |    -    | -         | yes
-            //     0    |    0    | High-Z    |    1    |    1    | Logic 1   |    1    |    1    | Logic 1   | no
-            //     1    |    0    | Undefined |    1    |    1    | Logic 1   |    -    |    -    | -         | yes
-            //     0    |    1    | Logic 0   |    1    |    1    | Logic 1   |    -    |    -    | -         | yes
-            //     1    |    1    | Logic 1   |    1    |    1    | Logic 1   |    -    |    -    | -         | yes
-
-            let result = Atom {
-                state: a.state | b.state,
-                valid: a.valid | b.valid,
-            };
-
-            let conflict = {
-                (a.state & b.state)
-                    | (a.state & b.valid)
-                    | (a.valid & b.state)
-                    | (a.valid & b.valid)
-            };
-
-            (result, conflict)
-        }
-
-        let mut tmp_state = [Atom::UNDEFINED; MAX_ATOM_COUNT];
-        let tmp_state = get_mut!(tmp_state, ..drive.len());
-        tmp_state.copy_from_slice(drive);
-
-        let mut conflict = LogicStorage::ALL_ZERO;
-        for driver in self.drivers.iter() {
-            let driver = output_states.get_state(driver);
-            debug_assert_eq!(drive.len(), driver.len());
-
-            for (&driver, tmp_state) in izip!(driver, tmp_state.iter_mut()) {
-                let (new_state, new_conflict) = combine(*tmp_state, driver);
-                *tmp_state = new_state;
-                conflict |= new_conflict;
-            }
-        }
-
-        let mut changed = false;
-        let mut i = 0;
-        let mut total_width = width.get();
-        while total_width >= Atom::BITS.get() {
-            let state = get_mut!(state, i);
-            let tmp_state = get!(tmp_state, i);
-
-            if !state.eq(tmp_state, AtomWidth::MAX) {
-                changed = true;
-            }
-            *state = tmp_state;
-
-            i += 1;
-            total_width -= Atom::BITS.get();
-        }
-
-        if total_width > 0 {
-            let state = get_mut!(state, i);
-            let tmp_state = get!(tmp_state, i);
-
-            let last_width = unsafe {
-                // SAFETY: the loop and if condition ensure that 0 < total_width < Atom::BITS
-                AtomWidth::new_unchecked(total_width)
-            };
-
-            if !state.eq(tmp_state, last_width) {
-                changed = true;
-            }
-            *state = tmp_state;
-        }
-
-        if conflict != LogicStorage::ALL_ZERO {
-            WireUpdateResult::Conflict
-        } else if changed {
-            WireUpdateResult::Changed
-        } else {
-            WireUpdateResult::Unchanged
-        }
-    }
-}
-
 /// Contains data of all errors that occurred in a simulation
 #[derive(Debug, Clone)]
 pub struct SimulationErrors {
@@ -487,10 +315,10 @@ pub type AddComponentResult = Result<ComponentId, AddComponentError>;
 
 struct SimulatorData {
     wires: WireList,
-    wire_states: WireStateList,
+    wire_states: WireStateAllocator,
 
     components: ComponentList,
-    output_states: OutputStateList,
+    output_states: OutputStateAllocator,
 
     wire_update_queue: Vec<WireId>,
     component_update_queue: Vec<ComponentId>,
@@ -504,10 +332,10 @@ impl SimulatorData {
     fn new() -> Self {
         Self {
             wires: WireList::new(),
-            wire_states: WireStateList::new(),
+            wire_states: WireStateAllocator::new(),
 
             components: ComponentList::new(),
-            output_states: OutputStateList::new(),
+            output_states: OutputStateAllocator::new(),
 
             wire_update_queue: Vec::new(),
             component_update_queue: Vec::new(),
@@ -527,42 +355,36 @@ impl SimulatorData {
         self.components.ids()
     }
 
-    fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {
-        let wire = &self.wires.get(wire).ok_or(InvalidWireIdError)?;
-        Ok(self.wire_states.get_width(wire.state))
-    }
-
-    fn set_wire_drive(
+    fn set_wire_drive<'a>(
         &mut self,
         wire: WireId,
-        new_drive: &LogicState,
+        new_drive: impl IntoLogicStateRef<'a>,
     ) -> Result<(), InvalidWireIdError> {
         let wire = &self.wires.get(wire).ok_or(InvalidWireIdError)?;
-        let drive = self.wire_states.get_drive_mut(wire.state);
+        let [_, mut drive] = self
+            .wire_states
+            .get_mut(wire.state_id())
+            .expect("invalid wire state ID");
+        // TODO: properly report width mismatch error
 
-        for (dst, src) in drive.iter_mut().zip(new_drive.iter_atoms()) {
-            *dst = src;
-        }
+        let new_drive = new_drive.into_logic_state_ref();
+        let (src_plane_0, src_plane_1) = new_drive.bit_planes();
+        let (dst_plane_0, dst_plane_1) = drive.bit_planes_mut();
+        dst_plane_0.copy_from_slice(src_plane_0);
+        dst_plane_1.copy_from_slice(src_plane_1);
 
         Ok(())
     }
 
-    fn get_wire_drive(&self, wire: WireId) -> Result<LogicState, InvalidWireIdError> {
-        let wire = &self.wires.get(wire).ok_or(InvalidWireIdError)?;
-        let drive = self.wire_states.get_drive(wire.state);
-
-        Ok(LogicState(LogicStateRepr::Bits(
-            drive.iter().copied().collect(),
-        )))
-    }
-
-    fn get_wire_state(&self, wire: WireId) -> Result<LogicState, InvalidWireIdError> {
-        let wire = &self.wires.get(wire).ok_or(InvalidWireIdError)?;
-        let state = self.wire_states.get_state(wire.state);
-
-        Ok(LogicState(LogicStateRepr::Bits(
-            state.iter().copied().collect(),
-        )))
+    fn get_wire_state_and_drive(
+        &self,
+        wire: WireId,
+    ) -> Result<[LogicStateRef; 2], InvalidWireIdError> {
+        let wire = self.wires.get(wire).ok_or(InvalidWireIdError)?;
+        Ok(self
+            .wire_states
+            .get(wire.state_id())
+            .expect("invalid wire state ID"))
     }
 
     fn get_component_data(
@@ -630,163 +452,163 @@ impl SimulatorData {
         Ok(self.component_names.get(&component).map(|name| &**name))
     }
 
-    fn stats(&self) -> SimulationStats {
-        let (small_component_count, large_component_count) = self.components.component_counts();
+    //fn stats(&self) -> SimulationStats {
+    //    let (small_component_count, large_component_count) = self.components.component_counts();
 
-        SimulationStats {
-            wire_count: self.wires.wire_count(),
-            wire_alloc_size: self.wires.alloc_size(),
-            wire_width_alloc_size: self.wire_states.width_alloc_size(),
-            wire_drive_alloc_size: self.wire_states.drive_alloc_size(),
-            wire_state_alloc_size: self.wire_states.state_alloc_size(),
-            small_component_count,
-            large_component_count,
-            component_alloc_size: self.components.alloc_size(),
-            large_component_alloc_size: self.components.large_alloc_size(),
-            output_width_alloc_size: self.output_states.width_alloc_size(),
-            output_state_alloc_size: self.output_states.state_alloc_size(),
-        }
-    }
+    //    SimulationStats {
+    //        wire_count: self.wires.wire_count(),
+    //        wire_alloc_size: self.wires.alloc_size(),
+    //        wire_width_alloc_size: self.wire_states.width_alloc_size(),
+    //        wire_drive_alloc_size: self.wire_states.drive_alloc_size(),
+    //        wire_state_alloc_size: self.wire_states.state_alloc_size(),
+    //        small_component_count,
+    //        large_component_count,
+    //        component_alloc_size: self.components.alloc_size(),
+    //        large_component_alloc_size: self.components.large_alloc_size(),
+    //        output_width_alloc_size: self.output_states.width_alloc_size(),
+    //        output_state_alloc_size: self.output_states.state_alloc_size(),
+    //    }
+    //}
 
-    #[cfg(feature = "dot-export")]
-    fn write_dot<W: std::io::Write>(
-        &self,
-        mut writer: W,
-        show_states: bool,
-    ) -> std::io::Result<()> {
-        writeln!(writer, "digraph {{")?;
+    //#[cfg(feature = "dot-export")]
+    //fn write_dot<W: std::io::Write>(
+    //    &self,
+    //    mut writer: W,
+    //    show_states: bool,
+    //) -> std::io::Result<()> {
+    //    writeln!(writer, "digraph {{")?;
 
-        let mut wire_state_map = HashMap::new();
-        for wire_id in self.wires.ids() {
-            let wire = &self.wires.get(wire_id).unwrap();
-            let width = self.wire_states.get_width(wire.state);
-            wire_state_map.insert(wire.state, wire_id);
+    //    let mut wire_state_map = HashMap::new();
+    //    for wire_id in self.wires.ids() {
+    //        let wire = &self.wires.get(wire_id).unwrap();
+    //        let width = self.wire_states.get_width(wire.state);
+    //        wire_state_map.insert(wire.state, wire_id);
 
-            #[allow(clippy::collapsible_else_if)]
-            if show_states {
-                if let Some(name) = self.wire_names.get(&wire_id) {
-                    let state = self.get_wire_state(wire_id).unwrap().display_string(width);
-                    if &**name == state.as_str() {
-                        // Don't print constant wire states twice
-                        writeln!(
-                            writer,
-                            "    W{}[label=\"{}\" shape=\"diamond\"];",
-                            wire_id.to_u32(),
-                            name,
-                        )?;
-                    } else {
-                        writeln!(
-                            writer,
-                            "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
-                            wire_id.to_u32(),
-                            name,
-                            state,
-                        )?;
-                    }
-                } else {
-                    writeln!(
-                        writer,
-                        "    W{}[label=\"{}\" shape=\"diamond\"];",
-                        wire_id.to_u32(),
-                        self.get_wire_state(wire_id).unwrap().display_string(width),
-                    )?;
-                }
-            } else {
-                if let Some(name) = self.wire_names.get(&wire_id) {
-                    writeln!(
-                        writer,
-                        "    W{}[label=\"{} [{}]\" shape=\"diamond\"];",
-                        wire_id.to_u32(),
-                        name,
-                        width,
-                    )?;
-                } else {
-                    writeln!(
-                        writer,
-                        "    W{}[label=\"[{}]\" shape=\"diamond\"];",
-                        wire_id.to_u32(),
-                        width,
-                    )?;
-                }
-            }
-        }
+    //        #[allow(clippy::collapsible_else_if)]
+    //        if show_states {
+    //            if let Some(name) = self.wire_names.get(&wire_id) {
+    //                let state = self.get_wire_state(wire_id).unwrap().display_string(width);
+    //                if &**name == state.as_str() {
+    //                    // Don't print constant wire states twice
+    //                    writeln!(
+    //                        writer,
+    //                        "    W{}[label=\"{}\" shape=\"diamond\"];",
+    //                        wire_id.to_bits(),
+    //                        name,
+    //                    )?;
+    //                } else {
+    //                    writeln!(
+    //                        writer,
+    //                        "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
+    //                        wire_id.to_bits(),
+    //                        name,
+    //                        state,
+    //                    )?;
+    //                }
+    //            } else {
+    //                writeln!(
+    //                    writer,
+    //                    "    W{}[label=\"{}\" shape=\"diamond\"];",
+    //                    wire_id.to_bits(),
+    //                    self.get_wire_state(wire_id).unwrap().display_string(width),
+    //                )?;
+    //            }
+    //        } else {
+    //            if let Some(name) = self.wire_names.get(&wire_id) {
+    //                writeln!(
+    //                    writer,
+    //                    "    W{}[label=\"{} [{}]\" shape=\"diamond\"];",
+    //                    wire_id.to_bits(),
+    //                    name,
+    //                    width,
+    //                )?;
+    //            } else {
+    //                writeln!(
+    //                    writer,
+    //                    "    W{}[label=\"[{}]\" shape=\"diamond\"];",
+    //                    wire_id.to_bits(),
+    //                    width,
+    //                )?;
+    //            }
+    //        }
+    //    }
 
-        let mut wire_drivers = ahash::AHashMap::<WireId, Vec<_>>::new();
-        let mut wire_driving = ahash::AHashMap::<WireId, Vec<_>>::new();
-        for component_id in self.components.ids() {
-            let component = &self.components.get(component_id).unwrap();
-            for (wire_id, port_name) in component.output_wires() {
-                wire_drivers
-                    .entry(wire_id)
-                    .or_default()
-                    .push((component_id, port_name));
-            }
-            for (wire_id, port_name) in component.input_wires() {
-                wire_driving
-                    .entry(wire_state_map[&wire_id])
-                    .or_default()
-                    .push((component_id, port_name));
-            }
+    //    let mut wire_drivers = ahash::AHashMap::<WireId, Vec<_>>::new();
+    //    let mut wire_driving = ahash::AHashMap::<WireId, Vec<_>>::new();
+    //    for component_id in self.components.ids() {
+    //        let component = &self.components.get(component_id).unwrap();
+    //        for (wire_id, port_name) in component.output_wires() {
+    //            wire_drivers
+    //                .entry(wire_id)
+    //                .or_default()
+    //                .push((component_id, port_name));
+    //        }
+    //        for (wire_id, port_name) in component.input_wires() {
+    //            wire_driving
+    //                .entry(wire_state_map[&wire_id])
+    //                .or_default()
+    //                .push((component_id, port_name));
+    //        }
 
-            let name = self
-                .component_names
-                .get(&component_id)
-                .map(|name| (&**name).into())
-                .unwrap_or_else(|| component.node_name(&self.output_states));
+    //        let name = self
+    //            .component_names
+    //            .get(&component_id)
+    //            .map(|name| (&**name).into())
+    //            .unwrap_or_else(|| component.node_name(&self.output_states));
 
-            'print: {
-                if show_states {
-                    let data = self.get_component_data(component_id).unwrap();
-                    if let ComponentData::RegisterValue(value) = data {
-                        writeln!(
-                            writer,
-                            "    C{}[label=\"{} ({})\" shape=\"box\"];",
-                            component_id.to_u32(),
-                            name,
-                            value.read().display_string(value.width()),
-                        )?;
+    //        'print: {
+    //            if show_states {
+    //                let data = self.get_component_data(component_id).unwrap();
+    //                if let ComponentData::RegisterValue(value) = data {
+    //                    writeln!(
+    //                        writer,
+    //                        "    C{}[label=\"{} ({})\" shape=\"box\"];",
+    //                        component_id.to_bits(),
+    //                        name,
+    //                        value.read().display_string(value.width()),
+    //                    )?;
 
-                        break 'print;
-                    }
-                }
+    //                    break 'print;
+    //                }
+    //            }
 
-                writeln!(
-                    writer,
-                    "    C{}[label=\"{}\" shape=\"box\"];",
-                    component_id.to_u32(),
-                    name,
-                )?;
-            }
-        }
+    //            writeln!(
+    //                writer,
+    //                "    C{}[label=\"{}\" shape=\"box\"];",
+    //                component_id.to_bits(),
+    //                name,
+    //            )?;
+    //        }
+    //    }
 
-        for wire_id in self.wires.ids() {
-            if let Some(drivers) = wire_drivers.get(&wire_id) {
-                for (driver, port_name) in drivers {
-                    writeln!(
-                        writer,
-                        "    C{} -> W{}[taillabel=\"{}\"];",
-                        driver.to_u32(),
-                        wire_id.to_u32(),
-                        port_name,
-                    )?;
-                }
-            }
+    //    for wire_id in self.wires.ids() {
+    //        if let Some(drivers) = wire_drivers.get(&wire_id) {
+    //            for (driver, port_name) in drivers {
+    //                writeln!(
+    //                    writer,
+    //                    "    C{} -> W{}[taillabel=\"{}\"];",
+    //                    driver.to_bits(),
+    //                    wire_id.to_bits(),
+    //                    port_name,
+    //                )?;
+    //            }
+    //        }
 
-            if let Some(driving) = wire_driving.get(&wire_id) {
-                for (driving, port_name) in driving {
-                    writeln!(
-                        writer,
-                        "    W{} -> C{}[headlabel=\"{}\"];",
-                        wire_id.to_u32(),
-                        driving.to_u32(),
-                        port_name,
-                    )?;
-                }
-            }
-        }
+    //        if let Some(driving) = wire_driving.get(&wire_id) {
+    //            for (driving, port_name) in driving {
+    //                writeln!(
+    //                    writer,
+    //                    "    W{} -> C{}[headlabel=\"{}\"];",
+    //                    wire_id.to_bits(),
+    //                    driving.to_bits(),
+    //                    port_name,
+    //                )?;
+    //            }
+    //        }
+    //    }
 
-        writeln!(writer, "}}")
-    }
+    //    writeln!(writer, "}}")
+    //}
 }
 
 /// A digital circuit simulator
@@ -812,34 +634,25 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         self.data.iter_component_ids()
     }
 
-    /// Gets the width of a wire
-    #[inline]
-    pub fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {
-        self.data.get_wire_width(wire)
-    }
-
     /// Drives a wire to a certain state without needing a component
     ///
     /// Any unspecified bits will be set to Z
     #[inline]
-    pub fn set_wire_drive(
+    pub fn set_wire_drive<'a>(
         &mut self,
         wire: WireId,
-        new_drive: &LogicState,
+        new_drive: impl IntoLogicStateRef<'a>,
     ) -> Result<(), InvalidWireIdError> {
         self.data.set_wire_drive(wire, new_drive)
     }
 
-    /// Gets the current drive of a wire
-    #[inline]
-    pub fn get_wire_drive(&self, wire: WireId) -> Result<LogicState, InvalidWireIdError> {
-        self.data.get_wire_drive(wire)
-    }
-
     /// Gets the current state of a wire
     #[inline]
-    pub fn get_wire_state(&self, wire: WireId) -> Result<LogicState, InvalidWireIdError> {
-        self.data.get_wire_state(wire)
+    pub fn get_wire_state_and_drive(
+        &self,
+        wire: WireId,
+    ) -> Result<[LogicStateRef; 2], InvalidWireIdError> {
+        self.data.get_wire_state_and_drive(wire)
     }
 
     /// Gets a components data
@@ -921,14 +734,14 @@ impl<VCD: std::io::Write> Simulator<VCD> {
                 self.data.wires.get_unsafe(wire_id)
             };
 
-            let (width, drive, state) = unsafe {
+            let [state, drive] = unsafe {
                 // SAFETY: since the wire is unique, so is its state
-                self.data.wire_states.get_data_unsafe(wire.state)
+                self.data.wire_states.get_unchecked_unsafe(wire.state_id())
             };
 
-            match wire.update(width, drive, state, &self.data.output_states) {
+            match wire.update(state, drive.into_shared(), self.data.output_states.view()) {
                 WireUpdateResult::Unchanged => [].as_slice(),
-                WireUpdateResult::Changed => wire.driving.as_slice(),
+                WireUpdateResult::Changed => wire.driving(),
                 WireUpdateResult::Conflict => {
                     // Locking here is ok because we are in the error path
                     let mut conflict_list = conflicts.lock().expect("failed to aquire mutex");
@@ -1156,28 +969,24 @@ impl SimulatorBuilder {
         self.data.iter_component_ids()
     }
 
-    /// Gets the width of a wire
-    #[inline]
-    pub fn get_wire_width(&self, wire: WireId) -> Result<NonZeroU8, InvalidWireIdError> {
-        self.data.get_wire_width(wire)
-    }
-
     /// Drives a wire to a certain state without needing a component
     ///
     /// Any unspecified bits will be set to Z
     #[inline]
-    pub fn set_wire_drive(
+    pub fn set_wire_drive<'a>(
         &mut self,
         wire: WireId,
-        new_drive: &LogicState,
+        new_drive: impl IntoLogicStateRef<'a>,
     ) -> Result<(), InvalidWireIdError> {
         self.data.set_wire_drive(wire, new_drive)
     }
 
     /// Gets the current drive of a wire
     #[inline]
-    pub fn get_wire_drive(&self, wire: WireId) -> Result<LogicState, InvalidWireIdError> {
-        self.data.get_wire_drive(wire)
+    pub fn get_wire_drive(&self, wire: WireId) -> Result<LogicStateRef, InvalidWireIdError> {
+        self.data
+            .get_wire_state_and_drive(wire)
+            .map(|[_, drive]| drive)
     }
 
     /// Gets a components data
@@ -2255,38 +2064,38 @@ impl SimulatorBuilder {
 assert_impl_all!(SimulatorBuilder: Send);
 assert_impl_all!(Simulator: Send);
 
-#[cfg(feature = "tracing")]
-mod tracing;
-#[cfg(feature = "tracing")]
-pub use tracing::Timescale;
-
-#[cfg(feature = "tracing")]
-impl SimulatorBuilder {
-    /// Creates the simulator and attaches VCD tracing
-    pub fn build_with_trace<VCD: std::io::Write>(
-        mut self,
-        mut vcd: VCD,
-        timescale: Timescale,
-    ) -> std::io::Result<Simulator<VCD>> {
-        self.data.wires.shrink_to_fit();
-        self.data.wire_states.shrink_to_fit();
-
-        self.data.components.shrink_to_fit();
-        self.data.output_states.shrink_to_fit();
-
-        tracing::write_vcd_header(&self.data, &mut vcd, timescale)?;
-
-        Ok(Simulator {
-            data: self.data,
-            vcd,
-        })
-    }
-}
-
-#[cfg(feature = "tracing")]
-impl<VCD: std::io::Write> Simulator<VCD> {
-    /// Traces the current state of the simulation
-    pub fn trace(&mut self, time: u64) -> std::io::Result<()> {
-        tracing::trace_vcd(&self.data, &mut self.vcd, time)
-    }
-}
+//#[cfg(feature = "tracing")]
+//mod tracing;
+//#[cfg(feature = "tracing")]
+//pub use tracing::Timescale;
+//
+//#[cfg(feature = "tracing")]
+//impl SimulatorBuilder {
+//    /// Creates the simulator and attaches VCD tracing
+//    pub fn build_with_trace<VCD: std::io::Write>(
+//        mut self,
+//        mut vcd: VCD,
+//        timescale: Timescale,
+//    ) -> std::io::Result<Simulator<VCD>> {
+//        self.data.wires.shrink_to_fit();
+//        self.data.wire_states.shrink_to_fit();
+//
+//        self.data.components.shrink_to_fit();
+//        self.data.output_states.shrink_to_fit();
+//
+//        tracing::write_vcd_header(&self.data, &mut vcd, timescale)?;
+//
+//        Ok(Simulator {
+//            data: self.data,
+//            vcd,
+//        })
+//    }
+//}
+//
+//#[cfg(feature = "tracing")]
+//impl<VCD: std::io::Write> Simulator<VCD> {
+//    /// Traces the current state of the simulation
+//    pub fn trace(&mut self, time: u64) -> std::io::Result<()> {
+//        tracing::trace_vcd(&self.data, &mut self.vcd, time)
+//    }
+//}

@@ -2,8 +2,8 @@
 
 #![allow(missing_debug_implementations)]
 
-#[cfg(feature = "yosys-import")]
-pub mod yosys;
+//#[cfg(feature = "yosys-import")]
+//pub mod yosys;
 
 use crate::{HashMap, WireId};
 use std::sync::Arc;

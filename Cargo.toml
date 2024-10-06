@@ -1,13 +1,13 @@
 [package]
 name = "gsim"
-version = "1.1.4"
+version = "2.0.0"
 edition = "2021"
 authors = ["Mathis Rech"]
 license = "MIT"
 readme = "README_CRATES_IO.md"
 repository = "https://github.com/Artentus/gsim"
 description = "High speed digital logic simulation"
-rust-version = "1.73"
+rust-version = "1.79"
 
 [lib]
 name = "gsim"

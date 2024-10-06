@@ -43,7 +43,8 @@ pub(crate) enum SmallComponentKind {
     },
     Slice {
         input: WireStateId,
-        offset: u8,
+        start_offset: u8,
+        end_offset: u8,
     },
     Add {
         input_a: WireStateId,
@@ -150,11 +151,7 @@ impl SmallComponent {
     }
 
     #[cfg(feature = "dot-export")]
-    fn node_name(
-        &self,
-        output_base: OutputStateId,
-        output_states: &OutputStateList,
-    ) -> Cow<'static, str> {
+    fn node_name(&self) -> Cow<'static, str> {
         match self.kind {
             SmallComponentKind::AndGate { .. } => "AND".into(),
             SmallComponentKind::OrGate { .. } => "OR".into(),
@@ -164,12 +161,11 @@ impl SmallComponent {
             SmallComponentKind::XnorGate { .. } => "XNOR".into(),
             SmallComponentKind::NotGate { .. } => "NOT".into(),
             SmallComponentKind::Buffer { .. } => "Buffer".into(),
-            SmallComponentKind::Slice { offset, .. } => {
-                let output_width = output_states.get_width(output_base);
-                let start = offset;
-                let end = (offset as u32) + (output_width.get() as u32) - 1;
-                format!("[{end}:{start}]").into()
-            }
+            SmallComponentKind::Slice {
+                start_offset,
+                end_offset,
+                ..
+            } => format!("[{end_offset}:{start_offset}]").into(),
             SmallComponentKind::Add { .. } => "ADD".into(),
             SmallComponentKind::Sub { .. } => "SUB".into(),
             SmallComponentKind::Neg { .. } => "NEG".into(),
@@ -199,7 +195,7 @@ impl SmallComponent {
     }
 
     #[cfg(feature = "dot-export")]
-    pub(crate) fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+    pub(crate) fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         match self.kind {
             SmallComponentKind::AndGate { input_a, input_b }
             | SmallComponentKind::OrGate { input_a, input_b }
@@ -220,7 +216,7 @@ impl SmallComponent {
             | SmallComponentKind::CompareGreaterThanSigned { input_a, input_b }
             | SmallComponentKind::CompareLessThanOrEqualSigned { input_a, input_b }
             | SmallComponentKind::CompareGreaterThanOrEqualSigned { input_a, input_b } => {
-                vec![(input_a, "A".into()), (input_b, "B".into())]
+                smallvec![(input_a, "A".into()), (input_b, "B".into())]
             }
             SmallComponentKind::NotGate { input }
             | SmallComponentKind::Neg { input }
@@ -233,15 +229,15 @@ impl SmallComponent {
             | SmallComponentKind::ZeroExtend { input }
             | SmallComponentKind::SignExtend { input }
             | SmallComponentKind::Slice { input, .. } => {
-                vec![(input, "In".into())]
+                smallvec![(input, "In".into())]
             }
             SmallComponentKind::Buffer { input, enable } => {
-                vec![(input, "In".into()), (enable, "En".into())]
+                smallvec![(input, "In".into()), (enable, "En".into())]
             }
             SmallComponentKind::LeftShift { input_a, input_b }
             | SmallComponentKind::LogicalRightShift { input_a, input_b }
             | SmallComponentKind::ArithmeticRightShift { input_a, input_b } => {
-                vec![(input_a, "In".into()), (input_b, "Shamnt".into())]
+                smallvec![(input_a, "In".into()), (input_b, "Shamnt".into())]
             }
         }
     }
@@ -300,7 +296,11 @@ impl SmallComponent {
                 let (width, out) = output_states.get_data(output_base);
                 buffer(width, out, val, en[0].get_bit_state(AtomOffset::MIN))
             }
-            SmallComponentKind::Slice { input, offset } => {
+            SmallComponentKind::Slice {
+                input,
+                start_offset,
+                end_offset,
+            } => {
                 let val = wire_states.get_state(input);
                 let (width, out) = output_states.get_data(output_base);
                 slice(width, out, val, offset)
@@ -619,7 +619,7 @@ pub(crate) trait LargeComponent: Send + Sync {
     fn output_wires(&self) -> Vec<(WireId, Cow<'static, str>)>;
 
     #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)>;
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]>;
 
     fn alloc_size(&self) -> AllocationSize;
 
@@ -1817,13 +1817,13 @@ impl LargeComponent for Rom {
 pub(crate) enum Component {
     Small {
         component: SmallComponent,
-        output_base: OutputStateId,
-        output_atom_count: u16,
+        output_start: OutputStateId,
+        output_end: OutputStateId,
     },
     Large {
         component: Box<dyn LargeComponent>,
-        output_base: OutputStateId,
-        output_atom_count: u16,
+        output_start: OutputStateId,
+        output_end: OutputStateId,
     },
 }
 
@@ -1836,7 +1836,7 @@ impl Component {
     ) -> Self {
         Self::Small {
             component,
-            output_base,
+            output_start: output_base,
             output_atom_count,
         }
     }
@@ -1849,7 +1849,7 @@ impl Component {
     ) -> Self {
         Self::Large {
             component: Box::new(component),
-            output_base,
+            output_start: output_base,
             output_atom_count,
         }
     }
@@ -1863,7 +1863,7 @@ impl Component {
     }
 
     #[cfg(feature = "dot-export")]
-    pub(crate) fn input_wires(&self) -> Vec<(WireStateId, Cow<'static, str>)> {
+    pub(crate) fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         match self {
             Component::Small { component, .. } => component.input_wires(),
             Component::Large { component, .. } => component.input_wires(),
@@ -1875,7 +1875,7 @@ impl Component {
         match self {
             Component::Small {
                 component,
-                output_base,
+                output_start: output_base,
                 ..
             } => component.node_name(*output_base, output_states),
             Component::Large { component, .. } => component.node_name(),
@@ -1891,15 +1891,15 @@ impl Component {
     }
 
     #[inline]
-    pub(crate) fn output_range(&self) -> (OutputStateId, u16) {
+    pub(crate) fn output_range(&self) -> (OutputStateId, OutputStateId) {
         match self {
             &Self::Small {
-                output_base,
+                output_start: output_base,
                 output_atom_count,
                 ..
             }
             | &Self::Large {
-                output_base,
+                output_start: output_base,
                 output_atom_count,
                 ..
             } => (output_base, output_atom_count),
@@ -1939,7 +1939,7 @@ impl Component {
         match self {
             &mut Self::Small {
                 ref mut component,
-                output_base,
+                output_start: output_base,
                 ..
             } => component.update(output_base, wire_states, output_states),
             Self::Large { component, .. } => component.update(wire_states, output_states),
