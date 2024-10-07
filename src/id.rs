@@ -270,11 +270,6 @@ macro_rules! def_id_list {
     };
 }
 
-def_id_type!(
-    /// A unique identifier for a wire inside a simulation
-    pub WireId
-);
-
 def_id_list!(WireList<WireId, Wire>);
 
 impl WireList {
@@ -283,11 +278,6 @@ impl WireList {
         self.0.len()
     }
 }
-
-def_id_type!(
-    /// A unique identifier for a component inside a simulation
-    pub ComponentId
-);
 
 def_id_list!(ComponentList<ComponentId, Component>);
 

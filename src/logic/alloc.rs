@@ -345,7 +345,7 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
     #[inline]
     pub(crate) fn view_mut(&mut self) -> LogicStateViewMut<T, N> {
         assert!(self.word_len > 0);
-        
+
         LogicStateViewMut {
             first_id: 0,
             last_id: self.word_len - 1,
@@ -408,7 +408,12 @@ macro_rules! alloc_get_unchecked_body {
 
         unsafe {
             // SAFETY: the bounds check above ensures this is a read of valid memory.
-            let bit_width = $this.bit_width.0.as_ptr().add($id.to_bits() as usize).read();
+            let bit_width = $this
+                .bit_width
+                .0
+                .as_ptr()
+                .add($id.to_bits() as usize)
+                .read();
 
             // SAFETY:
             //   The pointers are valid as long as `&self` is valid, which is

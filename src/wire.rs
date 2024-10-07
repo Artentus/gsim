@@ -2,6 +2,11 @@ use crate::id::*;
 use crate::logic::*;
 use itertools::izip;
 
+def_id_type!(
+    /// A unique identifier for a wire inside a simulation
+    pub WireId
+);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[must_use]
 pub(crate) enum WireUpdateResult {

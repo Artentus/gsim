@@ -317,7 +317,7 @@ struct SimulatorData {
     wires: WireList,
     wire_states: WireStateAllocator,
 
-    components: ComponentList,
+    components: ComponentStorage,
     output_states: OutputStateAllocator,
 
     wire_update_queue: Vec<WireId>,
@@ -334,7 +334,7 @@ impl SimulatorData {
             wires: WireList::new(),
             wire_states: WireStateAllocator::new(),
 
-            components: ComponentList::new(),
+            components: ComponentStorage::default(),
             output_states: OutputStateAllocator::new(),
 
             wire_update_queue: Vec::new(),
@@ -752,30 +752,17 @@ impl<VCD: std::io::Write> Simulator<VCD> {
             }
         };
 
-        if self.data.wire_update_queue.len() > 400 {
-            let component_update_queue_iter = self
-                .data
-                .wire_update_queue
-                .par_iter()
-                .with_min_len(200)
-                .copied()
-                .flat_map_iter(perform);
+        let component_update_queue_iter = self
+            .data
+            .wire_update_queue
+            .par_iter()
+            .with_min_len(200)
+            .copied()
+            .flat_map_iter(perform);
 
-            self.data
-                .component_update_queue
-                .par_extend(component_update_queue_iter);
-        } else {
-            let component_update_queue_iter = self
-                .data
-                .wire_update_queue
-                .iter()
-                .copied()
-                .flat_map(perform);
-
-            self.data
-                .component_update_queue
-                .extend(component_update_queue_iter);
-        }
+        self.data
+            .component_update_queue
+            .par_extend(component_update_queue_iter);
 
         // Make sure the component update queue contains no duplicates,
         // otherwise all our safety guarantees do not hold.
@@ -802,45 +789,25 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         self.data.wire_update_queue.clear();
 
         let perform = |component_id| {
-            let component = unsafe {
+            unsafe {
                 // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                self.data.components.get_unsafe(component_id)
-            };
-
-            let (output_base, output_atom_count) = component.output_range();
-            let output_states = unsafe {
-                // SAFETY: since the component is unique, so are the outputs
                 self.data
-                    .output_states
-                    .get_slice_unsafe(output_base, output_atom_count)
-            };
-
-            // `Component::update` returns all the wires that need to be inserted into the next update queue.
-            component.update(&self.data.wire_states, output_states)
+                    .components
+                    .update_component(component_id, &self.data.output_states)
+            }
         };
 
-        if self.data.component_update_queue.len() > 400 {
-            let wire_update_queue_iter = self
-                .data
-                .component_update_queue
-                .par_iter()
-                .with_min_len(200)
-                .copied()
-                .flat_map_iter(perform);
+        let wire_update_queue_iter = self
+            .data
+            .component_update_queue
+            .par_iter()
+            .with_min_len(200)
+            .copied()
+            .flat_map_iter(perform);
 
-            self.data
-                .wire_update_queue
-                .par_extend(wire_update_queue_iter);
-        } else {
-            let wire_update_queue_iter = self
-                .data
-                .component_update_queue
-                .iter()
-                .copied()
-                .flat_map(perform);
-
-            self.data.wire_update_queue.extend(wire_update_queue_iter);
-        }
+        self.data
+            .wire_update_queue
+            .par_extend(wire_update_queue_iter);
 
         // Make sure the wire update queue contains no duplicates,
         // otherwise all our safety guarantees do not hold.

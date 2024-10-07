@@ -3,145 +3,1105 @@
 mod ops;
 use ops::*;
 
+use crate::logic::{OutputStateAllocator, OutputStateViewMut};
 use crate::*;
 use itertools::izip;
 use smallvec::smallvec;
 #[cfg(feature = "dot-export")]
 use std::borrow::Cow;
+use sync_unsafe_cell::SyncUnsafeCell;
 
-pub(crate) enum SmallComponentKind {
-    AndGate {
+def_id_type!(
+    /// A unique identifier for a component inside a simulation
+    pub ComponentId
+);
+
+impl ComponentId {
+    #[inline]
+    const fn kind(self) -> u8 {
+        (self.0 >> 24) as u8
+    }
+
+    #[inline]
+    const fn index(self) -> usize {
+        (self.0 & 0xFFFFFF) as usize
+    }
+}
+
+pub(crate) trait Component {
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> Cow<'static, str>;
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]>;
+
+    fn output_range(&self) -> (OutputStateId, OutputStateId);
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId);
+}
+
+pub(crate) trait ComponentKind: Sized + Component {
+    const ID: u8;
+
+    fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>];
+    fn extract_storage_mut(storage: &mut ComponentStorage) -> &mut Vec<SyncUnsafeCell<Self>>;
+}
+
+macro_rules! def_components {
+    (@SINGLE $id:expr;
+        struct $component_name:ident {
+            $($field_name:ident : $field_ty:ty,)*
+        }
+    ) => {
+        pub(crate) struct $component_name {
+            $($field_name : $field_ty,)*
+        }
+
+        impl ComponentKind for $component_name {
+            const ID: u8 = $id;
+
+            #[inline]
+            fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>] {
+                &storage.$component_name
+            }
+
+            #[inline]
+            fn extract_storage_mut(storage: &mut ComponentStorage) -> &mut Vec<SyncUnsafeCell<Self>> {
+                &mut storage.$component_name
+            }
+        }
+    };
+
+    (@REC $id:expr;
+        struct $component_name:ident {
+            $($field_name:ident : $field_ty:ty,)*
+        }
+    ) => {
+        def_components! {
+            @SINGLE $id;
+
+            struct $component_name {
+                $($field_name : $field_ty,)*
+            }
+        }
+
+        pub(crate) const COMPONENT_COUNT: u8 = $id + 1;
+    };
+
+    (@REC $id:expr;
+        struct $first_component_name:ident {
+            $($first_field_name:ident : $first_field_ty:ty,)*
+        }
+
+        $(
+            struct $component_name:ident {
+                $($field_name:ident : $field_ty:ty,)*
+            }
+        )+
+    ) => {
+        def_components! {
+            @SINGLE $id;
+
+            struct $first_component_name {
+                $($first_field_name : $first_field_ty,)*
+            }
+        }
+
+        def_components! {
+            @REC $id + 1;
+
+            $(
+                struct $component_name {
+                    $($field_name : $field_ty,)*
+                }
+            )+
+        }
+    };
+
+    (
+        $(
+            struct $component_name:ident {
+                $($field_name:ident : $field_ty:ty,)*
+            }
+        )+
+    ) => {
+        def_components! {
+            @REC 0;
+
+            $(
+                struct $component_name {
+                    $($field_name : $field_ty,)*
+                }
+            )+
+        }
+
+        #[derive(Default)]
+        pub(crate) struct ComponentStorage {
+            $(
+                #[allow(non_snake_case)]
+                $component_name: Vec<SyncUnsafeCell<$component_name>>,
+            )+
+        }
+
+        impl ComponentStorage {
+            pub(crate) fn push<T: ComponentKind>(&mut self, component: T) -> Option<ComponentId> {
+                let storage = T::extract_storage_mut(self);
+
+                let index = storage.len();
+                if index > 0xFFFFFF {
+                    return None;
+                }
+
+                storage.push(SyncUnsafeCell::new(component));
+
+                let id = ((T::ID as u32) << 24) | (index as u32);
+                Some(ComponentId(id))
+            }
+
+            pub(crate) fn ids(&self) -> impl Iterator<Item = ComponentId> + '_ {
+                let iter = std::iter::empty();
+                $(
+                    let iter = iter.chain((0..self.$component_name.len()).map(|index| {
+                        let id = ((<$component_name>::ID as u32) << 24) | (index as u32);
+                        ComponentId(id)
+                    }));
+                )+
+                iter
+            }
+
+            /// SAFETY: caller must ensure the component ID is unique.
+            pub(crate) unsafe fn update_component(&self, id: ComponentId, output_states: &OutputStateAllocator) -> inline_vec!(WireId) {
+                match id.kind() {
+                    $(
+                        <$component_name>::ID => {
+                            let storage = <$component_name>::extract_storage(self);
+                            let component = unsafe { &mut *storage[id.index()].get() };
+
+                            let (output_start, output_end) = component.output_range();
+                            let output_states = unsafe {
+                                // SAFETY: since the component is unique, so is its output range
+                                output_states.range_unsafe(output_start, output_end)
+                            };
+
+                            component.update(output_states)
+                        }
+                    )+
+                    _ => panic!("invalid component kind"),
+                }
+            }
+        }
+    };
+}
+
+def_components! {
+    struct AndGate {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    OrGate {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct OrGate {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    XorGate {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct XorGate {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    NandGate {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct NandGate {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    NorGate {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct NorGate {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    XnorGate {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct XnorGate {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    NotGate {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct NotGate {
         input: WireStateId,
-    },
-    Buffer {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct Buffer {
         input: WireStateId,
         enable: WireStateId,
-    },
-    Slice {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct Slice {
         input: WireStateId,
-        start_offset: u8,
-        end_offset: u8,
-    },
-    Add {
+        start_offset: u16,
+        end_offset: u16,
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct Add {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    Sub {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct Sub {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    Neg {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct Neg {
         input: WireStateId,
-    },
-    Mul {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct Mul {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    LeftShift {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct LeftShift {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    LogicalRightShift {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct LogicalRightShift {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    ArithmeticRightShift {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct ArithmeticRightShift {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    HorizontalAnd {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct HorizontalAnd {
         input: WireStateId,
-    },
-    HorizontalOr {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct HorizontalOr {
         input: WireStateId,
-    },
-    HorizontalXor {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct HorizontalXor {
         input: WireStateId,
-    },
-    HorizontalNand {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct HorizontalNand {
         input: WireStateId,
-    },
-    HorizontalNor {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct HorizontalNor {
         input: WireStateId,
-    },
-    HorizontalXnor {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct HorizontalXnor {
         input: WireStateId,
-    },
-    CompareEqual {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareNotEqual {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareNotEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareLessThan {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareLessThan {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareGreaterThan {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareGreaterThan {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareLessThanOrEqual {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareLessThanOrEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareGreaterThanOrEqual {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareGreaterThanOrEqual {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareLessThanSigned {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareLessThanSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareGreaterThanSigned {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareGreaterThanSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareLessThanOrEqualSigned {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareLessThanOrEqualSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    CompareGreaterThanOrEqualSigned {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct CompareGreaterThanOrEqualSigned {
         input_a: WireStateId,
         input_b: WireStateId,
-    },
-    ZeroExtend {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct ZeroExtend {
         input: WireStateId,
-    },
-    SignExtend {
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
+
+    struct SignExtend {
         input: WireStateId,
-    },
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
 }
+
+impl Component for AndGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for OrGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for XorGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for NandGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for NorGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for XnorGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for NotGate {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for Buffer {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for Slice {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for Add {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for Sub {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for Neg {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for Mul {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for LeftShift {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for LogicalRightShift {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for ArithmeticRightShift {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for HorizontalAnd {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for HorizontalOr {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for HorizontalXor {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for HorizontalNand {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for HorizontalNor {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for HorizontalXnor {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareEqual {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareNotEqual {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareLessThan {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareGreaterThan {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareLessThanOrEqual {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareGreaterThanOrEqual {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareLessThanSigned {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareGreaterThanSigned {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareLessThanOrEqualSigned {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for CompareGreaterThanOrEqualSigned {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for ZeroExtend {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+impl Component for SignExtend {
+    fn node_name(&self) -> Cow<'static, str> {
+        todo!()
+    }
+
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        todo!()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId) {
+        (self.output_state, self.output_state)
+    }
+
+    fn update(&mut self, output_states: OutputStateViewMut) -> inline_vec!(WireId) {
+        todo!()
+    }
+}
+
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
+//
 
 pub(crate) struct SmallComponent {
     kind: SmallComponentKind,
-    output: WireId,
 }
 
 impl SmallComponent {
