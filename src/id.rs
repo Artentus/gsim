@@ -1,8 +1,6 @@
-use crate::{AllocationSize, Component, Wire};
 use std::cmp::Ordering;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr::NonNull;
-use sync_unsafe_cell::SyncUnsafeCell;
 
 const_assert!(usize::BITS >= u32::BITS);
 
@@ -211,7 +209,7 @@ unsafe impl<T: Id> Sync for IdVec<T> {}
 macro_rules! def_id_list {
     ($list_name:ident<$id_name:ident, $t:ty>) => {
         #[repr(transparent)]
-        pub(crate) struct $list_name(Vec<SyncUnsafeCell<$t>>);
+        pub(crate) struct $list_name(Vec<sync_unsafe_cell::SyncUnsafeCell<$t>>);
 
         #[allow(dead_code)]
         impl $list_name {
@@ -221,14 +219,14 @@ macro_rules! def_id_list {
             }
 
             #[inline]
-            pub(crate) fn alloc_size(&self) -> AllocationSize {
-                AllocationSize(self.0.capacity() * std::mem::size_of::<$t>())
+            pub(crate) fn alloc_size(&self) -> crate::AllocationSize {
+                crate::AllocationSize(self.0.capacity() * std::mem::size_of::<$t>())
             }
 
             #[inline]
             pub(crate) fn push(&mut self, item: $t) -> Option<$id_name> {
                 let current_len = u32::try_from(self.0.len()).ok()?;
-                self.0.push(SyncUnsafeCell::new(item));
+                self.0.push(sync_unsafe_cell::SyncUnsafeCell::new(item));
                 Some($id_name(current_len))
             }
 
@@ -247,7 +245,9 @@ macro_rules! def_id_list {
 
             #[inline]
             pub(crate) fn get_mut(&mut self, id: $id_name) -> Option<&mut $t> {
-                self.0.get_mut(id.0 as usize).map(SyncUnsafeCell::get_mut)
+                self.0
+                    .get_mut(id.0 as usize)
+                    .map(sync_unsafe_cell::SyncUnsafeCell::get_mut)
             }
 
             /// SAFETY: caller must ensure there are no other references to the item with this ID
@@ -259,7 +259,9 @@ macro_rules! def_id_list {
 
             #[inline]
             pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = &mut $t> {
-                self.0.iter_mut().map(SyncUnsafeCell::get_mut)
+                self.0
+                    .iter_mut()
+                    .map(sync_unsafe_cell::SyncUnsafeCell::get_mut)
             }
 
             #[inline]
@@ -270,47 +272,4 @@ macro_rules! def_id_list {
     };
 }
 
-def_id_list!(WireList<WireId, Wire>);
-
-impl WireList {
-    #[inline]
-    pub(crate) fn wire_count(&self) -> usize {
-        self.0.len()
-    }
-}
-
-def_id_list!(ComponentList<ComponentId, Component>);
-
-impl ComponentList {
-    pub(crate) fn component_counts(&self) -> (usize, usize) {
-        let mut small_count = 0;
-        let mut large_count = 0;
-
-        for comp in self.0.iter() {
-            let comp = unsafe {
-                // SAFETY: since we have a shared reference to `self`, no mutable references exist
-                &*comp.get()
-            };
-
-            match comp {
-                Component::Small { .. } => small_count += 1,
-                Component::Large { .. } => large_count += 1,
-            }
-        }
-
-        (small_count, large_count)
-    }
-
-    pub(crate) fn large_alloc_size(&self) -> AllocationSize {
-        self.0
-            .iter()
-            .map(|comp| {
-                unsafe {
-                    // SAFETY: since we have a shared reference to `self`, no mutable references exist
-                    &*comp.get()
-                }
-            })
-            .map(Component::alloc_size)
-            .sum()
-    }
-}
+pub(crate) use def_id_list;

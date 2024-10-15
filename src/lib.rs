@@ -66,9 +66,9 @@ use std::ops::{Add, AddAssign};
 use std::sync::{Arc, Mutex};
 use wire::*;
 
-pub use component::ComponentData;
-pub use id::{ComponentId, WireId};
+pub use component::{ComponentData, ComponentId};
 pub use logic::*;
+pub use wire::WireId;
 
 #[allow(dead_code)]
 type HashMap<K, V> = ahash::AHashMap<K, V>;
@@ -791,9 +791,11 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         let perform = |component_id| {
             unsafe {
                 // SAFETY: `sort_unstable` + `dedup` ensure the ID is unique between all iterations
-                self.data
-                    .components
-                    .update_component(component_id, &self.data.output_states)
+                self.data.components.update_component(
+                    component_id,
+                    self.data.wire_states.view(),
+                    &self.data.output_states,
+                )
             }
         };
 

@@ -48,6 +48,246 @@ impl BitOrAssign for OpResult {
     }
 }
 
+#[inline]
+pub(super) fn logic_and(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  1  |  0  | High-Z    |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  1  |  1  | Undefined |  0  |  0  | Logic 0
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  1  | Logic 1   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  0  | High-Z    |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   1  |  0  | High-Z    |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  1  | Undefined |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   1  |  1  | Undefined |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [
+        (a[0] & b[0]) | (a[0] & b[1]) | (a[1] & b[0]) | (a[1] & b[1]),
+        (a[0] & b[1]) | (a[1] & b[0]) | (a[1] & b[1]),
+    ]
+}
+
+#[inline]
+pub(super) fn logic_or(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  0  | Logic 0   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  1  |  0  | High-Z    |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  1  |  1  | Undefined |  0  |  1  | Logic 1
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  0  | High-Z    |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   1  |  0  | High-Z    |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  1  | Undefined |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [
+        a[0] | a[1] | b[0] | b[1],
+        (!a[0] & b[1]) | (a[1] & !b[0]) | (a[1] & b[1]),
+    ]
+}
+
+#[inline]
+pub(super) fn logic_xor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  0  | Logic 0   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  1  | Logic 1   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  0  | High-Z    |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  1  | Undefined |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [(!a[0] & b[0]) | (a[0] & !b[0]) | a[1] | b[1], a[1] | b[1]]
+}
+
+#[inline]
+pub(super) fn logic_nand(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  1  |  0  | High-Z    |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  1  |  1  | Undefined |  0  |  1  | Logic 1
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  1  | Logic 1   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  0  | High-Z    |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   1  |  0  | High-Z    |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  1  | Undefined |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   1  |  1  | Undefined |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [
+        !a[0] | !b[0] | a[1] | b[1],
+        (a[0] & b[1]) | (a[1] & b[0]) | (a[1] & b[1]),
+    ]
+}
+
+#[inline]
+pub(super) fn logic_nor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  0  | Logic 0   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  1  |  0  | High-Z    |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  1  |  1  | Undefined |  0  |  0  | Logic 0
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  0  | High-Z    |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   1  |  0  | High-Z    |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  1  | Undefined |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [
+        (!a[0] & !b[0]) | (!a[0] & b[1]) | (a[1] & !b[0]) | (a[1] & b[1]),
+        (!a[0] & b[1]) | (a[1] & !b[0]) | (a[1] & b[1]),
+    ]
+}
+
+#[inline]
+pub(super) fn logic_xnor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   0  |  0  | Logic 0   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  0  | Logic 0   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   0  |  1  | Logic 1   |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  0  | High-Z    |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined |  1  |  1  | Undefined
+    // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
+    //   1  |  1  | Undefined |  0  |  0  | Logic 0   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  0  |  1  | Logic 1   |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [(!a[0] & !b[0]) | (a[0] & b[0]) | a[1] | b[1], a[1] | b[1]]
+}
+
+#[inline]
+pub(super) fn binary_op(
+    input_a: LogicStateRef,
+    input_b: LogicStateRef,
+    mut output: LogicStateMut,
+    op: impl Fn([u32; 2], [u32; 2]) -> [u32; 2],
+) -> OpResult {
+    assert_eq!(input_a.bit_width(), input_b.bit_width());
+    assert_eq!(input_a.bit_width(), output.bit_width());
+    let bit_width = input_a.bit_width();
+
+    let (input_a_plane_0, input_a_plane_1) = input_a.bit_planes();
+    let (input_b_plane_0, input_b_plane_1) = input_b.bit_planes();
+    let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+    let word_len = input_a_plane_0.len();
+
+    let mut result = OpResult::Unchanged;
+    for i in 0..word_len {
+        let [new_word_0, new_word_1] = op(
+            [input_a_plane_0[i], input_a_plane_1[i]],
+            [input_b_plane_0[i], input_b_plane_1[i]],
+        );
+
+        let mask = if i == (word_len - 1) {
+            bit_width.last_word_mask()
+        } else {
+            u32::MAX
+        };
+
+        let [new_word_0, new_word_1] = [new_word_0 & mask, new_word_1 & mask];
+
+        if (new_word_0 != output_plane_0[i]) || (new_word_1 != output_plane_1[i]) {
+            result = OpResult::Changed;
+        }
+
+        output_plane_0[i] = new_word_0;
+        output_plane_1[i] = new_word_1;
+    }
+    result
+}
+
+/*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // SAFETY:
 // These functions are on the hot path of the simulation,
 // so it is important to optimize them as much as possible.
@@ -1653,3 +1893,4 @@ pub(super) fn sign_extend(
 
     result
 }
+ */

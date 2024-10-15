@@ -1,3 +1,4 @@
+use crate::component::ComponentId;
 use crate::id::*;
 use crate::logic::*;
 use itertools::izip;
@@ -59,7 +60,7 @@ impl Wire {
 
 #[inline]
 fn combine(a: [u32; 2], b: [u32; 2]) -> ([u32; 2], u32) {
-    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_0 | O_1 |     O     | conflict
+    //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O     | conflict
     // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------|----------
     //   0  |  0  | Logic 0   |  0  |  0  | Logic 0   |  -  |  -  | -         | yes
     //   0  |  0  | Logic 0   |  0  |  1  | Logic 1   |  -  |  -  | -         | yes
@@ -166,5 +167,14 @@ impl Wire {
         } else {
             WireUpdateResult::Unchanged
         }
+    }
+}
+
+def_id_list!(WireList<WireId, Wire>);
+
+impl WireList {
+    #[inline]
+    pub(crate) fn wire_count(&self) -> usize {
+        self.0.len()
     }
 }
