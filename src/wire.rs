@@ -16,7 +16,18 @@ pub(crate) enum WireUpdateResult {
     Conflict,
 }
 
+impl From<CopyFromResult> for WireUpdateResult {
+    #[inline]
+    fn from(value: CopyFromResult) -> Self {
+        match value {
+            CopyFromResult::Unchanged => Self::Unchanged,
+            CopyFromResult::Changed => Self::Changed,
+        }
+    }
+}
+
 pub(crate) struct Wire {
+    bit_width: BitWidth,
     state_id: WireStateId,
     drivers: IdVec<OutputStateId>,
     driving: IdVec<ComponentId>,
@@ -24,12 +35,18 @@ pub(crate) struct Wire {
 
 impl Wire {
     #[inline]
-    pub(crate) fn new(state_id: WireStateId) -> Self {
+    pub(crate) fn new(bit_width: BitWidth, state_id: WireStateId) -> Self {
         Self {
+            bit_width,
             state_id,
             drivers: IdVec::new(),
             driving: IdVec::new(),
         }
+    }
+
+    #[inline]
+    pub(crate) fn bit_width(&self) -> BitWidth {
+        self.bit_width
     }
 
     #[inline]
@@ -45,6 +62,10 @@ impl Wire {
     #[inline]
     pub(crate) fn driving(&self) -> &[ComponentId] {
         self.driving.as_slice()
+    }
+
+    pub(crate) fn add_driver(&mut self, output: OutputStateId) {
+        self.drivers.push(output);
     }
 
     pub(crate) fn add_driving(&mut self, component: ComponentId) {
@@ -92,41 +113,24 @@ impl Wire {
     #[inline]
     pub(crate) fn update(
         &self,
-        mut state: LogicStateMut,
-        drive: LogicStateRef,
+        mut wire_states: WireStateViewMut,
         output_states: OutputStateView,
     ) -> WireUpdateResult {
-        assert_eq!(state.bit_width(), drive.bit_width());
-        let bit_width = state.bit_width();
+        let [mut state, drive] = wire_states
+            .get_mut(self.state_id, self.bit_width)
+            .expect("invalid wire state ID");
+        let word_len = self.bit_width.word_len() as usize;
 
-        let (state_plane_0, state_plane_1) = state.bit_planes_mut();
-        let (drive_plane_0, drive_plane_1) = drive.bit_planes();
-        assert_eq!(state_plane_0.len(), state_plane_1.len());
-        assert_eq!(drive_plane_0.len(), drive_plane_1.len());
-        assert_eq!(state_plane_0.len(), drive_plane_0.len());
-        let word_len = state_plane_0.len();
-
-        let mut tmp_plane_0 = [0; MAX_WORD_COUNT];
-        let mut tmp_plane_1 = [0; MAX_WORD_COUNT];
-
-        {
-            let tmp_plane_0 = &mut tmp_plane_0[..word_len];
-            let tmp_plane_1 = &mut tmp_plane_1[..word_len];
-            tmp_plane_0.copy_from_slice(drive_plane_0);
-            tmp_plane_1.copy_from_slice(drive_plane_1);
-        }
+        let mut tmp_state = InlineLogicState::logic_0(self.bit_width);
+        tmp_state.copy_from(drive);
 
         let mut conflict = 0;
         for driver in self.drivers.iter() {
-            let [driver_state] = output_states.get(driver).expect("invalid output state ID");
-            assert_eq!(bit_width, driver_state.bit_width());
-
+            let [driver_state] = output_states
+                .get(driver, self.bit_width)
+                .expect("invalid output state ID");
             let (driver_plane_0, driver_plane_1) = driver_state.bit_planes();
-            assert_eq!(driver_plane_0.len(), driver_plane_1.len());
-            assert_eq!(state_plane_0.len(), driver_plane_0.len());
-
-            let tmp_plane_0 = &mut tmp_plane_0[..word_len];
-            let tmp_plane_1 = &mut tmp_plane_1[..word_len];
+            let (tmp_plane_0, tmp_plane_1) = tmp_state.bit_planes_mut();
 
             for (i, (tmp_word_0, tmp_word_1, &driver_word_0, &driver_word_1)) in
                 izip!(tmp_plane_0, tmp_plane_1, driver_plane_0, driver_plane_1).enumerate()
@@ -135,7 +139,7 @@ impl Wire {
                     combine([*tmp_word_0, *tmp_word_1], [driver_word_0, driver_word_1]);
 
                 let mask = if i == (word_len - 1) {
-                    bit_width.last_word_mask()
+                    self.bit_width.last_word_mask()
                 } else {
                     u32::MAX
                 };
@@ -146,26 +150,12 @@ impl Wire {
             }
         }
 
-        let mut changed = false;
-        {
-            let tmp_plane_0 = &tmp_plane_0[..word_len];
-            let tmp_plane_1 = &tmp_plane_1[..word_len];
-
-            for (state_word_0, state_word_1, &tmp_word_0, &tmp_word_1) in
-                izip!(state_plane_0, state_plane_1, tmp_plane_0, tmp_plane_1)
-            {
-                changed |= (tmp_word_0 != *state_word_0) | (tmp_word_1 != *state_word_1);
-                *state_word_0 = tmp_word_0;
-                *state_word_1 = tmp_word_1;
-            }
-        }
+        let copy_result = state.copy_from(&tmp_state);
 
         if conflict != 0 {
             WireUpdateResult::Conflict
-        } else if changed {
-            WireUpdateResult::Changed
         } else {
-            WireUpdateResult::Unchanged
+            copy_result.into()
         }
     }
 }

@@ -231,11 +231,6 @@ macro_rules! def_id_list {
             }
 
             #[inline]
-            pub(crate) fn shrink_to_fit(&mut self) {
-                self.0.shrink_to_fit()
-            }
-
-            #[inline]
             pub(crate) fn get(&self, id: $id_name) -> Option<&$t> {
                 self.0.get(id.0 as usize).map(|t| unsafe {
                     // SAFETY: since we have a shared reference to `self`, no mutable references exist

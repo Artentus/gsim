@@ -317,10 +317,10 @@ impl Iterator for Bits<'_> {
 
 impl std::iter::FusedIterator for Bits<'_> {}
 
-pub(crate) const MAX_WORD_COUNT: usize = BitWidth::MAX.get().div_ceil(u32::BITS) as usize;
+const MAX_WORD_COUNT: usize = BitWidth::MAX.get().div_ceil(u32::BITS) as usize;
 
-static ALL_ZERO: [u32; MAX_WORD_COUNT] = [u32::MIN; MAX_WORD_COUNT];
-static ALL_ONE: [u32; MAX_WORD_COUNT] = [u32::MAX; MAX_WORD_COUNT];
+const ALL_ZERO: [u32; MAX_WORD_COUNT] = [u32::MIN; MAX_WORD_COUNT];
+const ALL_ONE: [u32; MAX_WORD_COUNT] = [u32::MAX; MAX_WORD_COUNT];
 
 #[derive(Debug, Clone, Copy)]
 enum LogicStateRepr {
@@ -368,8 +368,7 @@ impl LogicStateRepr {
 
     #[inline]
     fn bit_planes(&self) -> (&[u32], &[u32]) {
-        let bit_width = self.bit_width();
-        let word_len = bit_width.get().div_ceil(u32::BITS) as usize;
+        let word_len = self.bit_width().word_len() as usize;
 
         match self {
             LogicStateRepr::Logic0 { .. } => (&ALL_ZERO[..word_len], &ALL_ZERO[..word_len]),
@@ -515,7 +514,7 @@ impl LogicState {
         assert_eq!(bit_plane_0.len(), bit_plane_0.capacity());
         assert_eq!(bit_plane_1.len(), bit_plane_1.capacity());
 
-        let word_len = bit_width.get().div_ceil(u32::BITS) as usize;
+        let word_len = bit_width.word_len() as usize;
         debug_assert_eq!(bit_plane_0.len(), word_len);
         debug_assert_eq!(bit_plane_1.len(), word_len);
 
@@ -601,12 +600,12 @@ impl LogicState {
     }
 
     #[inline]
-    fn bit(&self, index: u32) -> Option<LogicBitState> {
+    pub fn bit(&self, index: u32) -> Option<LogicBitState> {
         self.repr.bit(index)
     }
 
     #[inline]
-    fn bits(&self) -> Bits<'_> {
+    pub fn bits(&self) -> Bits<'_> {
         self.repr.bits()
     }
 
@@ -689,7 +688,7 @@ impl FromStr for LogicState {
             (false, false, true, false) => Ok(Self::high_z(bit_width)),
             (false, false, false, true) => Ok(Self::undefined(bit_width)),
             (true, true, false, false) => {
-                let word_len = bit_width.get().div_ceil(u32::BITS);
+                let word_len = bit_width.word_len() as usize;
                 if word_len <= 5 {
                     let mut bit_plane_0 = [0; 5];
                     let mut bit_plane_1 = [0; 5];
@@ -710,7 +709,7 @@ impl FromStr for LogicState {
                 }
             }
             _ => {
-                let word_len = bit_width.get().div_ceil(u32::BITS);
+                let word_len = bit_width.word_len() as usize;
                 if word_len <= 2 {
                     let mut bit_plane_0 = [0; 2];
                     let mut bit_plane_1 = [0; 2];
@@ -742,7 +741,7 @@ impl Drop for LogicState {
             bit_plane_1,
         } = self.repr
         {
-            let word_len = bit_width.get().div_ceil(u32::BITS) as usize;
+            let word_len = bit_width.word_len() as usize;
 
             unsafe {
                 // SAFETY: this is the only place where deallocation can occurr.
@@ -819,6 +818,152 @@ macro_rules! bits {
     }}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum CopyFromResult {
+    Unchanged,
+    Changed,
+}
+
+macro_rules! copy_from_impl {
+    () => {
+        pub(crate) fn copy_from<'other>(
+            &mut self,
+            other: impl IntoLogicStateRef<'other>,
+        ) -> CopyFromResult {
+            let other = other.into_logic_state_ref();
+            assert_eq!(self.bit_width(), other.bit_width());
+
+            let (dst_plane_0, dst_plane_1) = self.bit_planes_mut();
+            let (src_plane_0, src_plane_1) = other.bit_planes();
+
+            let mut changed = false;
+            for (dst_word_0, dst_word_1, &src_word_0, &src_word_1) in
+                itertools::izip!(dst_plane_0, dst_plane_1, src_plane_0, src_plane_1)
+            {
+                changed |= (src_word_0 != *dst_word_0) | (src_word_1 != *dst_word_1);
+                *dst_word_0 = src_word_0;
+                *dst_word_1 = src_word_1;
+            }
+
+            if changed {
+                CopyFromResult::Changed
+            } else {
+                CopyFromResult::Unchanged
+            }
+        }
+    };
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub(crate) struct InlineLogicState {
+    bit_width: BitWidth,
+    bit_plane_0: [u32; MAX_WORD_COUNT],
+    bit_plane_1: [u32; MAX_WORD_COUNT],
+}
+
+impl InlineLogicState {
+    #[inline]
+    pub const fn logic_0(bit_width: BitWidth) -> Self {
+        Self {
+            bit_width,
+            bit_plane_0: ALL_ZERO,
+            bit_plane_1: ALL_ZERO,
+        }
+    }
+
+    #[inline]
+    pub const fn logic_1(bit_width: BitWidth) -> Self {
+        Self {
+            bit_width,
+            bit_plane_0: ALL_ONE,
+            bit_plane_1: ALL_ZERO,
+        }
+    }
+
+    #[inline]
+    pub const fn high_z(bit_width: BitWidth) -> Self {
+        Self {
+            bit_width,
+            bit_plane_0: ALL_ZERO,
+            bit_plane_1: ALL_ONE,
+        }
+    }
+
+    #[inline]
+    pub const fn undefined(bit_width: BitWidth) -> Self {
+        Self {
+            bit_width,
+            bit_plane_0: ALL_ONE,
+            bit_plane_1: ALL_ONE,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn bit_width(&self) -> BitWidth {
+        self.bit_width
+    }
+
+    #[inline]
+    pub(crate) fn bit_planes(&self) -> (&[u32], &[u32]) {
+        let word_len = self.bit_width.word_len() as usize;
+        (&self.bit_plane_0[..word_len], &self.bit_plane_1[..word_len])
+    }
+
+    #[inline]
+    pub(crate) fn bit_planes_mut(&mut self) -> (&mut [u32], &mut [u32]) {
+        let word_len = self.bit_width.word_len() as usize;
+
+        (
+            &mut self.bit_plane_0[..word_len],
+            &mut self.bit_plane_1[..word_len],
+        )
+    }
+
+    pub(crate) fn bit(&self, index: u32) -> Option<LogicBitState> {
+        if index >= self.bit_width().get() {
+            return None;
+        }
+
+        let word_index = (index / u32::BITS) as usize;
+        let bit_index = (index % u32::BITS) as usize;
+
+        let (bit_plane_0, bit_plane_1) = self.bit_planes();
+        let bit_0 = ((bit_plane_0[word_index] >> bit_index) as u8) & 0b1;
+        let bit_1 = ((bit_plane_1[word_index] >> bit_index) as u8) & 0b1;
+        Some(LogicBitState::from_bits(bit_0 | (bit_1 << 1)))
+    }
+
+    pub(crate) fn bits(&self) -> Bits<'_> {
+        let (bit_plane_0, bit_plane_1) = self.bit_planes();
+        Bits::new(self.bit_width(), bit_plane_0, bit_plane_1)
+    }
+
+    copy_from_impl!();
+
+    #[inline]
+    pub(crate) const fn borrow(&self) -> LogicStateRef<'_> {
+        unsafe {
+            LogicStateRef::new_ptr(
+                self.bit_width,
+                NonNull::new_unchecked(self.bit_plane_0.as_slice().as_ptr().cast_mut()),
+                NonNull::new_unchecked(self.bit_plane_1.as_slice().as_ptr().cast_mut()),
+            )
+        }
+    }
+
+    #[inline]
+    pub(crate) fn borrow_mut(&mut self) -> LogicStateMut<'_> {
+        unsafe {
+            LogicStateMut::new_ptr(
+                self.bit_width,
+                NonNull::new_unchecked(self.bit_plane_0.as_mut_slice().as_mut_ptr()),
+                NonNull::new_unchecked(self.bit_plane_1.as_mut_slice().as_mut_ptr()),
+            )
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct LogicStateRef<'a> {
@@ -829,7 +974,7 @@ pub struct LogicStateRef<'a> {
 impl LogicStateRef<'_> {
     /// SAFETY: caller must ensure the pointers are valid for the bit width and the chosen lifetime.
     #[inline]
-    pub(crate) unsafe fn new_ptr(
+    pub(crate) const unsafe fn new_ptr(
         bit_width: BitWidth,
         bit_plane_0: NonNull<u32>,
         bit_plane_1: NonNull<u32>,
@@ -855,12 +1000,12 @@ impl LogicStateRef<'_> {
     }
 
     #[inline]
-    fn bit(&self, index: u32) -> Option<LogicBitState> {
+    pub fn bit(&self, index: u32) -> Option<LogicBitState> {
         self.repr.bit(index)
     }
 
     #[inline]
-    fn bits(&self) -> Bits<'_> {
+    pub fn bits(&self) -> Bits<'_> {
         self.repr.bits()
     }
 
@@ -871,7 +1016,7 @@ impl LogicStateRef<'_> {
             bit_plane_1,
         } = self.repr
         {
-            let word_len = bit_width.get().div_ceil(u32::BITS) as usize;
+            let word_len = bit_width.word_len() as usize;
 
             let (bit_plane_0, bit_plane_1) = unsafe {
                 (
@@ -928,7 +1073,7 @@ impl<'a> LogicStateMut<'a> {
 
     #[inline]
     pub(crate) fn bit_planes(&self) -> (&[u32], &[u32]) {
-        let word_len = self.bit_width.get().div_ceil(u32::BITS) as usize;
+        let word_len = self.bit_width.word_len() as usize;
 
         unsafe {
             (
@@ -940,7 +1085,7 @@ impl<'a> LogicStateMut<'a> {
 
     #[inline]
     pub(crate) fn bit_planes_mut(&mut self) -> (&mut [u32], &mut [u32]) {
-        let word_len = self.bit_width.get().div_ceil(u32::BITS) as usize;
+        let word_len = self.bit_width.word_len() as usize;
 
         unsafe {
             (
@@ -950,7 +1095,7 @@ impl<'a> LogicStateMut<'a> {
         }
     }
 
-    fn bit(&self, index: u32) -> Option<LogicBitState> {
+    pub(crate) fn bit(&self, index: u32) -> Option<LogicBitState> {
         if index >= self.bit_width().get() {
             return None;
         }
@@ -964,10 +1109,12 @@ impl<'a> LogicStateMut<'a> {
         Some(LogicBitState::from_bits(bit_0 | (bit_1 << 1)))
     }
 
-    fn bits(&self) -> Bits<'_> {
+    pub(crate) fn bits(&self) -> Bits<'_> {
         let (bit_plane_0, bit_plane_1) = self.bit_planes();
         Bits::new(self.bit_width(), bit_plane_0, bit_plane_1)
     }
+
+    copy_from_impl!();
 
     #[inline]
     pub(crate) fn into_shared(self) -> LogicStateRef<'a> {
@@ -1012,6 +1159,13 @@ pub trait IntoLogicStateRef<'a> {
 }
 
 impl<'a> IntoLogicStateRef<'a> for &'a LogicState {
+    #[inline]
+    fn into_logic_state_ref(self) -> LogicStateRef<'a> {
+        self.borrow()
+    }
+}
+
+impl<'a> IntoLogicStateRef<'a> for &'a InlineLogicState {
     #[inline]
     fn into_logic_state_ref(self) -> LogicStateRef<'a> {
         self.borrow()
@@ -1117,5 +1271,6 @@ macro_rules! eq_impl {
 }
 
 eq_impl!(LogicState);
+eq_impl!(InlineLogicState);
 eq_impl!(LogicStateRef<'a>);
 eq_impl!(LogicStateMut<'a>);

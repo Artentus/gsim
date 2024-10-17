@@ -38,6 +38,11 @@ impl BitWidth {
     }
 
     #[inline]
+    pub(crate) const fn word_len(self) -> u32 {
+        self.get().div_ceil(u32::BITS)
+    }
+
+    #[inline]
     pub(crate) const fn last_word_width(self) -> Self {
         Self(self.0 % (u32::BITS as u8))
     }

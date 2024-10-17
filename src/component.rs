@@ -28,14 +28,25 @@ impl ComponentId {
     }
 }
 
-pub(crate) trait Component {
+pub(crate) trait Component: Sized {
+    type Args<'a>;
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError>;
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str>;
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]>;
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]>;
 
-    fn output_range(&self) -> (OutputStateId, OutputStateId);
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth);
 
     fn update(
         &mut self,
@@ -44,7 +55,7 @@ pub(crate) trait Component {
     ) -> inline_vec!(WireId);
 }
 
-pub(crate) trait ComponentKind: Sized + Component {
+pub(crate) trait ComponentAuto: Component {
     const ID: u8;
 
     fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>];
@@ -61,7 +72,7 @@ macro_rules! def_components {
             $($field_name : $field_ty,)*
         }
 
-        impl ComponentKind for $component_name {
+        impl ComponentAuto for $component_name {
             const ID: u8 = $id;
 
             #[inline]
@@ -148,7 +159,7 @@ macro_rules! def_components {
         }
 
         impl ComponentStorage {
-            pub(crate) fn push<T: ComponentKind>(&mut self, component: T) -> Option<ComponentId> {
+            pub(crate) fn push<T: ComponentAuto>(&mut self, component: T) -> Option<ComponentId> {
                 let storage = T::extract_storage_mut(self);
 
                 let index = storage.len();
@@ -186,10 +197,10 @@ macro_rules! def_components {
                             let storage = <$component_name>::extract_storage(self);
                             let component = unsafe { &mut *storage[id.index()].get() };
 
-                            let (output_start, output_end) = component.output_range();
+                            let (output_start, output_end, output_end_width) = component.output_range();
                             let output_states = unsafe {
                                 // SAFETY: since the component is unique, so is its output range
-                                output_states.range_unsafe(output_start, output_end)
+                                output_states.range_unsafe(output_start, output_end, output_end_width)
                             };
 
                             component.update(wire_states, output_states)
@@ -204,43 +215,43 @@ macro_rules! def_components {
 
 def_components! {
     struct AndGate {
-        input_a: WireStateId,
-        input_b: WireStateId,
+        bit_width: BitWidth,
+        inputs: IdVec<WireStateId>,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct OrGate {
-        input_a: WireStateId,
-        input_b: WireStateId,
+        bit_width: BitWidth,
+        inputs: IdVec<WireStateId>,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct XorGate {
-        input_a: WireStateId,
-        input_b: WireStateId,
+        bit_width: BitWidth,
+        inputs: IdVec<WireStateId>,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct NandGate {
-        input_a: WireStateId,
-        input_b: WireStateId,
+        bit_width: BitWidth,
+        inputs: IdVec<WireStateId>,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct NorGate {
-        input_a: WireStateId,
-        input_b: WireStateId,
+        bit_width: BitWidth,
+        inputs: IdVec<WireStateId>,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct XnorGate {
-        input_a: WireStateId,
-        input_b: WireStateId,
+        bit_width: BitWidth,
+        inputs: IdVec<WireStateId>,
         output_state: OutputStateId,
         output_wire: WireId,
     }
@@ -433,235 +444,138 @@ def_components! {
     }
 }
 
-impl Component for AndGate {
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        "AND".into()
-    }
+pub struct WideGateArgs<'a> {
+    inputs: &'a [WireId],
+    output: WireId,
+}
 
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        smallvec![(self.input_a, "A".into()), (self.input_b, "B".into())]
-    }
+macro_rules! wide_gate_impl {
+    ($name:literal, $op:expr) => {
+        type Args<'a> = WideGateArgs<'a>;
 
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
-    }
+        fn new(
+            args: Self::Args<'_>,
+            wires: &mut WireList,
+            output_states: &mut OutputStateAllocator,
+        ) -> Result<Self, AddComponentError> {
+            let output_wire = wires
+                .get(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
 
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        let [input_a, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [input_b, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [output] = output_states
-            .get_mut(self.output_state)
-            .expect("invalid output state ID");
+            let mut inputs = IdVec::new();
+            for &input in args.inputs {
+                let input_wire = wires.get(input).ok_or(AddComponentError::InvalidWireId)?;
 
-        match binary_op(input_a, input_b, output, logic_and) {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
+                if input_wire.bit_width() != output_wire.bit_width() {
+                    return Err(AddComponentError::WireWidthMismatch);
+                }
+
+                inputs.push(input_wire.state_id());
+            }
+
+            let output_state = output_states.alloc(output_wire.bit_width())?;
+
+            Ok(Self {
+                bit_width: output_wire.bit_width(),
+                inputs,
+                output_state,
+                output_wire: args.output,
+            })
         }
-    }
+
+        #[cfg(feature = "dot-export")]
+        fn node_name(&self) -> Cow<'static, str> {
+            $name.into()
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+            smallvec![(self.output_wire, "Out".into())]
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+            self.inputs
+                .iter()
+                .enumerate()
+                .map(|(i, input)| (input, format!("In{i}").into()))
+                .collect()
+        }
+
+        #[inline]
+        fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+            (self.output_state, self.output_state, self.bit_width)
+        }
+
+        fn update(
+            &mut self,
+            wire_states: WireStateView,
+            mut output_states: OutputStateViewMut,
+        ) -> inline_vec!(WireId) {
+            let mut tmp_state = InlineLogicState::undefined(self.bit_width);
+
+            let mut input_iter = self.inputs.iter();
+            if let Some(first_input) = input_iter.next() {
+                let [first_input, _] = wire_states
+                    .get(first_input, self.bit_width)
+                    .expect("invalid wire state ID");
+                tmp_state.copy_from(first_input);
+            }
+
+            for input in input_iter {
+                let [input, _] = wire_states
+                    .get(input, self.bit_width)
+                    .expect("invalid wire state ID");
+                binary_op(tmp_state.borrow_mut(), input, $op);
+            }
+
+            let [mut output] = output_states
+                .get_mut(self.output_state, self.bit_width)
+                .expect("invalid output state ID");
+
+            match output.copy_from(&tmp_state) {
+                CopyFromResult::Unchanged => smallvec![],
+                CopyFromResult::Changed => smallvec![self.output_wire],
+            }
+        }
+    };
+}
+
+impl Component for AndGate {
+    wide_gate_impl!("AND", logic_and);
 }
 
 impl Component for OrGate {
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        "OR".into()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        smallvec![(self.input_a, "A".into()), (self.input_b, "B".into())]
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        let [input_a, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [input_b, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [output] = output_states
-            .get_mut(self.output_state)
-            .expect("invalid output state ID");
-
-        match binary_op(input_a, input_b, output, logic_or) {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
-        }
-    }
+    wide_gate_impl!("OR", logic_or);
 }
 
 impl Component for XorGate {
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        "XOR".into()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        smallvec![(self.input_a, "A".into()), (self.input_b, "B".into())]
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        let [input_a, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [input_b, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [output] = output_states
-            .get_mut(self.output_state)
-            .expect("invalid output state ID");
-
-        match binary_op(input_a, input_b, output, logic_xor) {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
-        }
-    }
+    wide_gate_impl!("XOR", logic_xor);
 }
 
 impl Component for NandGate {
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        "NAND".into()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        smallvec![(self.input_a, "A".into()), (self.input_b, "B".into())]
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        let [input_a, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [input_b, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [output] = output_states
-            .get_mut(self.output_state)
-            .expect("invalid output state ID");
-
-        match binary_op(input_a, input_b, output, logic_nand) {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
-        }
-    }
+    wide_gate_impl!("NAND", logic_nand);
 }
 
 impl Component for NorGate {
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        "NOR".into()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        smallvec![(self.input_a, "A".into()), (self.input_b, "B".into())]
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        let [input_a, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [input_b, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [output] = output_states
-            .get_mut(self.output_state)
-            .expect("invalid output state ID");
-
-        match binary_op(input_a, input_b, output, logic_nor) {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
-        }
-    }
+    wide_gate_impl!("NOR", logic_nor);
 }
 
 impl Component for XnorGate {
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        "XNOR".into()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        smallvec![(self.input_a, "A".into()), (self.input_b, "B".into())]
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        let [input_a, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [input_b, _] = wire_states
-            .get(self.input_a)
-            .expect("invalid wire state ID");
-        let [output] = output_states
-            .get_mut(self.output_state)
-            .expect("invalid output state ID");
-
-        match binary_op(input_a, input_b, output, logic_xnor) {
-            OpResult::Unchanged => smallvec![],
-            OpResult::Changed => smallvec![self.output_wire],
-        }
-    }
+    wide_gate_impl!("XNOR", logic_xnor);
 }
 
 impl Component for NotGate {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -687,6 +601,16 @@ impl Component for NotGate {
 }
 
 impl Component for Buffer {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -712,6 +636,16 @@ impl Component for Buffer {
 }
 
 impl Component for Slice {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -737,6 +671,16 @@ impl Component for Slice {
 }
 
 impl Component for Add {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -762,6 +706,16 @@ impl Component for Add {
 }
 
 impl Component for Sub {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -787,6 +741,16 @@ impl Component for Sub {
 }
 
 impl Component for Neg {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -812,6 +776,16 @@ impl Component for Neg {
 }
 
 impl Component for Mul {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -837,6 +811,16 @@ impl Component for Mul {
 }
 
 impl Component for LeftShift {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -862,6 +846,16 @@ impl Component for LeftShift {
 }
 
 impl Component for LogicalRightShift {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -887,6 +881,16 @@ impl Component for LogicalRightShift {
 }
 
 impl Component for ArithmeticRightShift {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -912,6 +916,16 @@ impl Component for ArithmeticRightShift {
 }
 
 impl Component for HorizontalAnd {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -937,6 +951,16 @@ impl Component for HorizontalAnd {
 }
 
 impl Component for HorizontalOr {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -962,6 +986,16 @@ impl Component for HorizontalOr {
 }
 
 impl Component for HorizontalXor {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -987,6 +1021,16 @@ impl Component for HorizontalXor {
 }
 
 impl Component for HorizontalNand {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1012,6 +1056,16 @@ impl Component for HorizontalNand {
 }
 
 impl Component for HorizontalNor {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1037,6 +1091,16 @@ impl Component for HorizontalNor {
 }
 
 impl Component for HorizontalXnor {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1062,6 +1126,16 @@ impl Component for HorizontalXnor {
 }
 
 impl Component for CompareEqual {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1087,6 +1161,16 @@ impl Component for CompareEqual {
 }
 
 impl Component for CompareNotEqual {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1112,6 +1196,16 @@ impl Component for CompareNotEqual {
 }
 
 impl Component for CompareLessThan {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1137,6 +1231,16 @@ impl Component for CompareLessThan {
 }
 
 impl Component for CompareGreaterThan {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1162,6 +1266,16 @@ impl Component for CompareGreaterThan {
 }
 
 impl Component for CompareLessThanOrEqual {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1187,6 +1301,16 @@ impl Component for CompareLessThanOrEqual {
 }
 
 impl Component for CompareGreaterThanOrEqual {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1212,6 +1336,16 @@ impl Component for CompareGreaterThanOrEqual {
 }
 
 impl Component for CompareLessThanSigned {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1237,6 +1371,16 @@ impl Component for CompareLessThanSigned {
 }
 
 impl Component for CompareGreaterThanSigned {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1262,6 +1406,16 @@ impl Component for CompareGreaterThanSigned {
 }
 
 impl Component for CompareLessThanOrEqualSigned {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1287,6 +1441,16 @@ impl Component for CompareLessThanOrEqualSigned {
 }
 
 impl Component for CompareGreaterThanOrEqualSigned {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1312,6 +1476,16 @@ impl Component for CompareGreaterThanOrEqualSigned {
 }
 
 impl Component for ZeroExtend {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1337,6 +1511,16 @@ impl Component for ZeroExtend {
 }
 
 impl Component for SignExtend {
+    type Args<'a> = ();
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        todo!()
+    }
+
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
         todo!()
@@ -1361,6 +1545,7 @@ impl Component for SignExtend {
     }
 }
 
+/*
 //
 //
 //
@@ -3197,3 +3382,4 @@ impl Component {
         }
     }
 }
+*/

@@ -224,43 +224,23 @@ pub(super) fn logic_xnor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
 
 #[inline]
 pub(super) fn binary_op(
-    input_a: LogicStateRef,
-    input_b: LogicStateRef,
     mut output: LogicStateMut,
+    input: LogicStateRef,
     op: impl Fn([u32; 2], [u32; 2]) -> [u32; 2],
-) -> OpResult {
-    assert_eq!(input_a.bit_width(), input_b.bit_width());
-    assert_eq!(input_a.bit_width(), output.bit_width());
-    let bit_width = input_a.bit_width();
+) {
+    assert_eq!(output.bit_width(), input.bit_width());
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
 
-    let (input_a_plane_0, input_a_plane_1) = input_a.bit_planes();
-    let (input_b_plane_0, input_b_plane_1) = input_b.bit_planes();
     let (output_plane_0, output_plane_1) = output.bit_planes_mut();
-    let word_len = input_a_plane_0.len();
+    let (input_plane_0, input_plane_1) = input.bit_planes();
 
-    let mut result = OpResult::Unchanged;
     for i in 0..word_len {
-        let [new_word_0, new_word_1] = op(
-            [input_a_plane_0[i], input_a_plane_1[i]],
-            [input_b_plane_0[i], input_b_plane_1[i]],
+        [output_plane_0[i], output_plane_1[i]] = op(
+            [output_plane_0[i], output_plane_1[i]],
+            [input_plane_0[i], input_plane_1[i]],
         );
-
-        let mask = if i == (word_len - 1) {
-            bit_width.last_word_mask()
-        } else {
-            u32::MAX
-        };
-
-        let [new_word_0, new_word_1] = [new_word_0 & mask, new_word_1 & mask];
-
-        if (new_word_0 != output_plane_0[i]) || (new_word_1 != output_plane_1[i]) {
-            result = OpResult::Changed;
-        }
-
-        output_plane_0[i] = new_word_0;
-        output_plane_1[i] = new_word_1;
     }
-    result
 }
 
 /*

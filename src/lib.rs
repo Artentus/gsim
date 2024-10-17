@@ -66,7 +66,7 @@ use std::ops::{Add, AddAssign};
 use std::sync::{Arc, Mutex};
 use wire::*;
 
-pub use component::{ComponentData, ComponentId};
+pub use component::ComponentId;
 pub use logic::*;
 pub use wire::WireId;
 
@@ -295,6 +295,13 @@ pub enum AddComponentError {
     InvalidInputCount,
 }
 
+impl From<OutOfMemoryError> for AddComponentError {
+    #[inline]
+    fn from(_: OutOfMemoryError) -> Self {
+        Self::TooManyComponents
+    }
+}
+
 /// A specified wire ID was not part of the simulation
 #[derive(Debug, Clone)]
 pub struct InvalidWireIdError;
@@ -360,10 +367,10 @@ impl SimulatorData {
         wire: WireId,
         new_drive: impl IntoLogicStateRef<'a>,
     ) -> Result<(), InvalidWireIdError> {
-        let wire = &self.wires.get(wire).ok_or(InvalidWireIdError)?;
+        let wire = self.wires.get(wire).ok_or(InvalidWireIdError)?;
         let [_, mut drive] = self
             .wire_states
-            .get_mut(wire.state_id())
+            .get_mut(wire.state_id(), wire.bit_width())
             .expect("invalid wire state ID");
         // TODO: properly report width mismatch error
 
@@ -383,29 +390,29 @@ impl SimulatorData {
         let wire = self.wires.get(wire).ok_or(InvalidWireIdError)?;
         Ok(self
             .wire_states
-            .get(wire.state_id())
+            .get(wire.state_id(), wire.bit_width())
             .expect("invalid wire state ID"))
     }
 
-    fn get_component_data(
-        &self,
-        component: ComponentId,
-    ) -> Result<ComponentData<'_, Immutable>, InvalidComponentIdError> {
-        self.components
-            .get(component)
-            .map(Component::get_data)
-            .ok_or(InvalidComponentIdError)
-    }
+    //fn get_component_data(
+    //    &self,
+    //    component: ComponentId,
+    //) -> Result<ComponentData<'_, Immutable>, InvalidComponentIdError> {
+    //    self.components
+    //        .get(component)
+    //        .map(Component::get_data)
+    //        .ok_or(InvalidComponentIdError)
+    //}
 
-    fn get_component_data_mut(
-        &mut self,
-        component: ComponentId,
-    ) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
-        self.components
-            .get_mut(component)
-            .map(Component::get_data_mut)
-            .ok_or(InvalidComponentIdError)
-    }
+    //fn get_component_data_mut(
+    //    &mut self,
+    //    component: ComponentId,
+    //) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
+    //    self.components
+    //        .get_mut(component)
+    //        .map(Component::get_data_mut)
+    //        .ok_or(InvalidComponentIdError)
+    //}
 
     fn set_wire_name<S: Into<Arc<str>>>(
         &mut self,
@@ -655,23 +662,23 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         self.data.get_wire_state_and_drive(wire)
     }
 
-    /// Gets a components data
-    #[inline]
-    pub fn get_component_data(
-        &self,
-        component: ComponentId,
-    ) -> Result<ComponentData<'_, Immutable>, InvalidComponentIdError> {
-        self.data.get_component_data(component)
-    }
+    ///// Gets a components data
+    //#[inline]
+    //pub fn get_component_data(
+    //    &self,
+    //    component: ComponentId,
+    //) -> Result<ComponentData<'_, Immutable>, InvalidComponentIdError> {
+    //    self.data.get_component_data(component)
+    //}
 
-    /// Gets a components data mutably
-    #[inline]
-    pub fn get_component_data_mut(
-        &mut self,
-        component: ComponentId,
-    ) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
-        self.data.get_component_data_mut(component)
-    }
+    ///// Gets a components data mutably
+    //#[inline]
+    //pub fn get_component_data_mut(
+    //    &mut self,
+    //    component: ComponentId,
+    //) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
+    //    self.data.get_component_data_mut(component)
+    //}
 
     /// Gets the name of a wire, if one has been assigned
     #[inline]
@@ -734,12 +741,16 @@ impl<VCD: std::io::Write> Simulator<VCD> {
                 self.data.wires.get_unsafe(wire_id)
             };
 
-            let [state, drive] = unsafe {
+            let states = unsafe {
                 // SAFETY: since the wire is unique, so is its state
-                self.data.wire_states.get_unchecked_unsafe(wire.state_id())
+                self.data.wire_states.range_unsafe(
+                    wire.state_id(),
+                    wire.state_id(),
+                    wire.bit_width(),
+                )
             };
 
-            match wire.update(state, drive.into_shared(), self.data.output_states.view()) {
+            match wire.update(states, self.data.output_states.view()) {
                 WireUpdateResult::Unchanged => [].as_slice(),
                 WireUpdateResult::Changed => wire.driving(),
                 WireUpdateResult::Conflict => {
@@ -958,23 +969,23 @@ impl SimulatorBuilder {
             .map(|[_, drive]| drive)
     }
 
-    /// Gets a components data
-    #[inline]
-    pub fn get_component_data(
-        &self,
-        component: ComponentId,
-    ) -> Result<ComponentData<'_, Immutable>, InvalidComponentIdError> {
-        self.data.get_component_data(component)
-    }
+    ///// Gets a components data
+    //#[inline]
+    //pub fn get_component_data(
+    //    &self,
+    //    component: ComponentId,
+    //) -> Result<ComponentData<'_, Immutable>, InvalidComponentIdError> {
+    //    self.data.get_component_data(component)
+    //}
 
-    /// Gets a components data mutably
-    #[inline]
-    pub fn get_component_data_mut(
-        &mut self,
-        component: ComponentId,
-    ) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
-        self.data.get_component_data_mut(component)
-    }
+    ///// Gets a components data mutably
+    //#[inline]
+    //pub fn get_component_data_mut(
+    //    &mut self,
+    //    component: ComponentId,
+    //) -> Result<ComponentData<'_, Mutable>, InvalidComponentIdError> {
+    //    self.data.get_component_data_mut(component)
+    //}
 
     /// Assigns a name to a wire
     #[inline]
@@ -1226,9 +1237,9 @@ impl SimulatorBuilder {
     /// Adds a wire to the simulation
     ///
     /// Returns `None` if the memory limit for wires has been reached
-    pub fn add_wire(&mut self, width: NonZeroU8) -> Option<WireId> {
-        let state_id = self.data.wire_states.push(width)?;
-        let wire = Wire::new(state_id);
+    pub fn add_wire(&mut self, bit_width: BitWidth) -> Option<WireId> {
+        let state_id = self.data.wire_states.alloc(bit_width).ok()?;
+        let wire = Wire::new(bit_width, state_id);
         self.data.wires.push(wire)
     }
 
@@ -1250,7 +1261,7 @@ impl SimulatorBuilder {
         output_state: OutputStateId,
     ) -> Result<(), AddComponentError> {
         let wire = &mut self.data.wires.get_mut(wire).ok_or(InvalidWireIdError)?;
-        wire.drivers.push(output_state);
+        wire.add_driver(output_state);
         Ok(())
     }
 
@@ -1282,102 +1293,103 @@ impl SimulatorBuilder {
         }
     }
 
-    fn add_small_component(
-        &mut self,
-        component: SmallComponent,
-        outputs: &[OutputStateId],
-    ) -> Result<ComponentId, AddComponentError> {
-        let output_atom_count = outputs
-            .iter()
-            .copied()
-            .map(|id| self.data.output_states.get_width(id))
-            .map(|width| width.safe_div_ceil(Atom::BITS))
-            .map(NonZeroU8::get)
-            .map(u16::from)
-            .try_fold(0, u16::checked_add)
-            .expect("combined output width too large");
+    //fn add_small_component(
+    //    &mut self,
+    //    component: SmallComponent,
+    //    outputs: &[OutputStateId],
+    //) -> Result<ComponentId, AddComponentError> {
+    //    let output_atom_count = outputs
+    //        .iter()
+    //        .copied()
+    //        .map(|id| self.data.output_states.get_width(id))
+    //        .map(|width| width.safe_div_ceil(Atom::BITS))
+    //        .map(NonZeroU8::get)
+    //        .map(u16::from)
+    //        .try_fold(0, u16::checked_add)
+    //        .expect("combined output width too large");
 
-        let component = Component::new_small(
-            component,
-            outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
-            output_atom_count,
-        );
+    //    let component = Component::new_small(
+    //        component,
+    //        outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
+    //        output_atom_count,
+    //    );
 
-        self.data
-            .components
-            .push(component)
-            .ok_or(AddComponentError::TooManyComponents)
-    }
+    //    self.data
+    //        .components
+    //        .push(component)
+    //        .ok_or(AddComponentError::TooManyComponents)
+    //}
 
-    fn add_large_component<C: LargeComponent + 'static>(
-        &mut self,
-        component: C,
-        outputs: &[OutputStateId],
-    ) -> Result<ComponentId, AddComponentError> {
-        let output_atom_count = outputs
-            .iter()
-            .copied()
-            .map(|id| self.data.output_states.get_width(id))
-            .map(|width| width.safe_div_ceil(Atom::BITS))
-            .map(NonZeroU8::get)
-            .map(u16::from)
-            .try_fold(0, u16::checked_add)
-            .expect("combined output width too large");
+    //fn add_large_component<C: LargeComponent + 'static>(
+    //    &mut self,
+    //    component: C,
+    //    outputs: &[OutputStateId],
+    //) -> Result<ComponentId, AddComponentError> {
+    //    let output_atom_count = outputs
+    //        .iter()
+    //        .copied()
+    //        .map(|id| self.data.output_states.get_width(id))
+    //        .map(|width| width.safe_div_ceil(Atom::BITS))
+    //        .map(NonZeroU8::get)
+    //        .map(u16::from)
+    //        .try_fold(0, u16::checked_add)
+    //        .expect("combined output width too large");
 
-        let component = Component::new_large(
-            component,
-            outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
-            output_atom_count,
-        );
+    //    let component = Component::new_large(
+    //        component,
+    //        outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
+    //        output_atom_count,
+    //    );
 
-        self.data
-            .components
-            .push(component)
-            .ok_or(AddComponentError::TooManyComponents)
-    }
+    //    self.data
+    //        .components
+    //        .push(component)
+    //        .ok_or(AddComponentError::TooManyComponents)
+    //}
 
-    def_add_wide_gate!(
-        /// Adds an `AND Gate` component to the simulation
-        add_and_gate,
-        AndGate,
-        WideAndGate
-    );
+    //def_add_wide_gate!(
+    //    /// Adds an `AND Gate` component to the simulation
+    //    add_and_gate,
+    //    AndGate,
+    //    WideAndGate
+    //);
 
-    def_add_wide_gate!(
-        /// Adds an `OR Gate` component to the simulation
-        add_or_gate,
-        OrGate,
-        WideOrGate
-    );
+    //def_add_wide_gate!(
+    //    /// Adds an `OR Gate` component to the simulation
+    //    add_or_gate,
+    //    OrGate,
+    //    WideOrGate
+    //);
 
-    def_add_wide_gate!(
-        /// Adds an `XOR Gate` component to the simulation
-        add_xor_gate,
-        XorGate,
-        WideXorGate
-    );
+    //def_add_wide_gate!(
+    //    /// Adds an `XOR Gate` component to the simulation
+    //    add_xor_gate,
+    //    XorGate,
+    //    WideXorGate
+    //);
 
-    def_add_wide_gate!(
-        /// Adds a `NAND Gate` component to the simulation
-        add_nand_gate,
-        NandGate,
-        WideNandGate
-    );
+    //def_add_wide_gate!(
+    //    /// Adds a `NAND Gate` component to the simulation
+    //    add_nand_gate,
+    //    NandGate,
+    //    WideNandGate
+    //);
 
-    def_add_wide_gate!(
-        /// Adds a `NOR Gate` component to the simulation
-        add_nor_gate,
-        NorGate,
-        WideNorGate
-    );
+    //def_add_wide_gate!(
+    //    /// Adds a `NOR Gate` component to the simulation
+    //    add_nor_gate,
+    //    NorGate,
+    //    WideNorGate
+    //);
 
-    def_add_wide_gate!(
-        /// Adds an `XNOR Gate` component to the simulation
-        add_xnor_gate,
-        XnorGate,
-        WideXnorGate
-    );
+    //def_add_wide_gate!(
+    //    /// Adds an `XNOR Gate` component to the simulation
+    //    add_xnor_gate,
+    //    XnorGate,
+    //    WideXnorGate
+    //);
 
+    /*
     def_add_binary_gate!(
         /// Adds an `ADD` component to the simulation
         add_add,
@@ -2005,6 +2017,7 @@ impl SimulatorBuilder {
 
         Ok(id)
     }
+    */
 
     /// Imports a module into this circuit
     #[inline]
@@ -2016,13 +2029,8 @@ impl SimulatorBuilder {
     }
 
     /// Creates the simulator
-    pub fn build(mut self) -> Simulator {
-        self.data.wires.shrink_to_fit();
-        self.data.wire_states.shrink_to_fit();
-
-        self.data.components.shrink_to_fit();
-        self.data.output_states.shrink_to_fit();
-
+    #[inline]
+    pub fn build(self) -> Simulator {
         Simulator {
             data: self.data,
             vcd: std::io::sink(),

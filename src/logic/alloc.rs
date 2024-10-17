@@ -105,9 +105,8 @@ struct BitPlanesView {
 }
 
 pub(crate) struct LogicStateView<'a, T: Id, const N: usize> {
-    first_id: u32,
-    last_id: u32,
-    bit_width: NonNull<BitWidth>,
+    word_start: u32,
+    word_end: u32,
     bit_planes: [BitPlanesView; N],
     _borrow: PhantomData<&'a LogicStateAllocator<T, N>>,
 }
@@ -116,9 +115,8 @@ unsafe impl<T: Id, const N: usize> Send for LogicStateView<'_, T, N> {}
 unsafe impl<T: Id, const N: usize> Sync for LogicStateView<'_, T, N> {}
 
 pub(crate) struct LogicStateViewMut<'a, T: Id, const N: usize> {
-    first_id: u32,
-    last_id: u32,
-    bit_width: NonNull<BitWidth>,
+    word_start: u32,
+    word_end: u32,
     bit_planes: [BitPlanesView; N],
     _borrow: PhantomData<&'a mut LogicStateAllocator<T, N>>,
 }
@@ -126,20 +124,17 @@ pub(crate) struct LogicStateViewMut<'a, T: Id, const N: usize> {
 unsafe impl<T: Id, const N: usize> Send for LogicStateViewMut<'_, T, N> {}
 
 macro_rules! view_get_unchecked_body {
-    (|$this:ident, $id:ident| -> $logic_state:ident) => {{
-        debug_assert!($id.to_bits() >= $this.first_id);
-        debug_assert!($id.to_bits() <= $this.last_id);
+    (|$this:ident, $id:ident, $bit_width:ident| -> $logic_state:ident) => {{
+        debug_assert!($id.to_bits() >= $this.word_start);
+        debug_assert!(($id.to_bits() + $bit_width.word_len()) <= $this.word_end);
 
         unsafe {
-            // SAFETY: the bounds check above ensures this is a read of valid memory.
-            let bit_width = $this.bit_width.as_ptr().add($id.to_bits() as usize).read();
-
             // SAFETY:
             //   The pointers are valid as long as `&self` is valid, which is
             //   expressed through the lifetime bounds of the function.
             $this.bit_planes.map(|bit_planes| {
                 $logic_state::new_ptr(
-                    bit_width,
+                    $bit_width,
                     bit_planes.bit_plane_0.add($id.to_bits() as usize),
                     bit_planes.bit_plane_1.add($id.to_bits() as usize),
                 )
@@ -151,19 +146,25 @@ macro_rules! view_get_unchecked_body {
 impl<T: Id, const N: usize> LogicStateView<'_, T, N> {
     /// SAFETY: caller must ensure the ID is valid.
     #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, id: T) -> [LogicStateRef<'_>; N] {
-        view_get_unchecked_body!(|self, id| -> LogicStateRef)
+    pub(crate) unsafe fn get_unchecked(
+        &self,
+        id: T,
+        bit_width: BitWidth,
+    ) -> [LogicStateRef<'_>; N] {
+        view_get_unchecked_body!(|self, id, bit_width| -> LogicStateRef)
     }
 
     #[inline]
-    pub(crate) fn get(&self, id: T) -> Option<[LogicStateRef<'_>; N]> {
-        if (id.to_bits() < self.first_id) || (id.to_bits() > self.last_id) {
+    pub(crate) fn get(&self, id: T, bit_width: BitWidth) -> Option<[LogicStateRef<'_>; N]> {
+        if (id.to_bits() < self.word_start)
+            || ((id.to_bits() + bit_width.word_len()) > self.word_end)
+        {
             return None;
         }
 
         unsafe {
             // SAFETY: we just checked
-            Some(self.get_unchecked(id))
+            Some(self.get_unchecked(id, bit_width))
         }
     }
 }
@@ -171,37 +172,49 @@ impl<T: Id, const N: usize> LogicStateView<'_, T, N> {
 impl<T: Id, const N: usize> LogicStateViewMut<'_, T, N> {
     /// SAFETY: caller must ensure the ID is valid.
     #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, id: T) -> [LogicStateRef<'_>; N] {
-        view_get_unchecked_body!(|self, id| -> LogicStateRef)
+    pub(crate) unsafe fn get_unchecked(
+        &self,
+        id: T,
+        bit_width: BitWidth,
+    ) -> [LogicStateRef<'_>; N] {
+        view_get_unchecked_body!(|self, id, bit_width| -> LogicStateRef)
     }
 
     /// SAFETY: caller must ensure the ID is valid.
     #[inline]
-    pub(crate) unsafe fn get_unchecked_mut(&mut self, id: T) -> [LogicStateMut<'_>; N] {
-        view_get_unchecked_body!(|self, id| -> LogicStateMut)
+    pub(crate) unsafe fn get_unchecked_mut(
+        &mut self,
+        id: T,
+        bit_width: BitWidth,
+    ) -> [LogicStateMut<'_>; N] {
+        view_get_unchecked_body!(|self, id, bit_width| -> LogicStateMut)
     }
 
     #[inline]
-    pub(crate) fn get(&self, id: T) -> Option<[LogicStateRef<'_>; N]> {
-        if (id.to_bits() < self.first_id) || (id.to_bits() > self.last_id) {
+    pub(crate) fn get(&self, id: T, bit_width: BitWidth) -> Option<[LogicStateRef<'_>; N]> {
+        if (id.to_bits() < self.word_start)
+            || ((id.to_bits() + bit_width.word_len()) > self.word_end)
+        {
             return None;
         }
 
         unsafe {
             // SAFETY: we just checked
-            Some(self.get_unchecked(id))
+            Some(self.get_unchecked(id, bit_width))
         }
     }
 
     #[inline]
-    pub(crate) fn get_mut(&mut self, id: T) -> Option<[LogicStateMut<'_>; N]> {
-        if (id.to_bits() < self.first_id) || (id.to_bits() > self.last_id) {
+    pub(crate) fn get_mut(&mut self, id: T, bit_width: BitWidth) -> Option<[LogicStateMut<'_>; N]> {
+        if (id.to_bits() < self.word_start)
+            || ((id.to_bits() + bit_width.word_len()) > self.word_end)
+        {
             return None;
         }
 
         unsafe {
             // SAFETY: we just checked
-            Some(self.get_unchecked_mut(id))
+            Some(self.get_unchecked_mut(id, bit_width))
         }
     }
 }
@@ -233,7 +246,6 @@ impl BitPlanes {
 pub(crate) struct LogicStateAllocator<T: Id, const N: usize> {
     word_len: u32,
     word_cap: u32,
-    bit_width: RawBuffer<BitWidth>,
     bit_planes: [BitPlanes; N],
     _t: PhantomData<fn(T) -> T>,
 }
@@ -247,7 +259,6 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
         Self {
             word_len: 0,
             word_cap: 0,
-            bit_width: RawBuffer::new(),
             bit_planes: [const { BitPlanes::new() }; N],
             _t: PhantomData,
         }
@@ -259,9 +270,6 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
             let new_word_cap = new_word_len.saturating_mul(2);
 
             unsafe {
-                self.bit_width
-                    .realloc(self.word_len, self.word_cap, new_word_cap);
-
                 for bit_planes in &mut self.bit_planes {
                     bit_planes
                         .bit_plane_0
@@ -292,16 +300,6 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
             // SAFETY:
             //   - The call to `reserve` made sure the arrays are large enough to hold `new_word_len` elements.
             //   - The memory past `self.word_len` is currently uninitialized.
-            //   - `0` is a valid bit pattern for all of these types (`BitWidth` is `repr(trasparent)` of `u8`).
-
-            // This write is to ensure calling `get` with an invalid index doesn't read from uninitialized memory.
-            self.bit_width.init(self.word_len, word_count);
-
-            self.bit_width
-                .0
-                .as_ptr()
-                .add(self.word_len as usize)
-                .write(bit_width);
 
             for bit_planes in &mut self.bit_planes {
                 bit_planes.bit_plane_0.init(self.word_len, word_count);
@@ -319,7 +317,6 @@ impl<T: Id, const N: usize> Drop for LogicStateAllocator<T, N> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            self.bit_width.dealloc(self.word_len, self.word_cap);
             for bit_planes in &mut self.bit_planes {
                 bit_planes.bit_plane_0.dealloc(self.word_len, self.word_cap);
                 bit_planes.bit_plane_1.dealloc(self.word_len, self.word_cap);
@@ -334,9 +331,8 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
         assert!(self.word_len > 0);
 
         LogicStateView {
-            first_id: 0,
-            last_id: self.word_len - 1,
-            bit_width: self.bit_width.0,
+            word_start: 0,
+            word_end: self.word_len,
             bit_planes: self.bit_planes.map(BitPlanes::view),
             _borrow: PhantomData,
         }
@@ -347,39 +343,39 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
         assert!(self.word_len > 0);
 
         LogicStateViewMut {
-            first_id: 0,
-            last_id: self.word_len - 1,
-            bit_width: self.bit_width.0,
+            word_start: 0,
+            word_end: self.word_len,
             bit_planes: self.bit_planes.map(BitPlanes::view),
             _borrow: PhantomData,
         }
     }
 
     #[inline]
-    pub(crate) fn range(&self, start: T, end: T) -> LogicStateView<T, N> {
-        assert!(self.word_len > 0);
+    pub(crate) fn range(&self, start: T, end: T, end_width: BitWidth) -> LogicStateView<T, N> {
         assert!(start.to_bits() <= end.to_bits());
-        assert!(end.to_bits() < self.word_len);
+        assert!((end.to_bits() + end_width.word_len()) <= self.word_len);
 
         LogicStateView {
-            first_id: start.to_bits(),
-            last_id: end.to_bits(),
-            bit_width: self.bit_width.0,
+            word_start: start.to_bits(),
+            word_end: end.to_bits() + end_width.word_len(),
             bit_planes: self.bit_planes.map(BitPlanes::view),
             _borrow: PhantomData,
         }
     }
 
     #[inline]
-    pub(crate) fn range_mut(&mut self, start: T, end: T) -> LogicStateViewMut<T, N> {
-        assert!(self.word_len > 0);
+    pub(crate) fn range_mut(
+        &mut self,
+        start: T,
+        end: T,
+        end_width: BitWidth,
+    ) -> LogicStateViewMut<T, N> {
         assert!(start.to_bits() <= end.to_bits());
-        assert!(end.to_bits() < self.word_len);
+        assert!((end.to_bits() + end_width.word_len()) <= self.word_len);
 
         LogicStateViewMut {
-            first_id: start.to_bits(),
-            last_id: end.to_bits(),
-            bit_width: self.bit_width.0,
+            word_start: start.to_bits(),
+            word_end: end.to_bits() + end_width.word_len(),
             bit_planes: self.bit_planes.map(BitPlanes::view),
             _borrow: PhantomData,
         }
@@ -387,15 +383,18 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
 
     /// SAFETY: caller must ensure this range is only borrowed once at a time.
     #[inline]
-    pub(crate) unsafe fn range_unsafe(&self, start: T, end: T) -> LogicStateViewMut<T, N> {
-        assert!(self.word_len > 0);
+    pub(crate) unsafe fn range_unsafe(
+        &self,
+        start: T,
+        end: T,
+        end_width: BitWidth,
+    ) -> LogicStateViewMut<T, N> {
         assert!(start.to_bits() <= end.to_bits());
-        assert!(end.to_bits() < self.word_len);
+        assert!((end.to_bits() + end_width.word_len()) <= self.word_len);
 
         LogicStateViewMut {
-            first_id: start.to_bits(),
-            last_id: end.to_bits(),
-            bit_width: self.bit_width.0,
+            word_start: start.to_bits(),
+            word_end: end.to_bits() + end_width.word_len(),
             bit_planes: self.bit_planes.map(BitPlanes::view),
             _borrow: PhantomData,
         }
@@ -403,24 +402,16 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
 }
 
 macro_rules! alloc_get_unchecked_body {
-    (|$this:ident, $id:ident| -> $logic_state:ident) => {{
-        debug_assert!($id.to_bits() < $this.word_len);
+    (|$this:ident, $id:ident, $bit_width:ident| -> $logic_state:ident) => {{
+        debug_assert!(($id.to_bits() + $bit_width.word_len()) <= $this.word_len);
 
         unsafe {
-            // SAFETY: the bounds check above ensures this is a read of valid memory.
-            let bit_width = $this
-                .bit_width
-                .0
-                .as_ptr()
-                .add($id.to_bits() as usize)
-                .read();
-
             // SAFETY:
             //   The pointers are valid as long as `&self` is valid, which is
             //   expressed through the lifetime bounds of the function.
             $this.bit_planes.map(|bit_planes| {
                 $logic_state::new_ptr(
-                    bit_width,
+                    $bit_width,
                     bit_planes.bit_plane_0.0.add($id.to_bits() as usize),
                     bit_planes.bit_plane_1.0.add($id.to_bits() as usize),
                 )
@@ -432,56 +423,68 @@ macro_rules! alloc_get_unchecked_body {
 impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
     /// SAFETY: caller must ensure the ID is valid.
     #[inline]
-    pub(crate) unsafe fn get_unchecked(&self, id: T) -> [LogicStateRef<'_>; N] {
-        alloc_get_unchecked_body!(|self, id| -> LogicStateRef)
+    pub(crate) unsafe fn get_unchecked(
+        &self,
+        id: T,
+        bit_width: BitWidth,
+    ) -> [LogicStateRef<'_>; N] {
+        alloc_get_unchecked_body!(|self, id, bit_width| -> LogicStateRef)
     }
 
     /// SAFETY: caller must ensure the ID is valid.
     #[inline]
-    pub(crate) unsafe fn get_unchecked_mut(&mut self, id: T) -> [LogicStateMut<'_>; N] {
-        alloc_get_unchecked_body!(|self, id| -> LogicStateMut)
+    pub(crate) unsafe fn get_unchecked_mut(
+        &mut self,
+        id: T,
+        bit_width: BitWidth,
+    ) -> [LogicStateMut<'_>; N] {
+        alloc_get_unchecked_body!(|self, id, bit_width| -> LogicStateMut)
     }
 
     /// SAFETY: caller must ensure the ID is valid and only borrowed once at a time.
     #[inline]
-    pub(crate) unsafe fn get_unchecked_unsafe(&self, id: T) -> [LogicStateMut<'_>; N] {
-        alloc_get_unchecked_body!(|self, id| -> LogicStateMut)
+    pub(crate) unsafe fn get_unchecked_unsafe(
+        &self,
+        id: T,
+        bit_width: BitWidth,
+    ) -> [LogicStateMut<'_>; N] {
+        alloc_get_unchecked_body!(|self, id, bit_width| -> LogicStateMut)
     }
 
     #[inline]
-    pub(crate) fn get(&self, id: T) -> Option<[LogicStateRef<'_>; N]> {
-        if id.to_bits() >= self.word_len {
+    pub(crate) fn get(&self, id: T, bit_width: BitWidth) -> Option<[LogicStateRef<'_>; N]> {
+        if (id.to_bits() + bit_width.word_len()) > self.word_len {
             return None;
         }
 
         unsafe {
             // SAFETY: we just checked
-            Some(self.get_unchecked(id))
+            Some(self.get_unchecked(id, bit_width))
         }
     }
 
     #[inline]
-    pub(crate) fn get_mut(&mut self, id: T) -> Option<[LogicStateMut<'_>; N]> {
-        if id.to_bits() >= self.word_len {
+    pub(crate) fn get_mut(&mut self, id: T, bit_width: BitWidth) -> Option<[LogicStateMut<'_>; N]> {
+        if (id.to_bits() + bit_width.word_len()) > self.word_len {
             return None;
         }
 
         unsafe {
             // SAFETY: we just checked
-            Some(self.get_unchecked_mut(id))
+            Some(self.get_unchecked_mut(id, bit_width))
         }
     }
 
     /// SAFETY: caller must ensure the ID is only borrowed once at a time.
     #[inline]
-    pub(crate) fn get_unsafe(&self, id: T) -> Option<[LogicStateMut<'_>; N]> {
-        if id.to_bits() >= self.word_len {
+    pub(crate) fn get_unsafe(&self, id: T, bit_width: BitWidth) -> Option<[LogicStateMut<'_>; N]> {
+        if (id.to_bits() + bit_width.word_len()) > self.word_len {
             return None;
         }
 
         unsafe {
             // SAFETY: we just checked
-            Some(self.get_unchecked_unsafe(id))
+            Some(self.get_unchecked_unsafe(id, bit_width))
         }
     }
 }
