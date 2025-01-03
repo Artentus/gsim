@@ -103,8 +103,8 @@ fn combine(a: [u32; 2], b: [u32; 2]) -> ([u32; 2], u32) {
     //   1  |  1  | Undefined |  1  |  0  | High-Z    |  1  |  1  | Undefined | no
     //   1  |  1  | Undefined |  1  |  1  | Undefined |  -  |  -  | -         | yes
 
-    let plane_0 = a[1] & b[1];
-    let plane_1 = a[0] | b[0];
+    let plane_0 = a[0] | b[0];
+    let plane_1 = a[1] & b[1];
     let conflict = (!a[1] & !b[1]) | (!a[1] & b[0]) | (a[0] & !b[1]) | (a[0] & b[0]);
     ([plane_0, plane_1], conflict)
 }

@@ -243,6 +243,29 @@ pub(super) fn binary_op(
     }
 }
 
+#[inline]
+pub(super) fn logic_not(i: [u32; 2]) -> [u32; 2] {
+    //  I_1 | I_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [!i[0] | i[1], i[1]]
+}
+
+#[inline]
+pub(super) fn unary_op(mut output: LogicStateMut, op: impl Fn([u32; 2]) -> [u32; 2]) {
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+    for i in 0..word_len {
+        [output_plane_0[i], output_plane_1[i]] = op([output_plane_0[i], output_plane_1[i]]);
+    }
+}
+
 /*
 
 

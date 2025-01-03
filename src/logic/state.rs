@@ -5,11 +5,12 @@ use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 use std::str::FromStr;
 
+/// An error that can occur when parsing a logic state
 #[derive(Debug, Clone)]
 pub enum LogicStateFromStrError {
-    /// The number of bits was not between 1 and 256 inclusive.
+    /// The number of bits was not between 1 and 256 inclusive
     InvalidBitWidth,
-    /// The string contained a character other than `x`, `X`, `z`, `Z`, `0` or `1`.
+    /// The string contained a character other than `x`, `X`, `z`, `Z`, `0` or `1`
     IllegalCharacter(u8),
 }
 
@@ -271,6 +272,8 @@ impl Iterator for Interleave<'_> {
     }
 }
 
+#[allow(missing_docs)]
+#[allow(missing_debug_implementations)]
 pub struct Bits<'a> {
     bit_width: u32,
     current: Option<u64>,
@@ -429,13 +432,14 @@ impl fmt::Display for LogicStateRepr {
     }
 }
 
-#[derive(Debug)]
+/// The state of a group of bits
 #[repr(transparent)]
 pub struct LogicState {
     repr: LogicStateRepr,
 }
 
 impl LogicState {
+    /// A state with all bits having the value `0`
     #[inline]
     pub const fn logic_0(bit_width: BitWidth) -> Self {
         Self {
@@ -443,6 +447,7 @@ impl LogicState {
         }
     }
 
+    /// A state with all bits having the value `1`
     #[inline]
     pub const fn logic_1(bit_width: BitWidth) -> Self {
         Self {
@@ -450,6 +455,7 @@ impl LogicState {
         }
     }
 
+    /// A state with all bits being in high impedance
     #[inline]
     pub const fn high_z(bit_width: BitWidth) -> Self {
         Self {
@@ -457,6 +463,7 @@ impl LogicState {
         }
     }
 
+    /// A state with all bits being undefined
     #[inline]
     pub const fn undefined(bit_width: BitWidth) -> Self {
         Self {
@@ -464,6 +471,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state from a single bit
     #[inline]
     pub const fn from_bit(value: LogicBitState) -> Self {
         match value {
@@ -474,6 +482,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state representing a boolean
     #[inline]
     pub const fn from_bool(value: bool) -> Self {
         if value {
@@ -483,6 +492,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state representing a number
     #[inline]
     pub const fn from_u32(value: u32, bit_width: BitWidth) -> Self {
         assert!(bit_width.get() <= u32::BITS);
@@ -495,6 +505,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state representing a number
     #[inline]
     pub const fn from_u64(value: u64, bit_width: BitWidth) -> Self {
         assert!(bit_width.get() <= u64::BITS);
@@ -532,6 +543,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state representing a number (least significant word first)
     pub fn from_big_int(bit_width: BitWidth, value: &[u32]) -> Self {
         let word_count = bit_width.get().div_ceil(u32::BITS) as usize;
         if word_count <= 5 {
@@ -549,6 +561,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state from raw bit planes (least significant words first)
     pub fn from_bit_planes(bit_width: BitWidth, bit_plane_0: &[u32], bit_plane_1: &[u32]) -> Self {
         let word_count = bit_width.get().div_ceil(u32::BITS) as usize;
         if word_count <= 2 {
@@ -569,6 +582,7 @@ impl LogicState {
         }
     }
 
+    /// Creates a state with the specified bits (least significant bit first)
     pub fn from_bits(bits: &[LogicBitState]) -> Self {
         let len: u32 = bits.len().try_into().expect("invalid bit width");
         let bit_width = BitWidth::new(len).expect("invalid bit width");
@@ -589,26 +603,31 @@ impl LogicState {
         Self::from_bit_planes(bit_width, &bit_plane_0, &bit_plane_1)
     }
 
+    /// The number of bits in this state
     #[inline]
     pub const fn bit_width(&self) -> BitWidth {
         self.repr.bit_width()
     }
 
+    /// The raw bit planes of the state
     #[inline]
     pub fn bit_planes(&self) -> (&[u32], &[u32]) {
         self.repr.bit_planes()
     }
 
+    /// Gets a bit at a specified index
     #[inline]
     pub fn bit(&self, index: u32) -> Option<LogicBitState> {
         self.repr.bit(index)
     }
 
+    /// Iterates all bits in the state
     #[inline]
     pub fn bits(&self) -> Bits<'_> {
         self.repr.bits()
     }
 
+    /// Turns the logic state into a borrowed form
     #[inline]
     pub const fn borrow(&self) -> LogicStateRef<'_> {
         LogicStateRef {
@@ -634,6 +653,12 @@ impl From<bool> for LogicState {
 
 impl fmt::Display for LogicState {
     #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.repr, f)
+    }
+}
+
+impl fmt::Debug for LogicState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.repr, f)
     }
@@ -799,8 +824,8 @@ impl<'de> serde::Deserialize<'de> for LogicState {
 /// use gsim::bits;
 /// use std::num::NonZeroU8;
 ///
-/// let state = bits!(1, 0, X, Z);
-/// assert_eq!(state.display_string(NonZeroU8::new(4).unwrap()), "10XZ");
+/// let state = bits![1, 0, X, Z];
+/// assert_eq!(state.to_string(), "10XZ");
 /// ```
 #[macro_export]
 macro_rules! bits {
@@ -811,10 +836,23 @@ macro_rules! bits {
     (@BIT 0) => { $crate::LogicBitState::Logic0 };
     (@BIT 1) => { $crate::LogicBitState::Logic1 };
     ($($bit:tt),+) => {{
-        const BITS: &'static [$crate::LogicBitState] = &[$($crate::bits!(@BIT $bit)),+];
-        const _ASSERT_MAX: usize = ($crate::BitWidth::MAX.get() as usize) - BITS.len();
-        const _ASSERT_MIN: usize = BITS.len() - ($crate::BitWidth::MIN.get() as usize);
-        $crate::LogicState::from_bits(BITS)
+        let bits = const {
+            let mut bits = [$($crate::bits!(@BIT $bit)),+];
+            assert!(bits.len() >= ($crate::BitWidth::MIN.get() as usize));
+            assert!(bits.len() <= ($crate::BitWidth::MAX.get() as usize));
+
+            let mut i = 0;
+            while i < (bits.len() / 2) {
+                let bit = bits[i];
+                bits[i] = bits[bits.len() - i - 1];
+                bits[bits.len() - i - 1] = bit;
+                i += 1;
+            }
+
+            bits
+        };
+
+        $crate::LogicState::from_bits(&bits)
     }}
 }
 
@@ -854,7 +892,6 @@ macro_rules! copy_from_impl {
     };
 }
 
-#[derive(Debug)]
 #[repr(C)]
 pub(crate) struct InlineLogicState {
     bit_width: BitWidth,
@@ -964,7 +1001,21 @@ impl InlineLogicState {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+impl fmt::Display for InlineLogicState {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.borrow(), f)
+    }
+}
+
+impl fmt::Debug for InlineLogicState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.borrow(), f)
+    }
+}
+
+/// Borrowed form of [LogicState]
+#[derive(Clone, Copy)]
 #[repr(transparent)]
 pub struct LogicStateRef<'a> {
     repr: LogicStateRepr,
@@ -989,26 +1040,31 @@ impl LogicStateRef<'_> {
         }
     }
 
+    /// The number of bits in this state
     #[inline]
     pub const fn bit_width(&self) -> BitWidth {
         self.repr.bit_width()
     }
 
+    /// The raw bit planes of the state
     #[inline]
     pub fn bit_planes(&self) -> (&[u32], &[u32]) {
         self.repr.bit_planes()
     }
 
+    /// Gets a bit at a specified index
     #[inline]
     pub fn bit(&self, index: u32) -> Option<LogicBitState> {
         self.repr.bit(index)
     }
 
+    /// Iterates all bits in the state
     #[inline]
     pub fn bits(&self) -> Bits<'_> {
         self.repr.bits()
     }
 
+    /// Turns the logic state into an owned form
     pub fn to_owned(&self) -> LogicState {
         if let LogicStateRepr::Ptr {
             bit_width,
@@ -1041,7 +1097,12 @@ impl fmt::Display for LogicStateRef<'_> {
     }
 }
 
-#[derive(Debug)]
+impl fmt::Debug for LogicStateRef<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.repr, f)
+    }
+}
+
 #[repr(C)]
 pub(crate) struct LogicStateMut<'a> {
     bit_width: BitWidth,
@@ -1143,18 +1204,19 @@ impl<'a> LogicStateMut<'a> {
 
 impl fmt::Display for LogicStateMut<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let bit_width = self.bit_width().get() as usize;
-        let mut buffer = [0u8; BitWidth::MAX.get() as usize];
-        for (i, bit) in self.bits().enumerate() {
-            buffer[bit_width - i - 1] = bit.to_ascii_char();
-        }
-
-        let s = unsafe { std::str::from_utf8_unchecked(&buffer[..bit_width]) };
-        f.write_str(s)
+        fmt::Display::fmt(&self.as_shared(), f)
     }
 }
 
+impl fmt::Debug for LogicStateMut<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.as_shared(), f)
+    }
+}
+
+/// A value that can be converted into a borrowed [LogicState]
 pub trait IntoLogicStateRef<'a> {
+    /// Performs the conversion into a borrowed [LogicState]
     fn into_logic_state_ref(self) -> LogicStateRef<'a>;
 }
 
@@ -1208,9 +1270,9 @@ where
 
 macro_rules! eq_impl {
     ($t:ident$(<$($l:lifetime),+>)?) => {
-        impl<'inner $($(,$l)+)?, T> PartialEq<T> for $t$(<$($l),+>)?
+        impl<$($($l,)+)? T> PartialEq<T> for $t$(<$($l),+>)?
         where
-            for<'outer> &'outer T: IntoLogicStateRef<'inner>,
+            for<'t> &'t T: IntoLogicStateRef<'t>,
         {
             fn eq(&self, other: &T) -> bool {
                 let this = self.into_logic_state_ref();

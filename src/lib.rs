@@ -8,7 +8,7 @@
 //! let mut builder = SimulatorBuilder::default();
 //!
 //! // Add wires and components to the simulation
-//! let wire_width = NonZeroU8::new(1).unwrap();
+//! let wire_width = bit_width!(1);
 //! let input_a = builder.add_wire(wire_width).unwrap();
 //! let input_b = builder.add_wire(wire_width).unwrap();
 //! let output = builder.add_wire(wire_width).unwrap();
@@ -31,10 +31,12 @@
 //! }
 //!
 //! // Make sure we got the expected result
-//! let output_state = sim.get_wire_state(output).unwrap();
-//! assert!(output_state.eq(&LogicState::from_bool(false), wire_width));
+//! let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+//! assert_eq!(output_state, LogicState::from_bool(false));
 //! ```
 
+// TODO: remove
+#![feature(debug_closure_helpers)]
 #![deny(missing_docs)]
 #![warn(missing_debug_implementations)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -55,8 +57,8 @@ mod wire;
 //#[cfg(feature = "python-bindings")]
 //mod python_bindings;
 
-//#[cfg(test)]
-//mod test;
+#[cfg(test)]
+mod test;
 
 use component::*;
 use id::*;
@@ -440,7 +442,7 @@ impl SimulatorData {
         component: ComponentId,
         name: S,
     ) -> Result<(), InvalidComponentIdError> {
-        if self.components.get(component).is_none() {
+        if self.components.component_exists(component) {
             return Err(InvalidComponentIdError);
         }
 
@@ -452,170 +454,172 @@ impl SimulatorData {
         &self,
         component: ComponentId,
     ) -> Result<Option<&str>, InvalidComponentIdError> {
-        if self.components.get(component).is_none() {
+        if self.components.component_exists(component) {
             return Err(InvalidComponentIdError);
         }
 
         Ok(self.component_names.get(&component).map(|name| &**name))
     }
 
-    //fn stats(&self) -> SimulationStats {
-    //    let (small_component_count, large_component_count) = self.components.component_counts();
+    fn stats(&self) -> SimulationStats {
+        todo!()
+        //    let (small_component_count, large_component_count) = self.components.component_counts();
 
-    //    SimulationStats {
-    //        wire_count: self.wires.wire_count(),
-    //        wire_alloc_size: self.wires.alloc_size(),
-    //        wire_width_alloc_size: self.wire_states.width_alloc_size(),
-    //        wire_drive_alloc_size: self.wire_states.drive_alloc_size(),
-    //        wire_state_alloc_size: self.wire_states.state_alloc_size(),
-    //        small_component_count,
-    //        large_component_count,
-    //        component_alloc_size: self.components.alloc_size(),
-    //        large_component_alloc_size: self.components.large_alloc_size(),
-    //        output_width_alloc_size: self.output_states.width_alloc_size(),
-    //        output_state_alloc_size: self.output_states.state_alloc_size(),
-    //    }
-    //}
+        //    SimulationStats {
+        //        wire_count: self.wires.wire_count(),
+        //        wire_alloc_size: self.wires.alloc_size(),
+        //        wire_width_alloc_size: self.wire_states.width_alloc_size(),
+        //        wire_drive_alloc_size: self.wire_states.drive_alloc_size(),
+        //        wire_state_alloc_size: self.wire_states.state_alloc_size(),
+        //        small_component_count,
+        //        large_component_count,
+        //        component_alloc_size: self.components.alloc_size(),
+        //        large_component_alloc_size: self.components.large_alloc_size(),
+        //        output_width_alloc_size: self.output_states.width_alloc_size(),
+        //        output_state_alloc_size: self.output_states.state_alloc_size(),
+        //    }
+    }
 
-    //#[cfg(feature = "dot-export")]
-    //fn write_dot<W: std::io::Write>(
-    //    &self,
-    //    mut writer: W,
-    //    show_states: bool,
-    //) -> std::io::Result<()> {
-    //    writeln!(writer, "digraph {{")?;
+    #[cfg(feature = "dot-export")]
+    fn write_dot<W: std::io::Write>(
+        &self,
+        mut writer: W,
+        show_states: bool,
+    ) -> std::io::Result<()> {
+        todo!()
+        //    writeln!(writer, "digraph {{")?;
 
-    //    let mut wire_state_map = HashMap::new();
-    //    for wire_id in self.wires.ids() {
-    //        let wire = &self.wires.get(wire_id).unwrap();
-    //        let width = self.wire_states.get_width(wire.state);
-    //        wire_state_map.insert(wire.state, wire_id);
+        //    let mut wire_state_map = HashMap::new();
+        //    for wire_id in self.wires.ids() {
+        //        let wire = &self.wires.get(wire_id).unwrap();
+        //        let width = self.wire_states.get_width(wire.state);
+        //        wire_state_map.insert(wire.state, wire_id);
 
-    //        #[allow(clippy::collapsible_else_if)]
-    //        if show_states {
-    //            if let Some(name) = self.wire_names.get(&wire_id) {
-    //                let state = self.get_wire_state(wire_id).unwrap().display_string(width);
-    //                if &**name == state.as_str() {
-    //                    // Don't print constant wire states twice
-    //                    writeln!(
-    //                        writer,
-    //                        "    W{}[label=\"{}\" shape=\"diamond\"];",
-    //                        wire_id.to_bits(),
-    //                        name,
-    //                    )?;
-    //                } else {
-    //                    writeln!(
-    //                        writer,
-    //                        "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
-    //                        wire_id.to_bits(),
-    //                        name,
-    //                        state,
-    //                    )?;
-    //                }
-    //            } else {
-    //                writeln!(
-    //                    writer,
-    //                    "    W{}[label=\"{}\" shape=\"diamond\"];",
-    //                    wire_id.to_bits(),
-    //                    self.get_wire_state(wire_id).unwrap().display_string(width),
-    //                )?;
-    //            }
-    //        } else {
-    //            if let Some(name) = self.wire_names.get(&wire_id) {
-    //                writeln!(
-    //                    writer,
-    //                    "    W{}[label=\"{} [{}]\" shape=\"diamond\"];",
-    //                    wire_id.to_bits(),
-    //                    name,
-    //                    width,
-    //                )?;
-    //            } else {
-    //                writeln!(
-    //                    writer,
-    //                    "    W{}[label=\"[{}]\" shape=\"diamond\"];",
-    //                    wire_id.to_bits(),
-    //                    width,
-    //                )?;
-    //            }
-    //        }
-    //    }
+        //        #[allow(clippy::collapsible_else_if)]
+        //        if show_states {
+        //            if let Some(name) = self.wire_names.get(&wire_id) {
+        //                let state = self.get_wire_state(wire_id).unwrap().display_string(width);
+        //                if &**name == state.as_str() {
+        //                    // Don't print constant wire states twice
+        //                    writeln!(
+        //                        writer,
+        //                        "    W{}[label=\"{}\" shape=\"diamond\"];",
+        //                        wire_id.to_bits(),
+        //                        name,
+        //                    )?;
+        //                } else {
+        //                    writeln!(
+        //                        writer,
+        //                        "    W{}[label=\"{} ({})\" shape=\"diamond\"];",
+        //                        wire_id.to_bits(),
+        //                        name,
+        //                        state,
+        //                    )?;
+        //                }
+        //            } else {
+        //                writeln!(
+        //                    writer,
+        //                    "    W{}[label=\"{}\" shape=\"diamond\"];",
+        //                    wire_id.to_bits(),
+        //                    self.get_wire_state(wire_id).unwrap().display_string(width),
+        //                )?;
+        //            }
+        //        } else {
+        //            if let Some(name) = self.wire_names.get(&wire_id) {
+        //                writeln!(
+        //                    writer,
+        //                    "    W{}[label=\"{} [{}]\" shape=\"diamond\"];",
+        //                    wire_id.to_bits(),
+        //                    name,
+        //                    width,
+        //                )?;
+        //            } else {
+        //                writeln!(
+        //                    writer,
+        //                    "    W{}[label=\"[{}]\" shape=\"diamond\"];",
+        //                    wire_id.to_bits(),
+        //                    width,
+        //                )?;
+        //            }
+        //        }
+        //    }
 
-    //    let mut wire_drivers = ahash::AHashMap::<WireId, Vec<_>>::new();
-    //    let mut wire_driving = ahash::AHashMap::<WireId, Vec<_>>::new();
-    //    for component_id in self.components.ids() {
-    //        let component = &self.components.get(component_id).unwrap();
-    //        for (wire_id, port_name) in component.output_wires() {
-    //            wire_drivers
-    //                .entry(wire_id)
-    //                .or_default()
-    //                .push((component_id, port_name));
-    //        }
-    //        for (wire_id, port_name) in component.input_wires() {
-    //            wire_driving
-    //                .entry(wire_state_map[&wire_id])
-    //                .or_default()
-    //                .push((component_id, port_name));
-    //        }
+        //    let mut wire_drivers = ahash::AHashMap::<WireId, Vec<_>>::new();
+        //    let mut wire_driving = ahash::AHashMap::<WireId, Vec<_>>::new();
+        //    for component_id in self.components.ids() {
+        //        let component = &self.components.get(component_id).unwrap();
+        //        for (wire_id, port_name) in component.output_wires() {
+        //            wire_drivers
+        //                .entry(wire_id)
+        //                .or_default()
+        //                .push((component_id, port_name));
+        //        }
+        //        for (wire_id, port_name) in component.input_wires() {
+        //            wire_driving
+        //                .entry(wire_state_map[&wire_id])
+        //                .or_default()
+        //                .push((component_id, port_name));
+        //        }
 
-    //        let name = self
-    //            .component_names
-    //            .get(&component_id)
-    //            .map(|name| (&**name).into())
-    //            .unwrap_or_else(|| component.node_name(&self.output_states));
+        //        let name = self
+        //            .component_names
+        //            .get(&component_id)
+        //            .map(|name| (&**name).into())
+        //            .unwrap_or_else(|| component.node_name(&self.output_states));
 
-    //        'print: {
-    //            if show_states {
-    //                let data = self.get_component_data(component_id).unwrap();
-    //                if let ComponentData::RegisterValue(value) = data {
-    //                    writeln!(
-    //                        writer,
-    //                        "    C{}[label=\"{} ({})\" shape=\"box\"];",
-    //                        component_id.to_bits(),
-    //                        name,
-    //                        value.read().display_string(value.width()),
-    //                    )?;
+        //        'print: {
+        //            if show_states {
+        //                let data = self.get_component_data(component_id).unwrap();
+        //                if let ComponentData::RegisterValue(value) = data {
+        //                    writeln!(
+        //                        writer,
+        //                        "    C{}[label=\"{} ({})\" shape=\"box\"];",
+        //                        component_id.to_bits(),
+        //                        name,
+        //                        value.read().display_string(value.width()),
+        //                    )?;
 
-    //                    break 'print;
-    //                }
-    //            }
+        //                    break 'print;
+        //                }
+        //            }
 
-    //            writeln!(
-    //                writer,
-    //                "    C{}[label=\"{}\" shape=\"box\"];",
-    //                component_id.to_bits(),
-    //                name,
-    //            )?;
-    //        }
-    //    }
+        //            writeln!(
+        //                writer,
+        //                "    C{}[label=\"{}\" shape=\"box\"];",
+        //                component_id.to_bits(),
+        //                name,
+        //            )?;
+        //        }
+        //    }
 
-    //    for wire_id in self.wires.ids() {
-    //        if let Some(drivers) = wire_drivers.get(&wire_id) {
-    //            for (driver, port_name) in drivers {
-    //                writeln!(
-    //                    writer,
-    //                    "    C{} -> W{}[taillabel=\"{}\"];",
-    //                    driver.to_bits(),
-    //                    wire_id.to_bits(),
-    //                    port_name,
-    //                )?;
-    //            }
-    //        }
+        //    for wire_id in self.wires.ids() {
+        //        if let Some(drivers) = wire_drivers.get(&wire_id) {
+        //            for (driver, port_name) in drivers {
+        //                writeln!(
+        //                    writer,
+        //                    "    C{} -> W{}[taillabel=\"{}\"];",
+        //                    driver.to_bits(),
+        //                    wire_id.to_bits(),
+        //                    port_name,
+        //                )?;
+        //            }
+        //        }
 
-    //        if let Some(driving) = wire_driving.get(&wire_id) {
-    //            for (driving, port_name) in driving {
-    //                writeln!(
-    //                    writer,
-    //                    "    W{} -> C{}[headlabel=\"{}\"];",
-    //                    wire_id.to_bits(),
-    //                    driving.to_bits(),
-    //                    port_name,
-    //                )?;
-    //            }
-    //        }
-    //    }
+        //        if let Some(driving) = wire_driving.get(&wire_id) {
+        //            for (driving, port_name) in driving {
+        //                writeln!(
+        //                    writer,
+        //                    "    W{} -> C{}[headlabel=\"{}\"];",
+        //                    wire_id.to_bits(),
+        //                    driving.to_bits(),
+        //                    port_name,
+        //                )?;
+        //            }
+        //        }
+        //    }
 
-    //    writeln!(writer, "}}")
-    //}
+        //    writeln!(writer, "}}")
+    }
 }
 
 /// A digital circuit simulator
@@ -839,9 +843,7 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         self.data.wire_states.clear_states();
         self.data.output_states.clear_states();
 
-        for component in self.data.components.iter_mut() {
-            component.reset();
-        }
+        self.data.components.reset_components();
     }
 
     fn begin_sim(&mut self) -> SimulationStepResult {
@@ -1244,53 +1246,71 @@ impl SimulatorBuilder {
     }
 
     #[inline]
-    fn mark_driving(
+    fn add_component<T: Component>(
         &mut self,
-        wire: WireId,
-        component: ComponentId,
-    ) -> Result<(), AddComponentError> {
-        let wire = &mut self.data.wires.get_mut(wire).ok_or(InvalidWireIdError)?;
-        wire.add_driving(component);
-        Ok(())
-    }
-
-    #[inline]
-    fn mark_driver(
-        &mut self,
-        wire: WireId,
-        output_state: OutputStateId,
-    ) -> Result<(), AddComponentError> {
-        let wire = &mut self.data.wires.get_mut(wire).ok_or(InvalidWireIdError)?;
-        wire.add_driver(output_state);
-        Ok(())
-    }
-
-    fn check_wire_widths_match(&self, wires: &[WireId]) -> Result<NonZeroU8, AddComponentError> {
-        let mut iter = wires.iter().copied();
-
-        if let Some(first) = iter.next() {
-            let first_width = self.get_wire_width(first)?;
-
-            for wire in iter {
-                let width = self.get_wire_width(wire)?;
-                if width != first_width {
-                    return Err(AddComponentError::WireWidthMismatch);
-                }
-            }
-
-            Ok(first_width)
+        args: T::Args<'_>,
+    ) -> Result<ComponentId, AddComponentError> {
+        let component = T::new(args, &mut self.data.wires, &mut self.data.output_states)?;
+        if let Some(id) = self.data.components.push(component) {
+            args.connect_drivers(id, &mut self.data.wires)?;
+            Ok(id)
         } else {
-            Err(AddComponentError::TooFewInputs)
+            Err(AddComponentError::TooManyComponents)
         }
     }
 
-    fn check_wire_width_eq(&self, wire: WireId, width: NonZeroU8) -> Result<(), AddComponentError> {
-        let wire_width = self.get_wire_width(wire)?;
-        if wire_width != width {
-            Err(AddComponentError::WireWidthIncompatible)
-        } else {
-            Ok(())
-        }
+    /// Adds an `AND Gate` component to the simulation
+    pub fn add_and_gate(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<AndGate>(WideGateArgs { inputs, output })
+    }
+
+    /// Adds an `OR Gate` component to the simulation
+    pub fn add_or_gate(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<OrGate>(WideGateArgs { inputs, output })
+    }
+
+    /// Adds an `XOR Gate` component to the simulation
+    pub fn add_xor_gate(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<XorGate>(WideGateArgs { inputs, output })
+    }
+
+    /// Adds a `NAND Gate` component to the simulation
+    pub fn add_nand_gate(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<NandGate>(WideGateArgs { inputs, output })
+    }
+
+    /// Adds a `NOR Gate` component to the simulation
+    pub fn add_nor_gate(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<NorGate>(WideGateArgs { inputs, output })
+    }
+
+    /// Adds an `XNOR Gate` component to the simulation
+    pub fn add_xnor_gate(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<XnorGate>(WideGateArgs { inputs, output })
     }
 
     //fn add_small_component(
@@ -2031,10 +2051,13 @@ impl SimulatorBuilder {
     /// Creates the simulator
     #[inline]
     pub fn build(self) -> Simulator {
-        Simulator {
+        let mut sim = Simulator {
             data: self.data,
             vcd: std::io::sink(),
-        }
+        };
+
+        sim.reset();
+        sim
     }
 }
 

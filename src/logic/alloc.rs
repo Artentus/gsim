@@ -69,12 +69,19 @@ impl<T> RawBuffer<T> {
     }
 
     #[inline]
-    unsafe fn init(&mut self, word_len: u32, word_count: u32) {
+    unsafe fn init(&mut self, word_len: u32, word_count: u32, value: u8) {
         unsafe {
             self.0
                 .as_ptr()
                 .add(word_len as usize)
-                .write_bytes(0, word_count as usize);
+                .write_bytes(value, word_count as usize);
+        }
+    }
+
+    #[inline]
+    unsafe fn set(&mut self, word_len: u32, value: u8) {
+        unsafe {
+            self.0.as_ptr().write_bytes(value, word_len as usize);
         }
     }
 }
@@ -253,6 +260,33 @@ pub(crate) struct LogicStateAllocator<T: Id, const N: usize> {
 unsafe impl<T: Id, const N: usize> Send for LogicStateAllocator<T, N> {}
 unsafe impl<T: Id, const N: usize> Sync for LogicStateAllocator<T, N> {}
 
+impl<T: Id, const N: usize> std::fmt::Debug for LogicStateAllocator<T, N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut s = f.debug_struct("LogicStateAllocator");
+        s.field("word_len", &self.word_len);
+        s.field("word_cap", &self.word_cap);
+
+        for (i, bit_planes) in self.bit_planes.iter().enumerate() {
+            let bit_plane_0 = unsafe {
+                std::slice::from_raw_parts(
+                    bit_planes.bit_plane_0.0.as_ptr(),
+                    self.word_len as usize,
+                )
+            };
+            let bit_plane_1 = unsafe {
+                std::slice::from_raw_parts(
+                    bit_planes.bit_plane_1.0.as_ptr(),
+                    self.word_len as usize,
+                )
+            };
+            s.field(&format!("bit_plane_0[{i}]"), &bit_plane_0);
+            s.field(&format!("bit_plane_1[{i}]"), &bit_plane_1);
+        }
+
+        s.finish()
+    }
+}
+
 impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
     #[inline]
     pub(crate) const fn new() -> Self {
@@ -273,11 +307,11 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
                 for bit_planes in &mut self.bit_planes {
                     bit_planes
                         .bit_plane_0
-                        .realloc(self.word_len, self.word_cap, new_word_cap);
+                        .realloc(self.word_len, self.word_cap, new_word_cap)?;
 
                     bit_planes
                         .bit_plane_1
-                        .realloc(self.word_len, self.word_cap, new_word_cap);
+                        .realloc(self.word_len, self.word_cap, new_word_cap)?;
                 }
             }
 
@@ -302,14 +336,28 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
             //   - The memory past `self.word_len` is currently uninitialized.
 
             for bit_planes in &mut self.bit_planes {
-                bit_planes.bit_plane_0.init(self.word_len, word_count);
-                bit_planes.bit_plane_1.init(self.word_len, word_count);
+                // Min/Max coresponds to the high impedance state
+                bit_planes
+                    .bit_plane_0
+                    .init(self.word_len, word_count, u8::MIN);
+                bit_planes
+                    .bit_plane_1
+                    .init(self.word_len, word_count, u8::MAX);
             }
         }
 
         let id = self.word_len;
         self.word_len = new_word_len;
         Ok(T::from_bits(id))
+    }
+
+    pub(crate) fn clear_states(&mut self) {
+        unsafe {
+            // - Only clear the first set of bit planes because the others are user defined
+            // - Min/Max coresponds to the high impedance state
+            self.bit_planes[0].bit_plane_0.set(self.word_len, u8::MIN);
+            self.bit_planes[0].bit_plane_1.set(self.word_len, u8::MAX);
+        }
     }
 }
 

@@ -28,8 +28,23 @@ impl ComponentId {
     }
 }
 
-pub(crate) trait Component: Sized {
-    type Args<'a>;
+pub(crate) trait ComponentAuto: Sized {
+    const ID: u8;
+
+    fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>];
+    fn extract_storage_mut(storage: &mut ComponentStorage) -> &mut Vec<SyncUnsafeCell<Self>>;
+}
+
+pub(crate) trait ComponentArgs: Copy {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError>;
+}
+
+pub(crate) trait Component: ComponentAuto {
+    type Args<'a>: ComponentArgs;
 
     fn new(
         args: Self::Args<'_>,
@@ -53,13 +68,9 @@ pub(crate) trait Component: Sized {
         wire_states: WireStateView,
         output_states: OutputStateViewMut,
     ) -> inline_vec!(WireId);
-}
 
-pub(crate) trait ComponentAuto: Component {
-    const ID: u8;
-
-    fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>];
-    fn extract_storage_mut(storage: &mut ComponentStorage) -> &mut Vec<SyncUnsafeCell<Self>>;
+    #[inline]
+    fn reset(&mut self) {}
 }
 
 macro_rules! def_components {
@@ -184,7 +195,19 @@ macro_rules! def_components {
                 iter
             }
 
-            /// SAFETY: caller must ensure the component ID is unique.
+            pub(crate) fn component_exists(&self, id: ComponentId) -> bool {
+                match id.kind() {
+                    $(
+                        <$component_name>::ID => {
+                            let storage = <$component_name>::extract_storage(self);
+                            id.index() < storage.len()
+                        }
+                    )+
+                    _ => panic!("invalid component kind"),
+                }
+            }
+
+            /// SAFETY: caller must ensure the component ID is valid and unique.
             pub(crate) unsafe fn update_component(
                 &self,
                 id: ComponentId,
@@ -208,6 +231,15 @@ macro_rules! def_components {
                     )+
                     _ => panic!("invalid component kind"),
                 }
+            }
+
+            pub(crate) fn reset_components(&mut self) {
+                $(
+                    let storage = <$component_name>::extract_storage_mut(self);
+                    for component in storage {
+                        component.get_mut().reset();
+                    }
+                )+
             }
         }
     };
@@ -257,12 +289,14 @@ def_components! {
     }
 
     struct NotGate {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct Buffer {
+        bit_width: BitWidth,
         input: WireStateId,
         enable: WireStateId,
         output_state: OutputStateId,
@@ -270,6 +304,7 @@ def_components! {
     }
 
     struct Slice {
+        bit_width: BitWidth,
         input: WireStateId,
         start_offset: u16,
         end_offset: u16,
@@ -278,6 +313,7 @@ def_components! {
     }
 
     struct Add {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -285,6 +321,7 @@ def_components! {
     }
 
     struct Sub {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -292,12 +329,14 @@ def_components! {
     }
 
     struct Neg {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct Mul {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -305,6 +344,7 @@ def_components! {
     }
 
     struct LeftShift {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -312,6 +352,7 @@ def_components! {
     }
 
     struct LogicalRightShift {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -319,6 +360,7 @@ def_components! {
     }
 
     struct ArithmeticRightShift {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -326,42 +368,49 @@ def_components! {
     }
 
     struct HorizontalAnd {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct HorizontalOr {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct HorizontalXor {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct HorizontalNand {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct HorizontalNor {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct HorizontalXnor {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct CompareEqual {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -369,6 +418,7 @@ def_components! {
     }
 
     struct CompareNotEqual {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -376,6 +426,7 @@ def_components! {
     }
 
     struct CompareLessThan {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -383,6 +434,7 @@ def_components! {
     }
 
     struct CompareGreaterThan {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -390,6 +442,7 @@ def_components! {
     }
 
     struct CompareLessThanOrEqual {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -397,6 +450,7 @@ def_components! {
     }
 
     struct CompareGreaterThanOrEqual {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -404,6 +458,7 @@ def_components! {
     }
 
     struct CompareLessThanSigned {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -411,6 +466,7 @@ def_components! {
     }
 
     struct CompareGreaterThanSigned {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -418,6 +474,7 @@ def_components! {
     }
 
     struct CompareLessThanOrEqualSigned {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -425,6 +482,7 @@ def_components! {
     }
 
     struct CompareGreaterThanOrEqualSigned {
+        bit_width: BitWidth,
         input_a: WireStateId,
         input_b: WireStateId,
         output_state: OutputStateId,
@@ -432,25 +490,43 @@ def_components! {
     }
 
     struct ZeroExtend {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct SignExtend {
+        bit_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 }
 
-pub struct WideGateArgs<'a> {
-    inputs: &'a [WireId],
-    output: WireId,
+#[derive(Clone, Copy)]
+pub(crate) struct WideGateArgs<'a> {
+    pub(crate) inputs: &'a [WireId],
+    pub(crate) output: WireId,
+}
+
+impl ComponentArgs for WideGateArgs<'_> {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError> {
+        for &input in self.inputs {
+            let wire = &mut wires.get_mut(input).ok_or(InvalidWireIdError)?;
+            wire.add_driving(component);
+        }
+
+        Ok(())
+    }
 }
 
 macro_rules! wide_gate_impl {
-    ($name:literal, $op:expr) => {
+    ($name:literal) => {
         type Args<'a> = WideGateArgs<'a>;
 
         fn new(
@@ -473,7 +549,12 @@ macro_rules! wide_gate_impl {
                 inputs.push(input_wire.state_id());
             }
 
+            let output_wire = wires
+                .get_mut(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
             let output_state = output_states.alloc(output_wire.bit_width())?;
+            output_wire.add_driver(output_state);
 
             Ok(Self {
                 bit_width: output_wire.bit_width(),
@@ -506,7 +587,11 @@ macro_rules! wide_gate_impl {
         fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
             (self.output_state, self.output_state, self.bit_width)
         }
+    };
+}
 
+macro_rules! wide_gate_update_impl {
+    ($op:expr) => {
         fn update(
             &mut self,
             wire_states: WireStateView,
@@ -541,28 +626,82 @@ macro_rules! wide_gate_impl {
     };
 }
 
+macro_rules! wide_gate_inv_update_impl {
+    ($op:expr) => {
+        fn update(
+            &mut self,
+            wire_states: WireStateView,
+            mut output_states: OutputStateViewMut,
+        ) -> inline_vec!(WireId) {
+            let mut tmp_state = InlineLogicState::undefined(self.bit_width);
+
+            let mut input_iter = self.inputs.iter();
+            if let Some(first_input) = input_iter.next() {
+                let [first_input, _] = wire_states
+                    .get(first_input, self.bit_width)
+                    .expect("invalid wire state ID");
+                tmp_state.copy_from(first_input);
+            }
+
+            for input in input_iter {
+                let [input, _] = wire_states
+                    .get(input, self.bit_width)
+                    .expect("invalid wire state ID");
+                binary_op(tmp_state.borrow_mut(), input, $op);
+            }
+
+            unary_op(tmp_state.borrow_mut(), logic_not);
+
+            let [mut output] = output_states
+                .get_mut(self.output_state, self.bit_width)
+                .expect("invalid output state ID");
+
+            match output.copy_from(&tmp_state) {
+                CopyFromResult::Unchanged => smallvec![],
+                CopyFromResult::Changed => smallvec![self.output_wire],
+            }
+        }
+    };
+}
+
 impl Component for AndGate {
-    wide_gate_impl!("AND", logic_and);
+    wide_gate_impl!("AND");
+    wide_gate_update_impl!(logic_and);
 }
 
 impl Component for OrGate {
-    wide_gate_impl!("OR", logic_or);
+    wide_gate_impl!("OR");
+    wide_gate_update_impl!(logic_or);
 }
 
 impl Component for XorGate {
-    wide_gate_impl!("XOR", logic_xor);
+    wide_gate_impl!("XOR");
+    wide_gate_update_impl!(logic_xor);
 }
 
 impl Component for NandGate {
-    wide_gate_impl!("NAND", logic_nand);
+    wide_gate_impl!("NAND");
+    wide_gate_inv_update_impl!(logic_and);
 }
 
 impl Component for NorGate {
-    wide_gate_impl!("NOR", logic_nor);
+    wide_gate_impl!("NOR");
+    wide_gate_inv_update_impl!(logic_or);
 }
 
 impl Component for XnorGate {
-    wide_gate_impl!("XNOR", logic_xnor);
+    wide_gate_impl!("XNOR");
+    wide_gate_inv_update_impl!(logic_xor);
+}
+
+impl ComponentArgs for () {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError> {
+        Ok(())
+    }
 }
 
 impl Component for NotGate {
@@ -582,13 +721,18 @@ impl Component for NotGate {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -617,13 +761,18 @@ impl Component for Buffer {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -652,13 +801,18 @@ impl Component for Slice {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -687,13 +841,18 @@ impl Component for Add {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -722,13 +881,18 @@ impl Component for Sub {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -757,13 +921,18 @@ impl Component for Neg {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -792,13 +961,18 @@ impl Component for Mul {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -827,13 +1001,18 @@ impl Component for LeftShift {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -862,13 +1041,18 @@ impl Component for LogicalRightShift {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -897,13 +1081,18 @@ impl Component for ArithmeticRightShift {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -932,13 +1121,18 @@ impl Component for HorizontalAnd {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -967,13 +1161,18 @@ impl Component for HorizontalOr {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1002,13 +1201,18 @@ impl Component for HorizontalXor {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1037,13 +1241,18 @@ impl Component for HorizontalNand {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1072,13 +1281,18 @@ impl Component for HorizontalNor {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1107,13 +1321,18 @@ impl Component for HorizontalXnor {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1142,13 +1361,18 @@ impl Component for CompareEqual {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1177,13 +1401,18 @@ impl Component for CompareNotEqual {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1212,13 +1441,18 @@ impl Component for CompareLessThan {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1247,13 +1481,18 @@ impl Component for CompareGreaterThan {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1282,13 +1521,18 @@ impl Component for CompareLessThanOrEqual {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1317,13 +1561,18 @@ impl Component for CompareGreaterThanOrEqual {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1352,13 +1601,18 @@ impl Component for CompareLessThanSigned {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1387,13 +1641,18 @@ impl Component for CompareGreaterThanSigned {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1422,13 +1681,18 @@ impl Component for CompareLessThanOrEqualSigned {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1457,13 +1721,18 @@ impl Component for CompareGreaterThanOrEqualSigned {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1492,13 +1761,18 @@ impl Component for ZeroExtend {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(
@@ -1527,13 +1801,18 @@ impl Component for SignExtend {
     }
 
     #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        todo!()
+    }
+
+    #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
         todo!()
     }
 
     #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId) {
-        (self.output_state, self.output_state)
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
     }
 
     fn update(

@@ -12,14 +12,18 @@ use std::fmt;
 use std::num::NonZeroU8;
 use std::ops::*;
 
+/// The number of bits in a wire or register
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct BitWidth(u8);
 
 impl BitWidth {
+    /// A width of 1
     pub const MIN: Self = Self(u8::MIN);
+    /// A width of 256
     pub const MAX: Self = Self(u8::MAX);
 
+    /// Creates a new bit width from an integer
     #[inline]
     pub const fn new(value: u32) -> Option<Self> {
         if value > 0 {
@@ -32,6 +36,7 @@ impl BitWidth {
         None
     }
 
+    /// Gets the width as an integer
     #[inline]
     pub const fn get(self) -> u32 {
         (self.0 as u32) + 1
@@ -81,16 +86,17 @@ impl fmt::Display for BitWidth {
     }
 }
 
+/// Creates a [BitWidth] from a literal in a constant expression
 #[macro_export]
 macro_rules! bit_width {
-    ($value:expr) => {{
-        const BIT_WIDTH: $crate::BitWidth = match $crate::BitWidth::new($value) {
-            Some(bit_width) => bit_width,
-            None => panic!("invalid bit width"),
-        };
-
-        BIT_WIDTH
-    }};
+    ($value:expr) => {
+        const {
+            match $crate::BitWidth::new($value) {
+                Some(bit_width) => bit_width,
+                None => panic!("invalid bit width"),
+            }
+        }
+    };
 }
 
 /*
