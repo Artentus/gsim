@@ -1265,7 +1265,14 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> Result<ComponentId, AddComponentError> {
-        self.add_component::<AndGate>(WideGateArgs { inputs, output })
+        match inputs {
+            &[input_a, input_b] => self.add_component::<AndGate>(BinaryGateArgs {
+                input_a,
+                input_b,
+                output,
+            }),
+            _ => self.add_component::<WideAndGate>(WideGateArgs { inputs, output }),
+        }
     }
 
     /// Adds an `OR Gate` component to the simulation
@@ -1274,7 +1281,14 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> Result<ComponentId, AddComponentError> {
-        self.add_component::<OrGate>(WideGateArgs { inputs, output })
+        match inputs {
+            &[input_a, input_b] => self.add_component::<OrGate>(BinaryGateArgs {
+                input_a,
+                input_b,
+                output,
+            }),
+            _ => self.add_component::<WideOrGate>(WideGateArgs { inputs, output }),
+        }
     }
 
     /// Adds an `XOR Gate` component to the simulation
@@ -1283,7 +1297,14 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> Result<ComponentId, AddComponentError> {
-        self.add_component::<XorGate>(WideGateArgs { inputs, output })
+        match inputs {
+            &[input_a, input_b] => self.add_component::<XorGate>(BinaryGateArgs {
+                input_a,
+                input_b,
+                output,
+            }),
+            _ => self.add_component::<WideXorGate>(WideGateArgs { inputs, output }),
+        }
     }
 
     /// Adds a `NAND Gate` component to the simulation
@@ -1292,7 +1313,14 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> Result<ComponentId, AddComponentError> {
-        self.add_component::<NandGate>(WideGateArgs { inputs, output })
+        match inputs {
+            &[input_a, input_b] => self.add_component::<NandGate>(BinaryGateArgs {
+                input_a,
+                input_b,
+                output,
+            }),
+            _ => self.add_component::<WideNandGate>(WideGateArgs { inputs, output }),
+        }
     }
 
     /// Adds a `NOR Gate` component to the simulation
@@ -1301,7 +1329,14 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> Result<ComponentId, AddComponentError> {
-        self.add_component::<NorGate>(WideGateArgs { inputs, output })
+        match inputs {
+            &[input_a, input_b] => self.add_component::<NorGate>(BinaryGateArgs {
+                input_a,
+                input_b,
+                output,
+            }),
+            _ => self.add_component::<WideNorGate>(WideGateArgs { inputs, output }),
+        }
     }
 
     /// Adds an `XNOR Gate` component to the simulation
@@ -1310,7 +1345,14 @@ impl SimulatorBuilder {
         inputs: &[WireId],
         output: WireId,
     ) -> Result<ComponentId, AddComponentError> {
-        self.add_component::<XnorGate>(WideGateArgs { inputs, output })
+        match inputs {
+            &[input_a, input_b] => self.add_component::<XnorGate>(BinaryGateArgs {
+                input_a,
+                input_b,
+                output,
+            }),
+            _ => self.add_component::<WideXnorGate>(WideGateArgs { inputs, output }),
+        }
     }
 
     /// Adds a `NOT Gate` component to the simulation
