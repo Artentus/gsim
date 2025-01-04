@@ -948,6 +948,30 @@ impl InlineLogicState {
     }
 
     #[inline]
+    pub(crate) fn set_logic_0(&mut self) {
+        self.bit_plane_0 = ALL_ZERO;
+        self.bit_plane_1 = ALL_ZERO;
+    }
+
+    #[inline]
+    pub(crate) fn set_logic_1(&mut self) {
+        self.bit_plane_0 = ALL_ONE;
+        self.bit_plane_1 = ALL_ZERO;
+    }
+
+    #[inline]
+    pub(crate) fn set_high_z(&mut self) {
+        self.bit_plane_0 = ALL_ZERO;
+        self.bit_plane_1 = ALL_ONE;
+    }
+
+    #[inline]
+    pub(crate) fn set_undefined(&mut self) {
+        self.bit_plane_0 = ALL_ONE;
+        self.bit_plane_1 = ALL_ONE;
+    }
+
+    #[inline]
     pub(crate) fn bit_planes_mut(&mut self) -> (&mut [u32], &mut [u32]) {
         let word_len = self.bit_width.word_len() as usize;
 

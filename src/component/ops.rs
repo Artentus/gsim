@@ -49,6 +49,18 @@ impl BitOrAssign for OpResult {
 }
 
 #[inline]
+pub(super) fn high_z_to_undefined(i: [u32; 2]) -> [u32; 2] {
+    //  I_1 | I_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  0  | Logic 0
+    //   0  |  1  | Logic 1   |  0  |  1  | Logic 1
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [i[0] | i[1], i[1]]
+}
+
+#[inline]
 pub(super) fn logic_not(i: [u32; 2]) -> [u32; 2] {
     //  I_1 | I_0 |     B     | O_1 | O_0 |     O
     // -----|-----|-----------|-----|-----|-----------

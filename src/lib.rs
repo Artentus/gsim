@@ -1364,101 +1364,19 @@ impl SimulatorBuilder {
         self.add_component::<NotGate>(UnaryGateArgs { input, output })
     }
 
-    //fn add_small_component(
-    //    &mut self,
-    //    component: SmallComponent,
-    //    outputs: &[OutputStateId],
-    //) -> Result<ComponentId, AddComponentError> {
-    //    let output_atom_count = outputs
-    //        .iter()
-    //        .copied()
-    //        .map(|id| self.data.output_states.get_width(id))
-    //        .map(|width| width.safe_div_ceil(Atom::BITS))
-    //        .map(NonZeroU8::get)
-    //        .map(u16::from)
-    //        .try_fold(0, u16::checked_add)
-    //        .expect("combined output width too large");
-
-    //    let component = Component::new_small(
-    //        component,
-    //        outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
-    //        output_atom_count,
-    //    );
-
-    //    self.data
-    //        .components
-    //        .push(component)
-    //        .ok_or(AddComponentError::TooManyComponents)
-    //}
-
-    //fn add_large_component<C: LargeComponent + 'static>(
-    //    &mut self,
-    //    component: C,
-    //    outputs: &[OutputStateId],
-    //) -> Result<ComponentId, AddComponentError> {
-    //    let output_atom_count = outputs
-    //        .iter()
-    //        .copied()
-    //        .map(|id| self.data.output_states.get_width(id))
-    //        .map(|width| width.safe_div_ceil(Atom::BITS))
-    //        .map(NonZeroU8::get)
-    //        .map(u16::from)
-    //        .try_fold(0, u16::checked_add)
-    //        .expect("combined output width too large");
-
-    //    let component = Component::new_large(
-    //        component,
-    //        outputs.get(0).copied().unwrap_or(OutputStateId::INVALID),
-    //        output_atom_count,
-    //    );
-
-    //    self.data
-    //        .components
-    //        .push(component)
-    //        .ok_or(AddComponentError::TooManyComponents)
-    //}
-
-    //def_add_wide_gate!(
-    //    /// Adds an `AND Gate` component to the simulation
-    //    add_and_gate,
-    //    AndGate,
-    //    WideAndGate
-    //);
-
-    //def_add_wide_gate!(
-    //    /// Adds an `OR Gate` component to the simulation
-    //    add_or_gate,
-    //    OrGate,
-    //    WideOrGate
-    //);
-
-    //def_add_wide_gate!(
-    //    /// Adds an `XOR Gate` component to the simulation
-    //    add_xor_gate,
-    //    XorGate,
-    //    WideXorGate
-    //);
-
-    //def_add_wide_gate!(
-    //    /// Adds a `NAND Gate` component to the simulation
-    //    add_nand_gate,
-    //    NandGate,
-    //    WideNandGate
-    //);
-
-    //def_add_wide_gate!(
-    //    /// Adds a `NOR Gate` component to the simulation
-    //    add_nor_gate,
-    //    NorGate,
-    //    WideNorGate
-    //);
-
-    //def_add_wide_gate!(
-    //    /// Adds an `XNOR Gate` component to the simulation
-    //    add_xnor_gate,
-    //    XnorGate,
-    //    WideXnorGate
-    //);
+    /// Adds a `Buffer` component to the simulation
+    pub fn add_buffer(
+        &mut self,
+        input: WireId,
+        enable: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<Buffer>(BinaryGateArgs {
+            input_a: input,
+            input_b: enable,
+            output,
+        })
+    }
 
     /*
     def_add_binary_gate!(
@@ -1495,12 +1413,6 @@ impl SimulatorBuilder {
         /// Adds an `Arithmetic Right Shift` component to the simulation
         add_arithmetic_right_shift,
         ArithmeticRightShift
-    );
-
-    def_add_unary_gate!(
-        /// Adds a `NOT Gate` component to the simulation
-        add_not_gate,
-        NotGate
     );
 
     def_add_unary_gate!(

@@ -26,12 +26,12 @@ macro_rules! logic_state {
 
 use logic_state;
 
-//struct BinaryGateTestData {
-//    input_a: LogicState,
-//    input_b: LogicState,
-//    output: LogicState,
-//}
-//
+struct BinaryGateTestData {
+    input_a: LogicState,
+    input_b: LogicState,
+    output: LogicState,
+}
+
 //fn test_binary_gate<F>(
 //    add_gate: F,
 //    width: NonZeroU8,
@@ -134,22 +134,22 @@ use logic_state;
 //        );
 //    }
 //}
-//
-//macro_rules! binary_gate_test_data {
-//    ($(($a:tt, $b:tt) -> $o:tt),* $(,)?) => {
-//        &[
-//            $(
-//                BinaryGateTestData {
-//                    input_a: logic_state!($a),
-//                    input_b: logic_state!($b),
-//                    output: logic_state!($o),
-//                },
-//            )*
-//        ]
-//    };
-//}
-//
-//use binary_gate_test_data;
+
+macro_rules! binary_gate_test_data {
+    ($width:expr; $(($a:tt, $b:tt) -> $o:tt),* $(,)?) => {
+        &[
+            $(
+                BinaryGateTestData {
+                    input_a: logic_state!($width; $a),
+                    input_b: logic_state!($width; $b),
+                    output: logic_state!($width; $o),
+                },
+            )*
+        ]
+    };
+}
+
+use binary_gate_test_data;
 
 struct UnaryGateTestData {
     input: LogicState,

@@ -642,6 +642,74 @@ fn not_gate() {
     }
 }
 
+#[test]
+fn buffer() {
+    macro_rules! buffer_test_data {
+        ($width:expr; $(($a:tt, $b:tt) -> $o:tt),* $(,)?) => {
+            &[
+                $(
+                    BinaryGateTestData {
+                        input_a: logic_state!($width; $a),
+                        input_b: logic_state!(WIDTH_1; $b),
+                        output: logic_state!($width; $o),
+                    },
+                )*
+            ]
+        };
+    }
+
+    for width in [WIDTH_1, WIDTH_32, WIDTH_33, WIDTH_64] {
+        let test_data = buffer_test_data!(width;
+            (high_z, high_z) -> high_z,
+            (undefined, high_z) -> high_z,
+            (logic_0, high_z) -> high_z,
+            (logic_1, high_z) -> high_z,
+
+            (high_z, undefined) -> undefined,
+            (undefined, undefined) -> undefined,
+            (logic_0, undefined) -> undefined,
+            (logic_1, undefined) -> undefined,
+
+            (high_z, logic_0) -> high_z,
+            (undefined, logic_0) -> high_z,
+            (logic_0, logic_0) -> high_z,
+            (logic_1, logic_0) -> high_z,
+
+            (high_z, logic_1) -> undefined,
+            (undefined, logic_1) -> undefined,
+            (logic_0, logic_1) -> logic_0,
+            (logic_1, logic_1) -> logic_1,
+        );
+
+        for (i, test_data) in test_data.iter().enumerate() {
+            let mut builder = SimulatorBuilder::default();
+
+            let input = builder.add_wire(width).unwrap();
+            builder.set_wire_drive(input, &test_data.input_a).unwrap();
+            let enable = builder.add_wire(WIDTH_1).unwrap();
+            builder.set_wire_drive(enable, &test_data.input_b).unwrap();
+            let output = builder.add_wire(width).unwrap();
+            let _gate = builder.add_buffer(input, enable, output).unwrap();
+
+            let mut sim = builder.build();
+
+            match sim.run_sim(2) {
+                SimulationRunResult::Ok => {}
+                SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+                SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+            }
+
+            let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+            assert_eq!(
+                output_state, test_data.output,
+                "[TEST {i}]  expected: {}  actual: {}",
+                test_data.output, output_state,
+            );
+        }
+    }
+}
+
 /*
 #[test]
 fn add() {
@@ -742,62 +810,6 @@ fn mul() {
     test_binary_gate(SimulatorBuilder::add_mul, WIDTH_33, test_data, 2);
     test_binary_gate(SimulatorBuilder::add_mul, WIDTH_64, test_data, 2);
     test_binary_gate(SimulatorBuilder::add_mul, WIDTH_128, test_data, 2);
-}
-
-#[test]
-fn buffer() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
-        (HIGH_Z, HIGH_Z) -> HIGH_Z,
-        (UNDEFINED, HIGH_Z) -> HIGH_Z,
-        (LOGIC_0, HIGH_Z) -> HIGH_Z,
-        (LOGIC_1, HIGH_Z) -> HIGH_Z,
-
-        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-        (LOGIC_0, UNDEFINED) -> UNDEFINED,
-        (LOGIC_1, UNDEFINED) -> UNDEFINED,
-
-        (HIGH_Z, LOGIC_0) -> HIGH_Z,
-        (UNDEFINED, LOGIC_0) -> HIGH_Z,
-        (LOGIC_0, LOGIC_0) -> HIGH_Z,
-        (LOGIC_1, LOGIC_0) -> HIGH_Z,
-
-        (HIGH_Z, LOGIC_1) -> UNDEFINED,
-        (UNDEFINED, LOGIC_1) -> UNDEFINED,
-        (LOGIC_0, LOGIC_1) -> LOGIC_0,
-        (LOGIC_1, LOGIC_1) -> LOGIC_1,
-    );
-
-    for width in [WIDTH_1, WIDTH_32, WIDTH_33, WIDTH_64] {
-        let mut builder = SimulatorBuilder::default();
-
-        let input = builder.add_wire(width).unwrap();
-        let enable = builder.add_wire(NonZeroU8::MIN).unwrap();
-        let output = builder.add_wire(width).unwrap();
-        let _gate = builder.add_buffer(input, enable, output).unwrap();
-
-        let mut sim = builder.build();
-
-        for (i, test_data) in TEST_DATA.iter().enumerate() {
-            sim.set_wire_drive(input, &test_data.input_a).unwrap();
-            sim.set_wire_drive(enable, &test_data.input_b).unwrap();
-
-            match sim.run_sim(2) {
-                SimulationRunResult::Ok => {}
-                SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-                SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-            }
-
-            let output_state = sim.get_wire_state(output).unwrap();
-
-            assert!(
-                output_state.eq(&test_data.output, width),
-                "[TEST {i}]  expected: {}  actual: {}",
-                test_data.output.display_string(width),
-                output_state.display_string(width),
-            );
-        }
-    }
 }
 
 #[test]
