@@ -628,6 +628,20 @@ fn wide_xnor_gate() {
     }
 }
 
+#[test]
+fn not_gate() {
+    for width in [WIDTH_1, WIDTH_32, WIDTH_33, WIDTH_64] {
+        let test_data = unary_gate_test_data!(width;
+            high_z -> undefined,
+            undefined -> undefined,
+            logic_0 -> logic_1,
+            logic_1 -> logic_0,
+        );
+
+        test_unary_gate(SimulatorBuilder::add_not_gate, width, test_data, 2);
+    }
+}
+
 /*
 #[test]
 fn add() {
@@ -728,21 +742,6 @@ fn mul() {
     test_binary_gate(SimulatorBuilder::add_mul, WIDTH_33, test_data, 2);
     test_binary_gate(SimulatorBuilder::add_mul, WIDTH_64, test_data, 2);
     test_binary_gate(SimulatorBuilder::add_mul, WIDTH_128, test_data, 2);
-}
-
-#[test]
-fn not_gate() {
-    const TEST_DATA: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_0,
-    );
-
-    test_unary_gate(SimulatorBuilder::add_not_gate, WIDTH_1, TEST_DATA, 2);
-    test_unary_gate(SimulatorBuilder::add_not_gate, WIDTH_32, TEST_DATA, 2);
-    test_unary_gate(SimulatorBuilder::add_not_gate, WIDTH_33, TEST_DATA, 2);
-    test_unary_gate(SimulatorBuilder::add_not_gate, WIDTH_64, TEST_DATA, 2);
 }
 
 #[test]

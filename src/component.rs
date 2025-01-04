@@ -110,8 +110,6 @@ macro_rules! def_components {
                 $($field_name : $field_ty,)*
             }
         }
-
-        pub(crate) const COMPONENT_COUNT: u8 = $id + 1;
     };
 
     (@REC $id:expr;
@@ -504,6 +502,55 @@ def_components! {
     }
 }
 
+impl ComponentArgs for () {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError> {
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct UnaryGateArgs {
+    pub(crate) input: WireId,
+    pub(crate) output: WireId,
+}
+
+impl ComponentArgs for UnaryGateArgs {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError> {
+        let wire = wires.get_mut(self.input).ok_or(InvalidWireIdError)?;
+        wire.add_driving(component);
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct BinaryGateArgs {
+    pub(crate) input_a: WireId,
+    pub(crate) input_b: WireId,
+    pub(crate) output: WireId,
+}
+
+impl ComponentArgs for BinaryGateArgs {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError> {
+        let wire_a = wires.get_mut(self.input_a).ok_or(InvalidWireIdError)?;
+        wire_a.add_driving(component);
+        let wire_b = wires.get_mut(self.input_b).ok_or(InvalidWireIdError)?;
+        wire_b.add_driving(component);
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct WideGateArgs<'a> {
     pub(crate) inputs: &'a [WireId],
@@ -517,7 +564,7 @@ impl ComponentArgs for WideGateArgs<'_> {
         wires: &mut WireList,
     ) -> Result<(), AddComponentError> {
         for &input in self.inputs {
-            let wire = &mut wires.get_mut(input).ok_or(InvalidWireIdError)?;
+            let wire = wires.get_mut(input).ok_or(InvalidWireIdError)?;
             wire.add_driving(component);
         }
 
@@ -611,7 +658,7 @@ macro_rules! wide_gate_update_impl {
                 let [input, _] = wire_states
                     .get(input, self.bit_width)
                     .expect("invalid wire state ID");
-                binary_op(tmp_state.borrow_mut(), input, $op);
+                binary_op_mut(tmp_state.borrow_mut(), input, $op);
             }
 
             let [mut output] = output_states
@@ -647,10 +694,10 @@ macro_rules! wide_gate_inv_update_impl {
                 let [input, _] = wire_states
                     .get(input, self.bit_width)
                     .expect("invalid wire state ID");
-                binary_op(tmp_state.borrow_mut(), input, $op);
+                binary_op_mut(tmp_state.borrow_mut(), input, $op);
             }
 
-            unary_op(tmp_state.borrow_mut(), logic_not);
+            unary_op_mut(tmp_state.borrow_mut(), logic_not);
 
             let [mut output] = output_states
                 .get_mut(self.output_state, self.bit_width)
@@ -694,40 +741,56 @@ impl Component for XnorGate {
     wide_gate_inv_update_impl!(logic_xor);
 }
 
-impl ComponentArgs for () {
-    fn connect_drivers(
-        self,
-        component: ComponentId,
-        wires: &mut WireList,
-    ) -> Result<(), AddComponentError> {
-        Ok(())
-    }
-}
-
 impl Component for NotGate {
-    type Args<'a> = ();
+    type Args<'a> = UnaryGateArgs;
 
     fn new(
         args: Self::Args<'_>,
         wires: &mut WireList,
         output_states: &mut OutputStateAllocator,
     ) -> Result<Self, AddComponentError> {
-        todo!()
+        let output_wire = wires
+            .get(args.output)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let input_wire = wires
+            .get(args.input)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        if input_wire.bit_width() != output_wire.bit_width() {
+            return Err(AddComponentError::WireWidthMismatch);
+        }
+
+        let input = input_wire.state_id();
+
+        let output_wire = wires
+            .get_mut(args.output)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let output_state = output_states.alloc(output_wire.bit_width())?;
+        output_wire.add_driver(output_state);
+
+        Ok(Self {
+            bit_width: output_wire.bit_width(),
+            input,
+            output_state,
+            output_wire: args.output,
+        })
     }
 
     #[cfg(feature = "dot-export")]
     fn node_name(&self) -> Cow<'static, str> {
-        todo!()
+        "NOT".into()
     }
 
     #[cfg(feature = "dot-export")]
     fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
+        smallvec![(self.output_wire, "Out".into())]
     }
 
     #[cfg(feature = "dot-export")]
     fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
+        smallvec![(self.input, format!("In").into())]
     }
 
     #[inline]
@@ -738,9 +801,23 @@ impl Component for NotGate {
     fn update(
         &mut self,
         wire_states: WireStateView,
-        output_states: OutputStateViewMut,
+        mut output_states: OutputStateViewMut,
     ) -> inline_vec!(WireId) {
-        todo!()
+        let mut tmp_state = InlineLogicState::undefined(self.bit_width);
+
+        let [input, _] = wire_states
+            .get(self.input, self.bit_width)
+            .expect("invalid wire state ID");
+        unary_op(tmp_state.borrow_mut(), input, logic_not);
+
+        let [mut output] = output_states
+            .get_mut(self.output_state, self.bit_width)
+            .expect("invalid output state ID");
+
+        match output.copy_from(&tmp_state) {
+            CopyFromResult::Unchanged => smallvec![],
+            CopyFromResult::Changed => smallvec![self.output_wire],
+        }
     }
 }
 

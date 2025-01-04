@@ -49,6 +49,18 @@ impl BitOrAssign for OpResult {
 }
 
 #[inline]
+pub(super) fn logic_not(i: [u32; 2]) -> [u32; 2] {
+    //  I_1 | I_0 |     B     | O_1 | O_0 |     O
+    // -----|-----|-----------|-----|-----|-----------
+    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1
+    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0
+    //   1  |  0  | High-Z    |  1  |  1  | Undefined
+    //   1  |  1  | Undefined |  1  |  1  | Undefined
+
+    [!i[0] | i[1], i[1]]
+}
+
+#[inline]
 pub(super) fn logic_and(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
     //  A_1 | A_0 |     A     | B_1 | B_0 |     B     | O_1 | O_0 |     O
     // -----|-----|-----------|-----|-----|-----------|-----|-----|-----------
@@ -223,7 +235,59 @@ pub(super) fn logic_xnor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
 }
 
 #[inline]
+pub(super) fn unary_op(
+    mut output: LogicStateMut,
+    input: LogicStateRef,
+    op: impl Fn([u32; 2]) -> [u32; 2],
+) {
+    assert_eq!(output.bit_width(), input.bit_width());
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+    let (input_plane_0, input_plane_1) = input.bit_planes();
+    for i in 0..word_len {
+        [output_plane_0[i], output_plane_1[i]] = op([input_plane_0[i], input_plane_1[i]]);
+    }
+}
+
+#[inline]
+pub(super) fn unary_op_mut(mut output: LogicStateMut, op: impl Fn([u32; 2]) -> [u32; 2]) {
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+    for i in 0..word_len {
+        [output_plane_0[i], output_plane_1[i]] = op([output_plane_0[i], output_plane_1[i]]);
+    }
+}
+
+#[inline]
 pub(super) fn binary_op(
+    mut output: LogicStateMut,
+    input_a: LogicStateRef,
+    input_b: LogicStateRef,
+    op: impl Fn([u32; 2], [u32; 2]) -> [u32; 2],
+) {
+    assert_eq!(output.bit_width(), input_a.bit_width());
+    assert_eq!(output.bit_width(), input_b.bit_width());
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+    let (input_a_plane_0, input_a_plane_1) = input_a.bit_planes();
+    let (input_b_plane_0, input_b_plane_1) = input_b.bit_planes();
+
+    for i in 0..word_len {
+        [output_plane_0[i], output_plane_1[i]] = op(
+            [input_a_plane_0[i], input_a_plane_1[i]],
+            [input_b_plane_0[i], input_b_plane_1[i]],
+        );
+    }
+}
+
+#[inline]
+pub(super) fn binary_op_mut(
     mut output: LogicStateMut,
     input: LogicStateRef,
     op: impl Fn([u32; 2], [u32; 2]) -> [u32; 2],
@@ -240,29 +304,6 @@ pub(super) fn binary_op(
             [output_plane_0[i], output_plane_1[i]],
             [input_plane_0[i], input_plane_1[i]],
         );
-    }
-}
-
-#[inline]
-pub(super) fn logic_not(i: [u32; 2]) -> [u32; 2] {
-    //  I_1 | I_0 |     B     | O_1 | O_0 |     O
-    // -----|-----|-----------|-----|-----|-----------
-    //   0  |  0  | Logic 0   |  0  |  1  | Logic 1
-    //   0  |  1  | Logic 1   |  0  |  0  | Logic 0
-    //   1  |  0  | High-Z    |  1  |  1  | Undefined
-    //   1  |  1  | Undefined |  1  |  1  | Undefined
-
-    [!i[0] | i[1], i[1]]
-}
-
-#[inline]
-pub(super) fn unary_op(mut output: LogicStateMut, op: impl Fn([u32; 2]) -> [u32; 2]) {
-    let bit_width = output.bit_width();
-    let word_len = bit_width.word_len() as usize;
-
-    let (output_plane_0, output_plane_1) = output.bit_planes_mut();
-    for i in 0..word_len {
-        [output_plane_0[i], output_plane_1[i]] = op([output_plane_0[i], output_plane_1[i]]);
     }
 }
 

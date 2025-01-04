@@ -1313,6 +1313,15 @@ impl SimulatorBuilder {
         self.add_component::<XnorGate>(WideGateArgs { inputs, output })
     }
 
+    /// Adds a `NOT Gate` component to the simulation
+    pub fn add_not_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<NotGate>(UnaryGateArgs { input, output })
+    }
+
     //fn add_small_component(
     //    &mut self,
     //    component: SmallComponent,
