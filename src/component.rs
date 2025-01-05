@@ -28,13 +28,6 @@ impl ComponentId {
     }
 }
 
-pub(crate) trait ComponentAuto: Sized {
-    const ID: u8;
-
-    fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>];
-    fn extract_storage_mut(storage: &mut ComponentStorage) -> &mut Vec<SyncUnsafeCell<Self>>;
-}
-
 pub(crate) trait ComponentArgs: Copy {
     fn connect_drivers(
         self,
@@ -43,7 +36,7 @@ pub(crate) trait ComponentArgs: Copy {
     ) -> Result<(), AddComponentError>;
 }
 
-pub(crate) trait Component: ComponentAuto {
+pub(crate) trait Component: Sized {
     type Args<'a>: ComponentArgs;
 
     fn new(
@@ -71,6 +64,13 @@ pub(crate) trait Component: ComponentAuto {
 
     #[inline]
     fn reset(&mut self) {}
+}
+
+pub(crate) trait ComponentAuto: Component {
+    const ID: u8;
+
+    fn extract_storage(storage: &ComponentStorage) -> &[SyncUnsafeCell<Self>];
+    fn extract_storage_mut(storage: &mut ComponentStorage) -> &mut Vec<SyncUnsafeCell<Self>>;
 }
 
 macro_rules! def_components {

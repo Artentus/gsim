@@ -1246,7 +1246,7 @@ impl SimulatorBuilder {
     }
 
     #[inline]
-    fn add_component<T: Component>(
+    fn add_component<T: ComponentAuto>(
         &mut self,
         args: T::Args<'_>,
     ) -> Result<ComponentId, AddComponentError> {
