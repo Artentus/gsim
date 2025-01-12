@@ -710,59 +710,61 @@ fn buffer() {
     }
 }
 
-/*
 #[test]
 fn add() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
-        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-        (HIGH_Z, 0) -> UNDEFINED,
-        (UNDEFINED, 0) -> UNDEFINED,
-        (0, HIGH_Z) -> UNDEFINED,
-        (0, UNDEFINED) -> UNDEFINED,
+    for width in [WIDTH_16, WIDTH_32, WIDTH_64] {
+        let test_data = binary_gate_test_data!(width;
+            (high_z, high_z) -> undefined,
+            (high_z, undefined) -> undefined,
+            (undefined, high_z) -> undefined,
+            (undefined, undefined) -> undefined,
+            (high_z, 0) -> undefined,
+            (undefined, 0) -> undefined,
+            (0, high_z) -> undefined,
+            (0, undefined) -> undefined,
 
-        (0, 0) -> 0,
-        (0, 1) -> 1,
-        (1, 0) -> 1,
-        (1, 1) -> 2,
-        (0, {u32::MAX}) -> {u32::MAX},
-        ({u32::MAX}, 0) -> {u32::MAX},
-        (1, {u32::MAX}) -> 0,
-        ({u32::MAX}, 1) -> 0,
-        ({u32::MAX}, {u32::MAX}) -> {u32::MAX - 1},
-    );
+            (0, 0) -> 0,
+            (0, 1) -> 1,
+            (1, 0) -> 1,
+            (1, 1) -> 2,
+            (0, {u64::MAX}) -> {u64::MAX},
+            ({u64::MAX}, 0) -> {u64::MAX},
+            (1, {u64::MAX}) -> 0,
+            ({u64::MAX}, 1) -> 0,
+            ({u64::MAX}, {u64::MAX}) -> {u64::MAX - 1},
+        );
 
-    test_binary_gate(SimulatorBuilder::add_add, WIDTH_16, TEST_DATA, 2);
-    test_binary_gate(SimulatorBuilder::add_add, WIDTH_32, TEST_DATA, 2);
+        test_binary_gate(SimulatorBuilder::add_add, width, test_data, 2);
+    }
 }
 
 #[test]
 fn sub() {
-    const TEST_DATA: &[BinaryGateTestData] = binary_gate_test_data!(
-        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-        (HIGH_Z, 0) -> UNDEFINED,
-        (UNDEFINED, 0) -> UNDEFINED,
-        (0, HIGH_Z) -> UNDEFINED,
-        (0, UNDEFINED) -> UNDEFINED,
+    for width in [WIDTH_16, WIDTH_32, WIDTH_64] {
+        let test_data = binary_gate_test_data!(width;
+            (high_z, high_z) -> undefined,
+            (high_z, undefined) -> undefined,
+            (undefined, high_z) -> undefined,
+            (undefined, undefined) -> undefined,
+            (high_z, 0) -> undefined,
+            (undefined, 0) -> undefined,
+            (0, high_z) -> undefined,
+            (0, undefined) -> undefined,
 
-        (0, 0) -> 0,
-        (0, 1) -> {u32::MAX},
-        (1, 0) -> 1,
-        (1, 1) -> 0,
-        (0, {u32::MAX}) -> 1,
-        ({u32::MAX}, 0) -> {u32::MAX},
-        ({u32::MAX}, {u32::MAX}) -> 0,
-    );
+            (0, 0) -> 0,
+            (0, 1) -> {u64::MAX},
+            (1, 0) -> 1,
+            (1, 1) -> 0,
+            (0, {u64::MAX}) -> 1,
+            ({u64::MAX}, 0) -> {u64::MAX},
+            ({u64::MAX}, {u64::MAX}) -> 0,
+        );
 
-    test_binary_gate(SimulatorBuilder::add_sub, WIDTH_16, TEST_DATA, 2);
-    test_binary_gate(SimulatorBuilder::add_sub, WIDTH_32, TEST_DATA, 2);
+        test_binary_gate(SimulatorBuilder::add_sub, width, test_data, 2);
+    }
 }
 
+/*
 #[test]
 fn neg() {
     const TEST_DATA: &[UnaryGateTestData] = unary_gate_test_data!(

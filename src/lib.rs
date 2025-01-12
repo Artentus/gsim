@@ -64,7 +64,6 @@ use component::*;
 use id::*;
 use smallvec::SmallVec;
 use std::num::NonZeroU8;
-use std::ops::{Add, AddAssign};
 use std::sync::{Arc, Mutex};
 use wire::*;
 
@@ -156,7 +155,7 @@ impl CLog2 for usize {
 #[repr(transparent)]
 pub struct AllocationSize(usize);
 
-impl Add for AllocationSize {
+impl std::ops::Add for AllocationSize {
     type Output = Self;
 
     #[inline]
@@ -165,7 +164,7 @@ impl Add for AllocationSize {
     }
 }
 
-impl AddAssign for AllocationSize {
+impl std::ops::AddAssign for AllocationSize {
     #[inline]
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
@@ -175,7 +174,7 @@ impl AddAssign for AllocationSize {
 impl std::iter::Sum for AllocationSize {
     #[inline]
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(AllocationSize(0), Add::add)
+        iter.fold(AllocationSize(0), std::ops::Add::add)
     }
 }
 
@@ -1374,6 +1373,34 @@ impl SimulatorBuilder {
         self.add_component::<Buffer>(BinaryGateArgs {
             input_a: input,
             input_b: enable,
+            output,
+        })
+    }
+
+    /// Adds an `ADD` component to the simulation
+    pub fn add_add(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<Add>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a `SUB` component to the simulation
+    pub fn add_sub(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<Sub>(BinaryGateArgs {
+            input_a,
+            input_b,
             output,
         })
     }

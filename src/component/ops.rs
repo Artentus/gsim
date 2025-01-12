@@ -247,6 +247,38 @@ pub(super) fn logic_xnor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
 }
 
 #[inline]
+pub(super) fn add(a: [u32; 2], b: [u32; 2], c: LogicBitState) -> ([u32; 2], LogicBitState) {
+    let (sum, c0) = a[0].overflowing_add(b[0]);
+    let (sum, c1) = sum.overflowing_add((c as u32) & 0b1);
+
+    let valid_count = if c.to_bool().is_some() {
+        (a[1] | b[1]).trailing_zeros()
+    } else {
+        0
+    };
+
+    let invalid_mask = if valid_count >= 32 {
+        0
+    } else {
+        u32::MAX << valid_count
+    };
+
+    (
+        [sum | invalid_mask, invalid_mask],
+        if invalid_mask > 0 {
+            LogicBitState::Undefined
+        } else {
+            LogicBitState::from_bool(c0 | c1)
+        },
+    )
+}
+
+#[inline]
+pub(super) fn sub(a: [u32; 2], b: [u32; 2], c: LogicBitState) -> ([u32; 2], LogicBitState) {
+    add(a, [!b[0], b[1]], c)
+}
+
+#[inline]
 pub(super) fn unary_op(
     mut output: LogicStateMut,
     input: LogicStateRef,
@@ -315,6 +347,33 @@ pub(super) fn binary_op_mut(
         [output_plane_0[i], output_plane_1[i]] = op(
             [output_plane_0[i], output_plane_1[i]],
             [input_plane_0[i], input_plane_1[i]],
+        );
+    }
+}
+
+#[inline]
+pub(super) fn carrying_binary_op(
+    mut sum: LogicStateMut,
+    input_a: LogicStateRef,
+    input_b: LogicStateRef,
+    carry_in: LogicBitState,
+    op: impl Fn([u32; 2], [u32; 2], LogicBitState) -> ([u32; 2], LogicBitState),
+) {
+    assert_eq!(sum.bit_width(), input_a.bit_width());
+    assert_eq!(sum.bit_width(), input_b.bit_width());
+    let bit_width = sum.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    let (sum_plane_0, sum_plane_1) = sum.bit_planes_mut();
+    let (input_a_plane_0, input_a_plane_1) = input_a.bit_planes();
+    let (input_b_plane_0, input_b_plane_1) = input_b.bit_planes();
+
+    let mut carry = carry_in;
+    for i in 0..word_len {
+        ([sum_plane_0[i], sum_plane_1[i]], carry) = op(
+            [input_a_plane_0[i], input_a_plane_1[i]],
+            [input_b_plane_0[i], input_b_plane_1[i]],
+            carry,
         );
     }
 }
