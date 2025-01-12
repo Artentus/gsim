@@ -764,6 +764,36 @@ fn sub() {
     }
 }
 
+#[test]
+fn mul() {
+    for width in [WIDTH_16, WIDTH_32, WIDTH_64, WIDTH_128] {
+        let test_data = binary_gate_test_data!(width;
+            (high_z, high_z) -> undefined,
+            (high_z, undefined) -> undefined,
+            (undefined, high_z) -> undefined,
+            (undefined, undefined) -> undefined,
+            (high_z, logic_0) -> undefined,
+            (undefined, logic_0) -> undefined,
+            (logic_0, high_z) -> undefined,
+            (logic_0, undefined) -> undefined,
+
+            ([0], [0]) -> [0],
+            ([0], [1]) -> [0],
+            ([1], [0]) -> [0],
+            ([1], [1]) -> [1],
+            ([0], [u32::MAX, u32::MAX]) -> [0],
+            ([u32::MAX, u32::MAX], [0]) -> [0],
+            ([1], [u32::MAX, u32::MAX]) -> [u32::MAX, u32::MAX],
+            ([u32::MAX, u32::MAX], [1]) -> [u32::MAX, u32::MAX],
+            ([u32::MAX, u32::MAX], [u32::MAX, u32::MAX]) -> [1, 0, u32::MAX - 1, u32::MAX],
+            ([u32::MAX, u32::MAX, u32::MAX, u32::MAX], [u32::MAX, u32::MAX, u32::MAX, u32::MAX]) -> [1, 0, 0, 0, u32::MAX - 1, u32::MAX, u32::MAX, u32::MAX],
+            ([0x658c0c38, 0xd50cebfb], [0x901cfad8, 0xc0083189]) -> [0x4838ff40, 0x2201c171, 0xe109006d, 0x9fd0829d],
+        );
+
+        test_binary_gate(SimulatorBuilder::add_mul, width, test_data, 2);
+    }
+}
+
 /*
 #[test]
 fn neg() {
@@ -780,38 +810,6 @@ fn neg() {
     test_unary_gate(SimulatorBuilder::add_neg, WIDTH_32, TEST_DATA, 2);
     test_unary_gate(SimulatorBuilder::add_neg, WIDTH_33, TEST_DATA, 2);
     test_unary_gate(SimulatorBuilder::add_neg, WIDTH_64, TEST_DATA, 2);
-}
-
-#[test]
-fn mul() {
-    let test_data: &[BinaryGateTestData] = binary_gate_test_data!(
-        (HIGH_Z, HIGH_Z) -> UNDEFINED,
-        (HIGH_Z, UNDEFINED) -> UNDEFINED,
-        (UNDEFINED, HIGH_Z) -> UNDEFINED,
-        (UNDEFINED, UNDEFINED) -> UNDEFINED,
-        (HIGH_Z, 0) -> UNDEFINED,
-        (UNDEFINED, 0) -> UNDEFINED,
-        (0, HIGH_Z) -> UNDEFINED,
-        (0, UNDEFINED) -> UNDEFINED,
-
-        (0, 0) -> 0,
-        (0, 1) -> 0,
-        (1, 0) -> 0,
-        (1, 1) -> 1,
-        (0, {u32::MAX}) -> 0,
-        ({u32::MAX}, 0) -> 0,
-        (1, {u32::MAX}) -> {u32::MAX},
-        ({u32::MAX}, 1) -> {u32::MAX},
-        ({u32::MAX}, {u32::MAX}) -> [1, u32::MAX - 1],
-        ([u32::MAX, u32::MAX], [u32::MAX, u32::MAX]) -> [1, 0, u32::MAX - 1, u32::MAX],
-        ([0x658c0c38, 0xd50cebfb], [0x901cfad8, 0xc0083189]) -> [0x4838ff40, 0x2201c171, 0xe109006d, 0x9fd0829d],
-    );
-
-    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_16, test_data, 2);
-    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_32, test_data, 2);
-    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_33, test_data, 2);
-    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_64, test_data, 2);
-    test_binary_gate(SimulatorBuilder::add_mul, WIDTH_128, test_data, 2);
 }
 
 #[test]

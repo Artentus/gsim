@@ -1228,9 +1228,26 @@ impl Component for Mul {
     fn update(
         &mut self,
         wire_states: WireStateView,
-        output_states: OutputStateViewMut,
+        mut output_states: OutputStateViewMut,
     ) -> inline_vec!(WireId) {
-        todo!()
+        let mut tmp_state = InlineLogicState::undefined(self.bit_width);
+
+        let [input_a, _] = wire_states
+            .get(self.input_a, self.bit_width)
+            .expect("invalid wire state ID");
+        let [input_b, _] = wire_states
+            .get(self.input_b, self.bit_width)
+            .expect("invalid wire state ID");
+        mul(tmp_state.borrow_mut(), input_a, input_b);
+
+        let [mut output] = output_states
+            .get_mut(self.output_state, self.bit_width)
+            .expect("invalid output state ID");
+
+        match output.copy_from(&tmp_state) {
+            CopyFromResult::Unchanged => smallvec![],
+            CopyFromResult::Changed => smallvec![self.output_wire],
+        }
     }
 }
 

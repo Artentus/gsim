@@ -16,7 +16,7 @@ macro_rules! logic_state {
         LogicState::from_u64($value, $width)
     };
     ($width:expr; [$($value:expr),+ $(,)?]) => {
-        LogicState::from_big_int([$($value),+].as_slice()).unwrap()
+        LogicState::from_big_int($width, [$($value),+].as_slice())
     };
     ($width:expr; $value:expr) => {
         LogicState::from_u64($value, $width)

@@ -378,6 +378,57 @@ pub(super) fn carrying_binary_op(
     }
 }
 
+fn carrying_mul(a: u32, b: u32, c: u32, d: u32) -> (u32, u32) {
+    let product = (a as u64) * (b as u64) + (c as u64) + (d as u64);
+    (product as u32, (product >> 32) as u32)
+}
+
+#[inline]
+pub(super) fn mul(mut product: LogicStateMut, input_a: LogicStateRef, input_b: LogicStateRef) {
+    assert_eq!(product.bit_width(), input_a.bit_width());
+    assert_eq!(product.bit_width(), input_b.bit_width());
+    let bit_width = product.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    let (product_plane_0, product_plane_1) = product.bit_planes_mut();
+    let (input_a_plane_0, input_a_plane_1) = input_a.bit_planes();
+    let (input_b_plane_0, input_b_plane_1) = input_b.bit_planes();
+
+    product_plane_0.fill(0);
+
+    for i_a in 0..word_len {
+        let mut carry = 0;
+        for i_b in 0..(word_len - i_a) {
+            let i = i_a + i_b;
+
+            (product_plane_0[i], carry) = carrying_mul(
+                input_a_plane_0[i_a],
+                input_b_plane_0[i_b],
+                carry,
+                product_plane_0[i],
+            );
+        }
+    }
+
+    for i in 0..word_len {
+        let valid_count = (input_a_plane_1[i] | input_b_plane_1[i]).trailing_zeros();
+        let invalid_mask = if valid_count >= 32 {
+            0
+        } else {
+            u32::MAX << valid_count
+        };
+
+        product_plane_0[i] |= invalid_mask;
+        product_plane_1[i] = invalid_mask;
+
+        if invalid_mask > 0 {
+            product_plane_0[(i + 1)..].fill(u32::MAX);
+            product_plane_1[(i + 1)..].fill(u32::MAX);
+            break;
+        }
+    }
+}
+
 /*
 
 

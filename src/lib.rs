@@ -1405,25 +1405,21 @@ impl SimulatorBuilder {
         })
     }
 
+    /// Adds a `MUL` component to the simulation
+    pub fn add_mul(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<Mul>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
     /*
-    def_add_binary_gate!(
-        /// Adds an `ADD` component to the simulation
-        add_add,
-        Add
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `SUB` component to the simulation
-        add_sub,
-        Sub
-    );
-
-    def_add_binary_gate!(
-        /// Adds a `MUL` component to the simulation
-        add_mul,
-        Mul
-    );
-
     def_add_shifter!(
         /// Adds a `Left Shift` component to the simulation
         add_left_shift,
@@ -1447,48 +1443,6 @@ impl SimulatorBuilder {
         add_neg,
         Neg
     );
-
-    /// Adds a `Buffer` component to the simulation
-    pub fn add_buffer(
-        &mut self,
-        input: WireId,
-        enable: WireId,
-        output: WireId,
-    ) -> AddComponentResult {
-        let width = self.check_wire_widths_match(&[input, output])?;
-        self.check_wire_width_eq(enable, NonZeroU8::MIN)?;
-
-        let output_state = self
-            .data
-            .output_states
-            .push(width)
-            .ok_or(AddComponentError::TooManyComponents)?;
-
-        let wire = &self
-            .data
-            .wires
-            .get(input)
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let wire_en = &self
-            .data
-            .wires
-            .get(enable)
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let gate = SmallComponent::new(
-            SmallComponentKind::Buffer {
-                input: wire.state,
-                enable: wire_en.state,
-            },
-            output,
-        );
-        let id = self.add_small_component(gate, &[output_state])?;
-
-        self.mark_driving(input, id)?;
-        self.mark_driving(enable, id)?;
-        self.mark_driver(output, output_state)?;
-
-        Ok(id)
-    }
 
     /// Adds a `Slice` component to the simulation
     pub fn add_slice(&mut self, input: WireId, offset: u8, output: WireId) -> AddComponentResult {
