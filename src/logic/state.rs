@@ -548,7 +548,8 @@ impl LogicState {
         let word_count = bit_width.get().div_ceil(u32::BITS) as usize;
         if word_count <= 5 {
             let mut buffer = [0; 5];
-            buffer[..word_count].copy_from_slice(&value[..word_count]);
+            let copy_count = word_count.min(value.len());
+            buffer[..copy_count].copy_from_slice(&value[..copy_count]);
 
             Self {
                 repr: LogicStateRepr::TwoState {
@@ -557,7 +558,10 @@ impl LogicState {
                 },
             }
         } else {
-            Self::new_alloc(bit_width, value.to_vec(), ALL_ZERO[..word_count].to_vec())
+            let mut bit_plane_0 = value.to_vec();
+            bit_plane_0.resize(word_count, 0);
+            bit_plane_0.shrink_to_fit();
+            Self::new_alloc(bit_width, bit_plane_0, ALL_ZERO[..word_count].to_vec())
         }
     }
 
@@ -567,8 +571,10 @@ impl LogicState {
         if word_count <= 2 {
             let mut bit_plane_0_buffer = [0; 2];
             let mut bit_plane_1_buffer = [0; 2];
-            bit_plane_0_buffer[..word_count].copy_from_slice(&bit_plane_0[..word_count]);
-            bit_plane_1_buffer[..word_count].copy_from_slice(&bit_plane_1[..word_count]);
+            let copy_count = word_count.min(bit_plane_0.len());
+            bit_plane_0_buffer[..copy_count].copy_from_slice(&bit_plane_0[..copy_count]);
+            let copy_count = word_count.min(bit_plane_1.len());
+            bit_plane_1_buffer[..copy_count].copy_from_slice(&bit_plane_1[..copy_count]);
 
             Self {
                 repr: LogicStateRepr::FourState {
@@ -578,7 +584,13 @@ impl LogicState {
                 },
             }
         } else {
-            Self::new_alloc(bit_width, bit_plane_0.to_vec(), bit_plane_1.to_vec())
+            let mut bit_plane_0 = bit_plane_0.to_vec();
+            bit_plane_0.resize(word_count, 0);
+            bit_plane_0.shrink_to_fit();
+            let mut bit_plane_1 = bit_plane_1.to_vec();
+            bit_plane_1.resize(word_count, u32::MAX);
+            bit_plane_1.shrink_to_fit();
+            Self::new_alloc(bit_width, bit_plane_0, bit_plane_1)
         }
     }
 
