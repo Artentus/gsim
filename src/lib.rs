@@ -1405,6 +1405,15 @@ impl SimulatorBuilder {
         })
     }
 
+    /// Adds a `NEG` component to the simulation
+    pub fn add_neg(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<Neg>(UnaryGateArgs { input, output })
+    }
+
     /// Adds a `MUL` component to the simulation
     pub fn add_mul(
         &mut self,
@@ -1436,12 +1445,6 @@ impl SimulatorBuilder {
         /// Adds an `Arithmetic Right Shift` component to the simulation
         add_arithmetic_right_shift,
         ArithmeticRightShift
-    );
-
-    def_add_unary_gate!(
-        /// Adds a `NEG` component to the simulation
-        add_neg,
-        Neg
     );
 
     /// Adds a `Slice` component to the simulation

@@ -765,6 +765,22 @@ fn sub() {
 }
 
 #[test]
+fn neg() {
+    for width in [WIDTH_1, WIDTH_32, WIDTH_33, WIDTH_64] {
+        let test_data = unary_gate_test_data!(width;
+            high_z -> undefined,
+            undefined -> undefined,
+
+            0 -> 0,
+            1 -> logic_1,
+            logic_1 -> 1,
+        );
+
+        test_unary_gate(SimulatorBuilder::add_neg, width, test_data, 2);
+    }
+}
+
+#[test]
 fn mul() {
     for width in [WIDTH_16, WIDTH_32, WIDTH_64, WIDTH_128] {
         let test_data = binary_gate_test_data!(width;
@@ -795,23 +811,6 @@ fn mul() {
 }
 
 /*
-#[test]
-fn neg() {
-    const TEST_DATA: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-
-        0 -> 0,
-        1 -> LOGIC_1,
-        LOGIC_1 -> 1,
-    );
-
-    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_16, TEST_DATA, 2);
-    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_32, TEST_DATA, 2);
-    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_33, TEST_DATA, 2);
-    test_unary_gate(SimulatorBuilder::add_neg, WIDTH_64, TEST_DATA, 2);
-}
-
 #[test]
 fn slice() {
     struct TestData {
