@@ -1428,25 +1428,49 @@ impl SimulatorBuilder {
         })
     }
 
+    /// Adds a `Left Shift` component to the simulation
+    pub fn add_left_shift(
+        &mut self,
+        input: WireId,
+        shift_amount: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<LeftShift>(BinaryGateArgs {
+            input_a: input,
+            input_b: shift_amount,
+            output,
+        })
+    }
+
+    /// Adds a `Logical Right Shift` component to the simulation
+    pub fn add_logical_right_shift(
+        &mut self,
+        input: WireId,
+        shift_amount: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<LogicalRightShift>(BinaryGateArgs {
+            input_a: input,
+            input_b: shift_amount,
+            output,
+        })
+    }
+
+    /// Adds an `Arithmetic Right Shift` component to the simulation
+    pub fn add_arithmetic_right_shift(
+        &mut self,
+        input: WireId,
+        shift_amount: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<ArithmeticRightShift>(BinaryGateArgs {
+            input_a: input,
+            input_b: shift_amount,
+            output,
+        })
+    }
+
     /*
-    def_add_shifter!(
-        /// Adds a `Left Shift` component to the simulation
-        add_left_shift,
-        LeftShift
-    );
-
-    def_add_shifter!(
-        /// Adds a `Logical Right Shift` component to the simulation
-        add_logical_right_shift,
-        LogicalRightShift
-    );
-
-    def_add_shifter!(
-        /// Adds an `Arithmetic Right Shift` component to the simulation
-        add_arithmetic_right_shift,
-        ArithmeticRightShift
-    );
-
     /// Adds a `Slice` component to the simulation
     pub fn add_slice(&mut self, input: WireId, offset: u8, output: WireId) -> AddComponentResult {
         let input_width = self.get_wire_width(input)?;

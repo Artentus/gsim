@@ -56,6 +56,11 @@ impl BitWidth {
     pub(crate) const fn last_word_mask(self) -> u32 {
         ((1u64 << self.last_word_width().get()) - 1) as u32
     }
+
+    #[inline]
+    pub(crate) const fn clog2(self) -> Option<Self> {
+        Self::new(self.get().next_power_of_two().ilog2())
+    }
 }
 
 impl TryFrom<u32> for BitWidth {

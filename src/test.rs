@@ -67,41 +67,40 @@ fn test_binary_gate<F>(
     }
 }
 
-//fn test_shifter<F>(add_gate: F, width: NonZeroU8, test_data: &[BinaryGateTestData], max_steps: u64)
-//where
-//    F: FnOnce(&mut SimulatorBuilder, WireId, WireId, WireId) -> AddComponentResult,
-//{
-//    let mut builder = SimulatorBuilder::default();
-//
-//    let shamnt_width = NonZeroU8::new(width.clog2()).unwrap();
-//    let input_a = builder.add_wire(width).unwrap();
-//    let input_b = builder.add_wire(shamnt_width).unwrap();
-//    let output = builder.add_wire(width).unwrap();
-//    let _gate = add_gate(&mut builder, input_a, input_b, output).unwrap();
-//
-//    let mut sim = builder.build();
-//
-//    for (i, test_data) in test_data.iter().enumerate() {
-//        sim.set_wire_drive(input_a, &test_data.input_a).unwrap();
-//        sim.set_wire_drive(input_b, &test_data.input_b).unwrap();
-//
-//        match sim.run_sim(max_steps) {
-//            SimulationRunResult::Ok => {}
-//            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-//            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-//        }
-//
-//        let output_state = sim.get_wire_state(output).unwrap();
-//
-//        assert!(
-//            output_state.eq(&test_data.output, width),
-//            "[TEST {i}]  expected: {}  actual: {}",
-//            test_data.output.display_string(width),
-//            output_state.display_string(width),
-//        );
-//    }
-//}
-//
+fn test_shifter<F>(add_gate: F, width: BitWidth, test_data: &[BinaryGateTestData], max_steps: u64)
+where
+    F: Fn(&mut SimulatorBuilder, WireId, WireId, WireId) -> AddComponentResult,
+{
+    let shamnt_width = width.clog2().unwrap();
+
+    for (i, test_data) in test_data.iter().enumerate() {
+        let mut builder = SimulatorBuilder::default();
+
+        let input_a = builder.add_wire(width).unwrap();
+        builder.set_wire_drive(input_a, &test_data.input_a).unwrap();
+        let input_b = builder.add_wire(shamnt_width).unwrap();
+        builder.set_wire_drive(input_b, &test_data.input_b).unwrap();
+        let output = builder.add_wire(width).unwrap();
+        let _gate = add_gate(&mut builder, input_a, input_b, output).unwrap();
+
+        let mut sim = builder.build();
+
+        match sim.run_sim(max_steps) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+        assert_eq!(
+            output_state, test_data.output,
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output, output_state,
+        );
+    }
+}
+
 //fn test_binary_module(
 //    sim: &mut Simulator,
 //    input_a: WireId,
@@ -147,6 +146,22 @@ macro_rules! binary_gate_test_data {
 }
 
 use binary_gate_test_data;
+
+macro_rules! shifter_test_data {
+    ($width:expr; $(($a:tt, $b:tt) -> $o:tt),* $(,)?) => {
+        &[
+            $(
+                BinaryGateTestData {
+                    input_a: logic_state!($width; $a),
+                    input_b: logic_state!($width.clog2().unwrap(); $b),
+                    output: logic_state!($width; $o),
+                },
+            )*
+        ]
+    };
+}
+
+use shifter_test_data;
 
 struct UnaryGateTestData {
     input: LogicState,

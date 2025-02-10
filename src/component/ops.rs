@@ -429,6 +429,185 @@ pub(super) fn mul(mut product: LogicStateMut, input_a: LogicStateRef, input_b: L
     }
 }
 
+#[inline]
+pub(super) fn shift_left(
+    mut output: LogicStateMut,
+    input: LogicStateRef,
+    shift_amount: LogicStateRef,
+) {
+    assert_eq!(output.bit_width(), input.bit_width());
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    if let Some(shift_width) = bit_width.clog2() {
+        let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+        let (input_plane_0, input_plane_1) = input.bit_planes();
+        let (shift_amount_plane_0, shift_amount_plane_1) = shift_amount.bit_planes();
+
+        let shift_mask = shift_width.last_word_mask();
+        let (shift_amount, shift_amount_valid) = (
+            shift_amount_plane_0[0] & shift_mask,
+            shift_amount_plane_1[0] & shift_mask,
+        );
+
+        if shift_amount_valid == 0 {
+            let word_shift = (shift_amount / u32::BITS) as usize;
+            let bit_shift = shift_amount % u32::BITS;
+
+            for dst_index in 0..word_len {
+                if let Some(src_index_high) = dst_index.checked_sub(word_shift) {
+                    output_plane_0[dst_index] = input_plane_0[src_index_high] << bit_shift;
+                    output_plane_1[dst_index] = input_plane_1[src_index_high] << bit_shift;
+
+                    if bit_shift > 0 {
+                        if let Some(src_index_low) = src_index_high.checked_sub(1) {
+                            output_plane_0[dst_index] |=
+                                input_plane_0[src_index_low] >> (u32::BITS - bit_shift);
+                            output_plane_1[dst_index] |=
+                                input_plane_1[src_index_low] >> (u32::BITS - bit_shift);
+                        }
+                    }
+
+                    output_plane_0[dst_index] |= output_plane_1[dst_index]; // high-z to undefined
+                } else {
+                    output_plane_0[dst_index] = 0;
+                    output_plane_1[dst_index] = 0;
+                }
+            }
+        } else {
+            output_plane_0.fill(u32::MAX);
+            output_plane_1.fill(u32::MAX);
+        }
+    } else {
+        output.copy_from(input);
+    }
+}
+
+#[inline]
+pub(super) fn shift_right_logical(
+    mut output: LogicStateMut,
+    input: LogicStateRef,
+    shift_amount: LogicStateRef,
+) {
+    assert_eq!(output.bit_width(), input.bit_width());
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    if let Some(shift_width) = bit_width.clog2() {
+        let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+        let (input_plane_0, input_plane_1) = input.bit_planes();
+        let (shift_amount_plane_0, shift_amount_plane_1) = shift_amount.bit_planes();
+
+        let shift_mask = shift_width.last_word_mask();
+        let (shift_amount, shift_amount_valid) = (
+            shift_amount_plane_0[0] & shift_mask,
+            shift_amount_plane_1[0] & shift_mask,
+        );
+
+        if shift_amount_valid == 0 {
+            let word_shift = (shift_amount / u32::BITS) as usize;
+            let bit_shift = shift_amount % u32::BITS;
+
+            for dst_index in 0..word_len {
+                let src_index_low = dst_index + word_shift;
+                if src_index_low < word_len {
+                    output_plane_0[dst_index] = input_plane_0[src_index_low] >> bit_shift;
+                    output_plane_1[dst_index] = input_plane_1[src_index_low] >> bit_shift;
+
+                    let src_index_high = src_index_low + 1;
+                    if (src_index_high < word_len) && (bit_shift > 0) {
+                        output_plane_0[dst_index] |=
+                            input_plane_0[src_index_high] << (u32::BITS - bit_shift);
+                        output_plane_1[dst_index] |=
+                            input_plane_1[src_index_high] << (u32::BITS - bit_shift);
+                    }
+
+                    output_plane_0[dst_index] |= output_plane_1[dst_index]; // high-z to undefined
+                } else {
+                    output_plane_0[dst_index] = 0;
+                    output_plane_1[dst_index] = 0;
+                }
+            }
+        } else {
+            output_plane_0.fill(u32::MAX);
+            output_plane_1.fill(u32::MAX);
+        }
+    } else {
+        output.copy_from(input);
+    }
+}
+
+#[inline]
+pub(super) fn shift_right_arithmetic(
+    mut output: LogicStateMut,
+    input: LogicStateRef,
+    shift_amount: LogicStateRef,
+) {
+    assert_eq!(output.bit_width(), input.bit_width());
+    let bit_width = output.bit_width();
+    let word_len = bit_width.word_len() as usize;
+
+    if let Some(shift_width) = bit_width.clog2() {
+        let (output_plane_0, output_plane_1) = output.bit_planes_mut();
+        let (input_plane_0, input_plane_1) = input.bit_planes();
+        let (shift_amount_plane_0, shift_amount_plane_1) = shift_amount.bit_planes();
+
+        let shift_mask = shift_width.last_word_mask();
+        let (shift_amount, shift_amount_valid) = (
+            shift_amount_plane_0[0] & shift_mask,
+            shift_amount_plane_1[0] & shift_mask,
+        );
+
+        if shift_amount_valid == 0 {
+            let word_shift = (shift_amount / u32::BITS) as usize;
+            let bit_shift = shift_amount % u32::BITS;
+
+            let mut extend_word = [0; 2];
+            for dst_index in 0..word_len {
+                let src_index_low = dst_index + word_shift;
+                if src_index_low < word_len {
+                    let src_index_high = src_index_low + 1;
+                    if (src_index_high < word_len) && (bit_shift > 0) {
+                        output_plane_0[dst_index] = input_plane_0[src_index_low] >> bit_shift;
+                        output_plane_1[dst_index] = input_plane_1[src_index_low] >> bit_shift;
+
+                        output_plane_0[dst_index] |=
+                            input_plane_0[src_index_high] << (u32::BITS - bit_shift);
+                        output_plane_1[dst_index] |=
+                            input_plane_1[src_index_high] << (u32::BITS - bit_shift);
+                    } else {
+                        let last_word_width = bit_width.last_word_width();
+                        let shift_up = u32::BITS - last_word_width.get();
+                        let shift_down = shift_up + bit_shift;
+
+                        output_plane_0[dst_index] =
+                            ((input_plane_0[src_index_low] as i32) << shift_up >> shift_down)
+                                as u32;
+                        output_plane_1[dst_index] =
+                            ((input_plane_1[src_index_low] as i32) << shift_up >> shift_down)
+                                as u32;
+
+                        extend_word[0] =
+                            ((output_plane_0[dst_index] as i32) >> (u32::BITS - 1)) as u32;
+                        extend_word[1] =
+                            ((output_plane_1[dst_index] as i32) >> (u32::BITS - 1)) as u32;
+                    }
+
+                    output_plane_0[dst_index] |= output_plane_1[dst_index]; // high-z to undefined
+                } else {
+                    output_plane_0[dst_index] = extend_word[0];
+                    output_plane_1[dst_index] = extend_word[1];
+                }
+            }
+        } else {
+            output_plane_0.fill(u32::MAX);
+            output_plane_1.fill(u32::MAX);
+        }
+    } else {
+        output.copy_from(input);
+    }
+}
+
 /*
 
 

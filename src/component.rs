@@ -392,24 +392,24 @@ def_components! {
 
     struct LeftShift {
         bit_width: BitWidth,
-        input_a: WireStateId,
-        input_b: WireStateId,
+        input: WireStateId,
+        shift_amount: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct LogicalRightShift {
         bit_width: BitWidth,
-        input_a: WireStateId,
-        input_b: WireStateId,
+        input: WireStateId,
+        shift_amount: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct ArithmeticRightShift {
         bit_width: BitWidth,
-        input_a: WireStateId,
-        input_b: WireStateId,
+        input: WireStateId,
+        shift_amount: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
@@ -781,6 +781,108 @@ macro_rules! carrying_binary_gate_update_impl {
                 LogicBitState::$c_in,
                 $op,
             );
+
+            let [mut output] = output_states
+                .get_mut(self.output_state, self.bit_width)
+                .expect("invalid output state ID");
+
+            match output.copy_from(&tmp_state) {
+                CopyFromResult::Unchanged => smallvec![],
+                CopyFromResult::Changed => smallvec![self.output_wire],
+            }
+        }
+    };
+}
+
+macro_rules! shifter_impl {
+    ($name:literal) => {
+        type Args<'a> = BinaryGateArgs;
+
+        fn new(
+            args: Self::Args<'_>,
+            wires: &mut WireList,
+            output_states: &mut OutputStateAllocator,
+        ) -> Result<Self, AddComponentError> {
+            let output_wire = wires
+                .get(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+            let input_wire = wires
+                .get(args.input_a)
+                .ok_or(AddComponentError::InvalidWireId)?;
+            let shift_amount_wire = wires
+                .get(args.input_b)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            if input_wire.bit_width() == BitWidth::MIN {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+            if input_wire.bit_width() != output_wire.bit_width() {
+                return Err(AddComponentError::WireWidthMismatch);
+            }
+            if shift_amount_wire.bit_width() != input_wire.bit_width().clog2().unwrap() {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+
+            let input = input_wire.state_id();
+            let shift_amount = shift_amount_wire.state_id();
+
+            let output_wire = wires
+                .get_mut(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            let output_state = output_states.alloc(output_wire.bit_width())?;
+            output_wire.add_driver(output_state);
+
+            Ok(Self {
+                bit_width: output_wire.bit_width(),
+                input,
+                shift_amount,
+                output_state,
+                output_wire: args.output,
+            })
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn node_name(&self) -> Cow<'static, str> {
+            $name.into()
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+            smallvec![(self.output_wire, "Out".into())]
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+            smallvec![
+                (self.input, format!("In").into()),
+                (self.shift_amount, format!("ShAmnt").into()),
+            ]
+        }
+
+        #[inline]
+        fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+            (self.output_state, self.output_state, self.bit_width)
+        }
+    };
+}
+
+macro_rules! shifter_update_impl {
+    ($op:expr) => {
+        fn update(
+            &mut self,
+            wire_states: WireStateView,
+            mut output_states: OutputStateViewMut,
+        ) -> inline_vec!(WireId) {
+            let mut tmp_state = InlineLogicState::undefined(self.bit_width);
+
+            let [input, _] = wire_states
+                .get(self.input, self.bit_width)
+                .expect("invalid wire state ID");
+            let [shift_amount, _] = wire_states
+                .get(self.shift_amount, self.bit_width)
+                .expect("invalid wire state ID");
+            $op(tmp_state.borrow_mut(), input, shift_amount);
 
             let [mut output] = output_states
                 .get_mut(self.output_state, self.bit_width)
@@ -1253,39 +1355,18 @@ impl Component for Mul {
 }
 
 impl Component for LeftShift {
-    binary_gate_impl!("SHL");
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    shifter_impl!("SHL");
+    shifter_update_impl!(shift_left);
 }
 
 impl Component for LogicalRightShift {
-    binary_gate_impl!("LSHR");
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    shifter_impl!("LSHR");
+    shifter_update_impl!(shift_right_logical);
 }
 
 impl Component for ArithmeticRightShift {
-    binary_gate_impl!("ASHR");
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    shifter_impl!("ASHR");
+    shifter_update_impl!(shift_right_arithmetic);
 }
 
 impl Component for HorizontalAnd {
