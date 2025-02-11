@@ -63,6 +63,7 @@ mod test;
 use component::*;
 use id::*;
 use smallvec::SmallVec;
+use std::fmt;
 use std::num::NonZeroU8;
 use std::sync::{Arc, Mutex};
 use wire::*;
@@ -276,6 +277,40 @@ impl SimulationRunResult {
     }
 }
 
+/// Errors that can occur when adding a wire to a simulator
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum AddWireError {
+    /// The memory limit for wires was reached
+    TooManyWires,
+}
+
+impl From<OutOfMemoryError> for AddWireError {
+    #[inline]
+    fn from(_: OutOfMemoryError) -> Self {
+        Self::TooManyWires
+    }
+}
+
+impl From<CapacityOverflowError> for AddWireError {
+    #[inline]
+    fn from(_: CapacityOverflowError) -> Self {
+        Self::TooManyWires
+    }
+}
+
+impl fmt::Display for AddWireError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            AddWireError::TooManyWires => "the memory limit for wires was reached",
+        };
+
+        write!(f, "{msg}")
+    }
+}
+
+impl std::error::Error for AddWireError {}
+
 /// Errors that can occur when adding a component to a simulator
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -296,17 +331,6 @@ pub enum AddComponentError {
     InvalidInputCount,
 }
 
-impl From<OutOfMemoryError> for AddComponentError {
-    #[inline]
-    fn from(_: OutOfMemoryError) -> Self {
-        Self::TooManyComponents
-    }
-}
-
-/// A specified wire ID was not part of the simulation
-#[derive(Debug, Clone)]
-pub struct InvalidWireIdError;
-
 impl From<InvalidWireIdError> for AddComponentError {
     #[inline]
     fn from(_: InvalidWireIdError) -> Self {
@@ -314,9 +338,104 @@ impl From<InvalidWireIdError> for AddComponentError {
     }
 }
 
+impl From<OutOfMemoryError> for AddComponentError {
+    #[inline]
+    fn from(_: OutOfMemoryError) -> Self {
+        Self::TooManyComponents
+    }
+}
+
+impl fmt::Display for AddComponentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            AddComponentError::TooManyComponents => "the memory limit for components was reached",
+            AddComponentError::InvalidWireId => {
+                "a specified wire ID was not part of the simulation"
+            }
+            AddComponentError::WireWidthMismatch => {
+                "two or more wires that were expected to did not have the same width"
+            }
+            AddComponentError::WireWidthIncompatible => {
+                "one or more wires had a width incompatible with the component"
+            }
+            AddComponentError::OffsetOutOfRange => {
+                "a specified offset was outside the range of its corresponding wire's width"
+            }
+            AddComponentError::TooFewInputs => "too few inputs were specified",
+            AddComponentError::InvalidInputCount => {
+                "the number of inputs was not valid for the component"
+            }
+        };
+
+        write!(f, "{msg}")
+    }
+}
+
+impl std::error::Error for AddComponentError {}
+
+/// Errors that can occurr when setting a wires drive
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub enum SetWireDriveError {
+    /// The specified wire ID was not part of the simulation
+    InvalidWireId,
+    /// The width of the logic state did not match the width of the wire
+    InvalidBitWidth,
+}
+
+impl From<InvalidWireIdError> for SetWireDriveError {
+    #[inline]
+    fn from(_: InvalidWireIdError) -> Self {
+        SetWireDriveError::InvalidWireId
+    }
+}
+
+impl fmt::Display for SetWireDriveError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let msg = match self {
+            SetWireDriveError::InvalidWireId => {
+                "the specified wire ID was not part of the simulation"
+            }
+            SetWireDriveError::InvalidBitWidth => {
+                "the width of the logic state did not match the width of the wire"
+            }
+        };
+
+        write!(f, "{msg}")
+    }
+}
+
+impl std::error::Error for SetWireDriveError {}
+
+/// The specified wire ID was not part of the simulation
+#[derive(Debug, Clone)]
+pub struct InvalidWireIdError;
+
+impl fmt::Display for InvalidWireIdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "the specified wire ID was not part of the simulation")
+    }
+}
+
+impl std::error::Error for InvalidWireIdError {}
+
+/// The result of adding a wire to a simulator
+pub type AddWireResult = Result<WireId, AddWireError>;
+
 /// A specified component ID was not part of the simulation
 #[derive(Debug, Clone)]
 pub struct InvalidComponentIdError;
+
+impl fmt::Display for InvalidComponentIdError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "the specified component ID was not part of the simulation"
+        )
+    }
+}
+
+impl std::error::Error for InvalidComponentIdError {}
 
 /// The result of adding a component to a simulator
 pub type AddComponentResult = Result<ComponentId, AddComponentError>;
@@ -367,15 +486,21 @@ impl SimulatorData {
         &mut self,
         wire: WireId,
         new_drive: impl IntoLogicStateRef<'a>,
-    ) -> Result<(), InvalidWireIdError> {
-        let wire = self.wires.get(wire).ok_or(InvalidWireIdError)?;
+    ) -> Result<(), SetWireDriveError> {
+        let wire = self
+            .wires
+            .get(wire)
+            .ok_or(SetWireDriveError::InvalidWireId)?;
         let [_, mut drive] = self
             .wire_states
             .get_mut(wire.state_id(), wire.bit_width())
             .expect("invalid wire state ID");
-        // TODO: properly report width mismatch error
 
         let new_drive = new_drive.into_logic_state_ref();
+        if new_drive.bit_width() != wire.bit_width() {
+            return Err(SetWireDriveError::InvalidBitWidth);
+        }
+
         let (src_plane_0, src_plane_1) = new_drive.bit_planes();
         let (dst_plane_0, dst_plane_1) = drive.bit_planes_mut();
         dst_plane_0.copy_from_slice(src_plane_0);
@@ -652,7 +777,7 @@ impl<VCD: std::io::Write> Simulator<VCD> {
         &mut self,
         wire: WireId,
         new_drive: impl IntoLogicStateRef<'a>,
-    ) -> Result<(), InvalidWireIdError> {
+    ) -> Result<(), SetWireDriveError> {
         self.data.set_wire_drive(wire, new_drive)
     }
 
@@ -958,7 +1083,7 @@ impl SimulatorBuilder {
         &mut self,
         wire: WireId,
         new_drive: impl IntoLogicStateRef<'a>,
-    ) -> Result<(), InvalidWireIdError> {
+    ) -> Result<(), SetWireDriveError> {
         self.data.set_wire_drive(wire, new_drive)
     }
 
@@ -1238,10 +1363,11 @@ impl SimulatorBuilder {
     /// Adds a wire to the simulation
     ///
     /// Returns `None` if the memory limit for wires has been reached
-    pub fn add_wire(&mut self, bit_width: BitWidth) -> Option<WireId> {
-        let state_id = self.data.wire_states.alloc(bit_width).ok()?;
+    pub fn add_wire(&mut self, bit_width: BitWidth) -> AddWireResult {
+        let state_id = self.data.wire_states.alloc(bit_width)?;
         let wire = Wire::new(bit_width, state_id);
-        self.data.wires.push(wire)
+        let id = self.data.wires.push(wire)?;
+        Ok(id)
     }
 
     #[inline]

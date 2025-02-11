@@ -812,7 +812,7 @@ fn mul() {
 
 #[test]
 fn left_shift() {
-    let test_data_32 = binary_gate_test_data!(WIDTH_32;
+    let test_data_32 = shifter_test_data!(WIDTH_32;
         (high_z, high_z) -> undefined,
         (high_z, undefined) -> undefined,
         (undefined, high_z) -> undefined,
@@ -838,7 +838,7 @@ fn left_shift() {
 
     test_shifter(SimulatorBuilder::add_left_shift, WIDTH_32, test_data_32, 2);
 
-    let test_data_16 = binary_gate_test_data!(WIDTH_16;
+    let test_data_16 = shifter_test_data!(WIDTH_16;
         (high_z, high_z) -> undefined,
         (high_z, undefined) -> undefined,
         (undefined, high_z) -> undefined,
@@ -867,7 +867,7 @@ fn left_shift() {
 
 #[test]
 fn logical_right_shift() {
-    let test_data_32 = binary_gate_test_data!(WIDTH_32;
+    let test_data_32 = shifter_test_data!(WIDTH_32;
         (high_z, high_z) -> undefined,
         (high_z, undefined) -> undefined,
         (undefined, high_z) -> undefined,
@@ -898,7 +898,7 @@ fn logical_right_shift() {
         2,
     );
 
-    let test_data_16 = binary_gate_test_data!(WIDTH_16;
+    let test_data_16 = shifter_test_data!(WIDTH_16;
         (high_z, high_z) -> undefined,
         (high_z, undefined) -> undefined,
         (undefined, high_z) -> undefined,
@@ -932,7 +932,7 @@ fn logical_right_shift() {
 
 #[test]
 fn arithmetic_right_shift() {
-    let test_data_32 = binary_gate_test_data!(WIDTH_32;
+    let test_data_32 = shifter_test_data!(WIDTH_32;
         (high_z, high_z) -> undefined,
         (high_z, undefined) -> undefined,
         (undefined, high_z) -> undefined,
@@ -963,7 +963,7 @@ fn arithmetic_right_shift() {
         2,
     );
 
-    let test_data_16 = binary_gate_test_data!(WIDTH_16;
+    let test_data_16 = shifter_test_data!(WIDTH_16;
         (high_z, high_z) -> undefined,
         (high_z, undefined) -> undefined,
         (undefined, high_z) -> undefined,

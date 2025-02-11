@@ -206,6 +206,8 @@ impl<T: Id> Drop for IdVec<T> {
 unsafe impl<T: Id> Send for IdVec<T> {}
 unsafe impl<T: Id> Sync for IdVec<T> {}
 
+pub(crate) struct CapacityOverflowError;
+
 macro_rules! def_id_list {
     ($list_name:ident<$id_name:ident, $t:ty>) => {
         #[repr(transparent)]
@@ -224,10 +226,14 @@ macro_rules! def_id_list {
             }
 
             #[inline]
-            pub(crate) fn push(&mut self, item: $t) -> Option<$id_name> {
-                let current_len = u32::try_from(self.0.len()).ok()?;
+            pub(crate) fn push(
+                &mut self,
+                item: $t,
+            ) -> Result<$id_name, crate::id::CapacityOverflowError> {
+                let current_len =
+                    u32::try_from(self.0.len()).map_err(|_| crate::id::CapacityOverflowError)?;
                 self.0.push(sync_unsafe_cell::SyncUnsafeCell::new(item));
-                Some($id_name(current_len))
+                Ok($id_name(current_len))
             }
 
             #[inline]
