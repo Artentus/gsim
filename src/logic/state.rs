@@ -901,6 +901,24 @@ macro_rules! copy_from_impl {
                 CopyFromResult::Unchanged
             }
         }
+
+        pub(crate) fn copy_from_one(
+            &mut self,
+            [src_plane_0, src_plane_1]: [u32; 2],
+        ) -> CopyFromResult {
+            let (dst_plane_0, dst_plane_1) = self.bit_planes_mut();
+            debug_assert_eq!(dst_plane_0.len(), 1);
+            debug_assert_eq!(dst_plane_1.len(), 1);
+
+            if (src_plane_0 != dst_plane_0[0]) || (src_plane_1 != dst_plane_1[0]) {
+                dst_plane_0[0] = src_plane_0;
+                dst_plane_1[0] = src_plane_1;
+
+                CopyFromResult::Changed
+            } else {
+                CopyFromResult::Unchanged
+            }
+        }
     };
 }
 

@@ -1162,203 +1162,6 @@ impl SimulatorBuilder {
     }
 }
 
-macro_rules! def_add_binary_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            input_a: WireId,
-            input_b: WireId,
-            output: WireId,
-        ) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input_a, input_b, output])?;
-
-            let output_state = self.data
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire_a = self.data.wires.get(input_a).ok_or(AddComponentError::InvalidWireId)?;
-            let wire_b = self.data.wires.get(input_b).ok_or(AddComponentError::InvalidWireId)?;
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input_a: wire_a.state,
-                input_b: wire_b.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input_a, id)?;
-            self.mark_driving(input_b, id)?;
-            self.mark_driver(output, output_state)?;
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_unary_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input, output])?;
-
-            let output_state = self.data
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire = self.data.wires.get(input).ok_or(AddComponentError::InvalidWireId)?;
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input: wire.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input, id)?;
-            self.mark_driver(output, output_state)?;
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_wide_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident, $wide_gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
-            if inputs.len() < 2 {
-                return Err(AddComponentError::TooFewInputs);
-            }
-
-            let width = self.check_wire_widths_match(inputs)?;
-            self.check_wire_widths_match(&[inputs[0], output])?;
-
-            let output_state = self.data
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let id = if inputs.len() == 2 {
-                let wire_a = self.data.wires.get(inputs[0]).ok_or(AddComponentError::InvalidWireId)?;
-                let wire_b = self.data.wires.get(inputs[1]).ok_or(AddComponentError::InvalidWireId)?;
-                let gate = SmallComponent::new(SmallComponentKind::$gate {
-                    input_a: wire_a.state,
-                    input_b: wire_b.state,
-                }, output);
-                self.add_small_component(gate, &[output_state])
-            } else {
-                let inputs: SmallVec<_> = inputs
-                    .iter()
-                    .map(|&input| self.data.wires.get(input).map(|wire| wire.state))
-                    .collect::<Option<_>>().ok_or(AddComponentError::InvalidWireId)?;
-                let gate = $wide_gate::new(inputs, output_state, output);
-                self.add_large_component(gate, &[output_state])
-            }?;
-
-            for &input in inputs {
-                self.mark_driving(input, id)?;
-            }
-            self.mark_driver(output, output_state)?;
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_shifter {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            input_a: WireId,
-            input_b: WireId,
-            output: WireId,
-        ) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input_a, output])?;
-            let Some(shamnt_width) = NonZeroU8::new(width.clog2()) else {
-                return Err(AddComponentError::WireWidthIncompatible);
-            };
-            self.check_wire_width_eq(input_b, shamnt_width)?;
-
-            let output_state = self.data
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire_a = self.data.wires.get(input_a).ok_or(AddComponentError::InvalidWireId)?;
-            let wire_b = self.data.wires.get(input_b).ok_or(AddComponentError::InvalidWireId)?;
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input_a: wire_a.state,
-                input_b: wire_b.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input_a, id)?;
-            self.mark_driving(input_b, id)?;
-            self.mark_driver(output, output_state)?;
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_horizontal_gate {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
-
-            let output_state = self.data
-                .output_states
-                .push(NonZeroU8::MIN)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire = self.data.wires.get(input).ok_or(AddComponentError::InvalidWireId)?;
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input: wire.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input, id)?;
-            self.mark_driver(output, output_state)?;
-
-            Ok(id)
-        }
-    };
-}
-
-macro_rules! def_add_comparator {
-    ($(#[$attr:meta])* $name:ident, $gate:ident) => {
-        $(#[$attr])*
-        pub fn $name(
-            &mut self,
-            input_a: WireId,
-            input_b: WireId,
-            output: WireId,
-        ) -> AddComponentResult {
-            let width = self.check_wire_widths_match(&[input_a, input_b])?;
-            self.check_wire_width_eq(output, NonZeroU8::MIN)?;
-
-            let output_state = self.data
-                .output_states
-                .push(width)
-                .ok_or(AddComponentError::TooManyComponents)?;
-
-            let wire_a = self.data.wires.get(input_a).ok_or(AddComponentError::InvalidWireId)?;
-            let wire_b = self.data.wires.get(input_b).ok_or(AddComponentError::InvalidWireId)?;
-            let gate = SmallComponent::new(SmallComponentKind::$gate {
-                input_a: wire_a.state,
-                input_b: wire_b.state,
-            }, output);
-            let id = self.add_small_component(gate, &[output_state])?;
-
-            self.mark_driving(input_a, id)?;
-            self.mark_driving(input_b, id)?;
-            self.mark_driver(output, output_state)?;
-
-            Ok(id)
-        }
-    };
-}
-
 impl SimulatorBuilder {
     /// Adds a wire to the simulation
     ///
@@ -1594,6 +1397,60 @@ impl SimulatorBuilder {
             input_b: shift_amount,
             output,
         })
+    }
+
+    /// Adds a `Horizontal AND Gate` component to the simulation
+    pub fn add_horizontal_and_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<HorizontalAnd>(UnaryGateArgs { input, output })
+    }
+
+    /// Adds a `Horizontal OR Gate` component to the simulation
+    pub fn add_horizontal_or_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<HorizontalOr>(UnaryGateArgs { input, output })
+    }
+
+    /// Adds a `Horizontal XOR Gate` component to the simulation
+    pub fn add_horizontal_xor_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<HorizontalXor>(UnaryGateArgs { input, output })
+    }
+
+    /// Adds a `Horizontal NAND Gate` component to the simulation
+    pub fn add_horizontal_nand_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<HorizontalNand>(UnaryGateArgs { input, output })
+    }
+
+    /// Adds a `Horizontal NOR Gate` component to the simulation
+    pub fn add_horizontal_nor_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<HorizontalNor>(UnaryGateArgs { input, output })
+    }
+
+    /// Adds a `Horizontal XNOR Gate` component to the simulation
+    pub fn add_horizontal_xnor_gate(
+        &mut self,
+        input: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<HorizontalXnor>(UnaryGateArgs { input, output })
     }
 
     /*
@@ -1882,42 +1739,6 @@ impl SimulatorBuilder {
 
         Ok(id)
     }
-
-    def_add_horizontal_gate!(
-        /// Adds a `Horizontal AND Gate` component to the simulation
-        add_horizontal_and_gate,
-        HorizontalAnd
-    );
-
-    def_add_horizontal_gate!(
-        /// Adds a `Horizontal OR Gate` component to the simulation
-        add_horizontal_or_gate,
-        HorizontalOr
-    );
-
-    def_add_horizontal_gate!(
-        /// Adds a `Horizontal XOR Gate` component to the simulation
-        add_horizontal_xor_gate,
-        HorizontalXor
-    );
-
-    def_add_horizontal_gate!(
-        /// Adds a `Horizontal NAND Gate` component to the simulation
-        add_horizontal_nand_gate,
-        HorizontalNand
-    );
-
-    def_add_horizontal_gate!(
-        /// Adds a `Horizontal NOR Gate` component to the simulation
-        add_horizontal_nor_gate,
-        HorizontalNor
-    );
-
-    def_add_horizontal_gate!(
-        /// Adds a `Horizontal XNOR Gate` component to the simulation
-        add_horizontal_xnor_gate,
-        HorizontalXnor
-    );
 
     def_add_comparator!(
         /// Adds an equality comparator component to the simulation

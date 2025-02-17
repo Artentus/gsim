@@ -638,6 +638,90 @@ macro_rules! unary_gate_impl {
     };
 }
 
+macro_rules! horizontal_gate_impl {
+    ($name:literal) => {
+        type Args<'a> = UnaryGateArgs;
+
+        fn new(
+            args: Self::Args<'_>,
+            wires: &mut WireList,
+            output_states: &mut OutputStateAllocator,
+        ) -> Result<Self, AddComponentError> {
+            let output_wire = wires
+                .get(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+            let input_wire = wires
+                .get(args.input)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            if output_wire.bit_width() != BitWidth::MIN {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+
+            let bit_width = input_wire.bit_width();
+            let input = input_wire.state_id();
+
+            let output_wire = wires
+                .get_mut(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            let output_state = output_states.alloc(output_wire.bit_width())?;
+            output_wire.add_driver(output_state);
+
+            Ok(Self {
+                bit_width,
+                input,
+                output_state,
+                output_wire: args.output,
+            })
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn node_name(&self) -> Cow<'static, str> {
+            $name.into()
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+            smallvec![(self.output_wire, "Out".into())]
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+            smallvec![(self.input, format!("In").into())]
+        }
+
+        #[inline]
+        fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+            (self.output_state, self.output_state, self.bit_width)
+        }
+    };
+}
+
+macro_rules! horizontal_gate_update_impl {
+    ($op:expr, $init:expr, $invert:literal) => {
+        fn update(
+            &mut self,
+            wire_states: WireStateView,
+            mut output_states: OutputStateViewMut,
+        ) -> inline_vec!(WireId) {
+            let [input, _] = wire_states
+                .get(self.input, self.bit_width)
+                .expect("invalid wire state ID");
+            let new_state = horizontal_op::<{ $init }, $invert>(input, $op);
+
+            let [mut output] = output_states
+                .get_mut(self.output_state, self.bit_width)
+                .expect("invalid output state ID");
+
+            match output.copy_from_one(new_state) {
+                CopyFromResult::Unchanged => smallvec![],
+                CopyFromResult::Changed => smallvec![self.output_wire],
+            }
+        }
+    };
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct BinaryGateArgs {
     pub(crate) input_a: WireId,
@@ -1370,243 +1454,33 @@ impl Component for ArithmeticRightShift {
 }
 
 impl Component for HorizontalAnd {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    horizontal_gate_impl!("HAND");
+    horizontal_gate_update_impl!(logic_and, u32::MAX, false);
 }
 
 impl Component for HorizontalOr {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    horizontal_gate_impl!("HOR");
+    horizontal_gate_update_impl!(logic_or, u32::MIN, false);
 }
 
 impl Component for HorizontalXor {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    horizontal_gate_impl!("HXOR");
+    horizontal_gate_update_impl!(logic_xor, u32::MIN, false);
 }
 
 impl Component for HorizontalNand {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    horizontal_gate_impl!("HNAND");
+    horizontal_gate_update_impl!(logic_and, u32::MAX, true);
 }
 
 impl Component for HorizontalNor {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    horizontal_gate_impl!("HNOR");
+    horizontal_gate_update_impl!(logic_or, u32::MIN, true);
 }
 
 impl Component for HorizontalXnor {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    horizontal_gate_impl!("HXNOR");
+    horizontal_gate_update_impl!(logic_xor, u32::MIN, true);
 }
 
 impl Component for CompareEqual {

@@ -995,6 +995,396 @@ fn arithmetic_right_shift() {
     );
 }
 
+#[test]
+fn horizontal_and_gate() {
+    let test_data_even = horizontal_gate_test_data!(WIDTH_4;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_0,
+        logic_1 -> logic_1,
+
+        0b1111 -> 1,
+
+        0b1110 -> 0,
+        0b1101 -> 0,
+        0b1011 -> 0,
+        0b0111 -> 0,
+
+        0b1100 -> 0,
+        0b1010 -> 0,
+        0b0110 -> 0,
+
+        0b1000 -> 0,
+        0b0100 -> 0,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_and_gate,
+        WIDTH_4,
+        test_data_even,
+        2,
+    );
+
+    let test_data_odd = horizontal_gate_test_data!(WIDTH_5;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_0,
+        logic_1 -> logic_1,
+
+        0b11111 -> 1,
+
+        0b11110 -> 0,
+        0b11101 -> 0,
+        0b11011 -> 0,
+        0b10111 -> 0,
+        0b01111 -> 0,
+
+        0b11100 -> 0,
+        0b11010 -> 0,
+        0b10110 -> 0,
+        0b01110 -> 0,
+
+        0b11000 -> 0,
+        0b10100 -> 0,
+        0b01100 -> 0,
+
+        0b10000 -> 0,
+        0b01000 -> 0,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_and_gate,
+        WIDTH_5,
+        test_data_odd,
+        2,
+    );
+}
+
+#[test]
+fn horizontal_or_gate() {
+    let test_data_even = horizontal_gate_test_data!(WIDTH_4;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_0,
+        logic_1 -> logic_1,
+
+        0b0000 -> 0,
+
+        0b0001 -> 1,
+        0b0010 -> 1,
+        0b0100 -> 1,
+        0b1000 -> 1,
+
+        0b0011 -> 1,
+        0b0101 -> 1,
+        0b1001 -> 1,
+
+        0b0111 -> 1,
+        0b1011 -> 1,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_or_gate,
+        WIDTH_4,
+        test_data_even,
+        2,
+    );
+
+    let test_data_odd = horizontal_gate_test_data!(WIDTH_5;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_0,
+        logic_1 -> logic_1,
+
+        0b00000 -> 0,
+
+        0b00001 -> 1,
+        0b00010 -> 1,
+        0b00100 -> 1,
+        0b01000 -> 1,
+        0b10000 -> 1,
+
+        0b00011 -> 1,
+        0b00101 -> 1,
+        0b01001 -> 1,
+        0b10001 -> 1,
+
+        0b00111 -> 1,
+        0b01011 -> 1,
+        0b10011 -> 1,
+
+        0b01111 -> 1,
+        0b10111 -> 1,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_or_gate,
+        WIDTH_5,
+        test_data_odd,
+        2,
+    );
+}
+
+#[test]
+fn horizontal_xor_gate() {
+    let test_data_even = horizontal_gate_test_data!(WIDTH_4;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_0,
+        logic_1 -> logic_0,
+
+        0b0000 -> 0,
+
+        0b0001 -> 1,
+        0b0010 -> 1,
+        0b0100 -> 1,
+        0b1000 -> 1,
+
+        0b0011 -> 0,
+        0b0101 -> 0,
+        0b1001 -> 0,
+
+        0b0111 -> 1,
+        0b1011 -> 1,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_xor_gate,
+        WIDTH_4,
+        test_data_even,
+        2,
+    );
+
+    let test_data_odd = horizontal_gate_test_data!(WIDTH_5;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_0,
+        logic_1 -> logic_1,
+
+        0b00000 -> 0,
+
+        0b00001 -> 1,
+        0b00010 -> 1,
+        0b00100 -> 1,
+        0b01000 -> 1,
+        0b10000 -> 1,
+
+        0b00011 -> 0,
+        0b00101 -> 0,
+        0b01001 -> 0,
+        0b10001 -> 0,
+
+        0b00111 -> 1,
+        0b01011 -> 1,
+        0b10011 -> 1,
+
+        0b01111 -> 0,
+        0b10111 -> 0,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_xor_gate,
+        WIDTH_5,
+        test_data_odd,
+        2,
+    );
+}
+
+#[test]
+fn horizontal_nand_gate() {
+    let test_data_even = horizontal_gate_test_data!(WIDTH_4;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_1,
+        logic_1 -> logic_0,
+
+        0b1111 -> 0,
+
+        0b1110 -> 1,
+        0b1101 -> 1,
+        0b1011 -> 1,
+        0b0111 -> 1,
+
+        0b1100 -> 1,
+        0b1010 -> 1,
+        0b0110 -> 1,
+
+        0b1000 -> 1,
+        0b0100 -> 1,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_nand_gate,
+        WIDTH_4,
+        test_data_even,
+        2,
+    );
+
+    let test_data_odd = horizontal_gate_test_data!(WIDTH_5;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_1,
+        logic_1 -> logic_0,
+
+        0b11111 -> 0,
+
+        0b11110 -> 1,
+        0b11101 -> 1,
+        0b11011 -> 1,
+        0b10111 -> 1,
+        0b01111 -> 1,
+
+        0b11100 -> 1,
+        0b11010 -> 1,
+        0b10110 -> 1,
+        0b01110 -> 1,
+
+        0b11000 -> 1,
+        0b10100 -> 1,
+        0b01100 -> 1,
+
+        0b10000 -> 1,
+        0b01000 -> 1,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_nand_gate,
+        WIDTH_5,
+        test_data_odd,
+        2,
+    );
+}
+
+#[test]
+fn horizontal_nor_gate() {
+    let test_data_even = horizontal_gate_test_data!(WIDTH_4;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_1,
+        logic_1 -> logic_0,
+
+        0b0000 -> 1,
+
+        0b0001 -> 0,
+        0b0010 -> 0,
+        0b0100 -> 0,
+        0b1000 -> 0,
+
+        0b0011 -> 0,
+        0b0101 -> 0,
+        0b1001 -> 0,
+
+        0b0111 -> 0,
+        0b1011 -> 0,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_nor_gate,
+        WIDTH_4,
+        test_data_even,
+        2,
+    );
+
+    let test_data_odd = horizontal_gate_test_data!(WIDTH_5;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_1,
+        logic_1 -> logic_0,
+
+        0b00000 -> 1,
+
+        0b00001 -> 0,
+        0b00010 -> 0,
+        0b00100 -> 0,
+        0b01000 -> 0,
+        0b10000 -> 0,
+
+        0b00011 -> 0,
+        0b00101 -> 0,
+        0b01001 -> 0,
+        0b10001 -> 0,
+
+        0b00111 -> 0,
+        0b01011 -> 0,
+        0b10011 -> 0,
+
+        0b01111 -> 0,
+        0b10111 -> 0,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_nor_gate,
+        WIDTH_5,
+        test_data_odd,
+        2,
+    );
+}
+
+#[test]
+fn horizontal_xnor_gate() {
+    let test_data_even = horizontal_gate_test_data!(WIDTH_4;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_1,
+        logic_1 -> logic_1,
+
+        0b0000 -> 1,
+
+        0b0001 -> 0,
+        0b0010 -> 0,
+        0b0100 -> 0,
+        0b1000 -> 0,
+
+        0b0011 -> 1,
+        0b0101 -> 1,
+        0b1001 -> 1,
+
+        0b0111 -> 0,
+        0b1011 -> 0,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_xnor_gate,
+        WIDTH_4,
+        test_data_even,
+        2,
+    );
+
+    let test_data_odd = horizontal_gate_test_data!(WIDTH_5;
+        high_z -> undefined,
+        undefined -> undefined,
+        logic_0 -> logic_1,
+        logic_1 -> logic_0,
+
+        0b00000 -> 1,
+
+        0b00001 -> 0,
+        0b00010 -> 0,
+        0b00100 -> 0,
+        0b01000 -> 0,
+        0b10000 -> 0,
+
+        0b00011 -> 1,
+        0b00101 -> 1,
+        0b01001 -> 1,
+        0b10001 -> 1,
+
+        0b00111 -> 0,
+        0b01011 -> 0,
+        0b10011 -> 0,
+
+        0b01111 -> 1,
+        0b10111 -> 1,
+    );
+
+    test_horizontal_gate(
+        SimulatorBuilder::add_horizontal_xnor_gate,
+        WIDTH_5,
+        test_data_odd,
+        2,
+    );
+}
+
 /*
 #[test]
 fn slice() {
@@ -1719,396 +2109,6 @@ fn register() {
             "[TEST {i}] register data differs from output",
         );
     }
-}
-
-#[test]
-fn horizontal_and_gate() {
-    const TEST_DATA_EVEN: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_0,
-        LOGIC_1 -> LOGIC_1,
-
-        0b1111 -> 1,
-
-        0b1110 -> 0,
-        0b1101 -> 0,
-        0b1011 -> 0,
-        0b0111 -> 0,
-
-        0b1100 -> 0,
-        0b1010 -> 0,
-        0b0110 -> 0,
-
-        0b1000 -> 0,
-        0b0100 -> 0,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_and_gate,
-        WIDTH_4,
-        TEST_DATA_EVEN,
-        2,
-    );
-
-    const TEST_DATA_ODD: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_0,
-        LOGIC_1 -> LOGIC_1,
-
-        0b11111 -> 1,
-
-        0b11110 -> 0,
-        0b11101 -> 0,
-        0b11011 -> 0,
-        0b10111 -> 0,
-        0b01111 -> 0,
-
-        0b11100 -> 0,
-        0b11010 -> 0,
-        0b10110 -> 0,
-        0b01110 -> 0,
-
-        0b11000 -> 0,
-        0b10100 -> 0,
-        0b01100 -> 0,
-
-        0b10000 -> 0,
-        0b01000 -> 0,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_and_gate,
-        WIDTH_5,
-        TEST_DATA_ODD,
-        2,
-    );
-}
-
-#[test]
-fn horizontal_or_gate() {
-    const TEST_DATA_EVEN: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_0,
-        LOGIC_1 -> LOGIC_1,
-
-        0b0000 -> 0,
-
-        0b0001 -> 1,
-        0b0010 -> 1,
-        0b0100 -> 1,
-        0b1000 -> 1,
-
-        0b0011 -> 1,
-        0b0101 -> 1,
-        0b1001 -> 1,
-
-        0b0111 -> 1,
-        0b1011 -> 1,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_or_gate,
-        WIDTH_4,
-        TEST_DATA_EVEN,
-        2,
-    );
-
-    const TEST_DATA_ODD: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_0,
-        LOGIC_1 -> LOGIC_1,
-
-        0b00000 -> 0,
-
-        0b00001 -> 1,
-        0b00010 -> 1,
-        0b00100 -> 1,
-        0b01000 -> 1,
-        0b10000 -> 1,
-
-        0b00011 -> 1,
-        0b00101 -> 1,
-        0b01001 -> 1,
-        0b10001 -> 1,
-
-        0b00111 -> 1,
-        0b01011 -> 1,
-        0b10011 -> 1,
-
-        0b01111 -> 1,
-        0b10111 -> 1,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_or_gate,
-        WIDTH_5,
-        TEST_DATA_ODD,
-        2,
-    );
-}
-
-#[test]
-fn horizontal_xor_gate() {
-    const TEST_DATA_EVEN: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_0,
-        LOGIC_1 -> LOGIC_0,
-
-        0b0000 -> 0,
-
-        0b0001 -> 1,
-        0b0010 -> 1,
-        0b0100 -> 1,
-        0b1000 -> 1,
-
-        0b0011 -> 0,
-        0b0101 -> 0,
-        0b1001 -> 0,
-
-        0b0111 -> 1,
-        0b1011 -> 1,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_xor_gate,
-        WIDTH_4,
-        TEST_DATA_EVEN,
-        2,
-    );
-
-    const TEST_DATA_ODD: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_0,
-        LOGIC_1 -> LOGIC_1,
-
-        0b00000 -> 0,
-
-        0b00001 -> 1,
-        0b00010 -> 1,
-        0b00100 -> 1,
-        0b01000 -> 1,
-        0b10000 -> 1,
-
-        0b00011 -> 0,
-        0b00101 -> 0,
-        0b01001 -> 0,
-        0b10001 -> 0,
-
-        0b00111 -> 1,
-        0b01011 -> 1,
-        0b10011 -> 1,
-
-        0b01111 -> 0,
-        0b10111 -> 0,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_xor_gate,
-        WIDTH_5,
-        TEST_DATA_ODD,
-        2,
-    );
-}
-
-#[test]
-fn horizontal_nand_gate() {
-    const TEST_DATA_EVEN: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_0,
-
-        0b1111 -> 0,
-
-        0b1110 -> 1,
-        0b1101 -> 1,
-        0b1011 -> 1,
-        0b0111 -> 1,
-
-        0b1100 -> 1,
-        0b1010 -> 1,
-        0b0110 -> 1,
-
-        0b1000 -> 1,
-        0b0100 -> 1,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_nand_gate,
-        WIDTH_4,
-        TEST_DATA_EVEN,
-        2,
-    );
-
-    const TEST_DATA_ODD: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_0,
-
-        0b11111 -> 0,
-
-        0b11110 -> 1,
-        0b11101 -> 1,
-        0b11011 -> 1,
-        0b10111 -> 1,
-        0b01111 -> 1,
-
-        0b11100 -> 1,
-        0b11010 -> 1,
-        0b10110 -> 1,
-        0b01110 -> 1,
-
-        0b11000 -> 1,
-        0b10100 -> 1,
-        0b01100 -> 1,
-
-        0b10000 -> 1,
-        0b01000 -> 1,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_nand_gate,
-        WIDTH_5,
-        TEST_DATA_ODD,
-        2,
-    );
-}
-
-#[test]
-fn horizontal_nor_gate() {
-    const TEST_DATA_EVEN: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_0,
-
-        0b0000 -> 1,
-
-        0b0001 -> 0,
-        0b0010 -> 0,
-        0b0100 -> 0,
-        0b1000 -> 0,
-
-        0b0011 -> 0,
-        0b0101 -> 0,
-        0b1001 -> 0,
-
-        0b0111 -> 0,
-        0b1011 -> 0,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_nor_gate,
-        WIDTH_4,
-        TEST_DATA_EVEN,
-        2,
-    );
-
-    const TEST_DATA_ODD: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_0,
-
-        0b00000 -> 1,
-
-        0b00001 -> 0,
-        0b00010 -> 0,
-        0b00100 -> 0,
-        0b01000 -> 0,
-        0b10000 -> 0,
-
-        0b00011 -> 0,
-        0b00101 -> 0,
-        0b01001 -> 0,
-        0b10001 -> 0,
-
-        0b00111 -> 0,
-        0b01011 -> 0,
-        0b10011 -> 0,
-
-        0b01111 -> 0,
-        0b10111 -> 0,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_nor_gate,
-        WIDTH_5,
-        TEST_DATA_ODD,
-        2,
-    );
-}
-
-#[test]
-fn horizontal_xnor_gate() {
-    const TEST_DATA_EVEN: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_1,
-
-        0b0000 -> 1,
-
-        0b0001 -> 0,
-        0b0010 -> 0,
-        0b0100 -> 0,
-        0b1000 -> 0,
-
-        0b0011 -> 1,
-        0b0101 -> 1,
-        0b1001 -> 1,
-
-        0b0111 -> 0,
-        0b1011 -> 0,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_xnor_gate,
-        WIDTH_4,
-        TEST_DATA_EVEN,
-        2,
-    );
-
-    const TEST_DATA_ODD: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> UNDEFINED,
-        UNDEFINED -> UNDEFINED,
-        LOGIC_0 -> LOGIC_1,
-        LOGIC_1 -> LOGIC_0,
-
-        0b00000 -> 1,
-
-        0b00001 -> 0,
-        0b00010 -> 0,
-        0b00100 -> 0,
-        0b01000 -> 0,
-        0b10000 -> 0,
-
-        0b00011 -> 1,
-        0b00101 -> 1,
-        0b01001 -> 1,
-        0b10001 -> 1,
-
-        0b00111 -> 0,
-        0b01011 -> 0,
-        0b10011 -> 0,
-
-        0b01111 -> 1,
-        0b10111 -> 1,
-    );
-
-    test_horizontal_gate(
-        SimulatorBuilder::add_horizontal_xnor_gate,
-        WIDTH_5,
-        TEST_DATA_ODD,
-        2,
-    );
 }
 
 #[test]
