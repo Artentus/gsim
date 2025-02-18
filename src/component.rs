@@ -980,6 +980,105 @@ macro_rules! shifter_update_impl {
     };
 }
 
+macro_rules! cmp_impl {
+    ($name:literal) => {
+        type Args<'a> = BinaryGateArgs;
+
+        fn new(
+            args: Self::Args<'_>,
+            wires: &mut WireList,
+            output_states: &mut OutputStateAllocator,
+        ) -> Result<Self, AddComponentError> {
+            let output_wire = wires
+                .get(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+            let input_a_wire = wires
+                .get(args.input_a)
+                .ok_or(AddComponentError::InvalidWireId)?;
+            let input_b_wire = wires
+                .get(args.input_b)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            if input_a_wire.bit_width() != input_b_wire.bit_width() {
+                return Err(AddComponentError::WireWidthMismatch);
+            }
+            if output_wire.bit_width() != BitWidth::MIN {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+
+            let bit_width = input_a_wire.bit_width();
+            let input_a = input_a_wire.state_id();
+            let input_b = input_b_wire.state_id();
+
+            let output_wire = wires
+                .get_mut(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            let output_state = output_states.alloc(output_wire.bit_width())?;
+            output_wire.add_driver(output_state);
+
+            Ok(Self {
+                bit_width,
+                input_a,
+                input_b,
+                output_state,
+                output_wire: args.output,
+            })
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn node_name(&self) -> Cow<'static, str> {
+            $name.into()
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+            smallvec![(self.output_wire, "Out".into())]
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+            smallvec![
+                (self.input_a, format!("A").into()),
+                (self.input_b, format!("B").into()),
+            ]
+        }
+
+        #[inline]
+        fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+            (self.output_state, self.output_state, self.bit_width)
+        }
+    };
+}
+
+macro_rules! cmp_update_impl {
+    (|$flags:ident| $body:expr) => {
+        fn update(
+            &mut self,
+            wire_states: WireStateView,
+            mut output_states: OutputStateViewMut,
+        ) -> inline_vec!(WireId) {
+            let [input_a, _] = wire_states
+                .get(self.input_a, self.bit_width)
+                .expect("invalid wire state ID");
+            let [input_b, _] = wire_states
+                .get(self.input_b, self.bit_width)
+                .expect("invalid wire state ID");
+            let $flags = cmp_flags(input_a, input_b);
+            let new_state = $body;
+
+            let [mut output] = output_states
+                .get_mut(self.output_state, self.bit_width)
+                .expect("invalid output state ID");
+
+            match output.copy_from_bit(new_state) {
+                CopyFromResult::Unchanged => smallvec![],
+                CopyFromResult::Changed => smallvec![self.output_wire],
+            }
+        }
+    };
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct WideGateArgs<'a> {
     pub(crate) inputs: &'a [WireId],
@@ -1484,403 +1583,109 @@ impl Component for HorizontalXnor {
 }
 
 impl Component for CompareEqual {
-    type Args<'a> = ();
+    cmp_impl!("CMP-EQ");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .zero
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareNotEqual {
-    type Args<'a> = ();
+    cmp_impl!("CMP-NEQ");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .zero
+        .map(std::ops::Not::not)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareLessThan {
-    type Args<'a> = ();
+    cmp_impl!("CMP-LT");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .carry
+        .map(std::ops::Not::not)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareGreaterThan {
-    type Args<'a> = ();
+    cmp_impl!("CMP-GT");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .carry
+        .zip(flags.zero)
+        .map(|(carry, zero)| carry & !zero)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareLessThanOrEqual {
-    type Args<'a> = ();
+    cmp_impl!("CMP-LTEQ");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .carry
+        .zip(flags.zero)
+        .map(|(carry, zero)| !carry | zero)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareGreaterThanOrEqual {
-    type Args<'a> = ();
+    cmp_impl!("CMP-GTEQ");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .carry
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareLessThanSigned {
-    type Args<'a> = ();
+    cmp_impl!("SCMP-LT");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .sign
+        .zip(flags.overflow)
+        .map(|(sign, overflow)| sign != overflow)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareGreaterThanSigned {
-    type Args<'a> = ();
+    cmp_impl!("SCMP-GT");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .sign
+        .zip(flags.overflow)
+        .zip(flags.zero)
+        .map(|((sign, overflow), zero)| (sign == overflow) & !zero)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareLessThanOrEqualSigned {
-    type Args<'a> = ();
+    cmp_impl!("SCMP-LTEQ");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .sign
+        .zip(flags.overflow)
+        .zip(flags.zero)
+        .map(|((sign, overflow), zero)| (sign != overflow) | zero)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for CompareGreaterThanOrEqualSigned {
-    type Args<'a> = ();
+    cmp_impl!("SCMP-GTEQ");
 
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
-
-    fn update(
-        &mut self,
-        wire_states: WireStateView,
-        output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
-        todo!()
-    }
+    cmp_update_impl!(|flags| flags
+        .sign
+        .zip(flags.overflow)
+        .map(|(sign, overflow)| sign == overflow)
+        .map(LogicBitState::from_bool)
+        .unwrap_or(LogicBitState::Undefined));
 }
 
 impl Component for ZeroExtend {

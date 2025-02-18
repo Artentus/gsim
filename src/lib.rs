@@ -1453,6 +1453,146 @@ impl SimulatorBuilder {
         self.add_component::<HorizontalXnor>(UnaryGateArgs { input, output })
     }
 
+    /// Adds an equality comparator component to the simulation
+    pub fn add_compare_equal(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareEqual>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds an inequality comparator component to the simulation
+    pub fn add_compare_not_equal(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareNotEqual>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'less than' comparator component to the simulation
+    pub fn add_compare_less_than(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareLessThan>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'greater than' comparator component to the simulation
+    pub fn add_compare_greater_than(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareGreaterThan>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'less than or equal' comparator component to the simulation
+    pub fn add_compare_less_than_or_equal(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareLessThanOrEqual>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'greater than or equal' comparator component to the simulation
+    pub fn add_compare_greater_than_or_equal(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareGreaterThanOrEqual>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'signed less than' comparator component to the simulation
+    pub fn add_compare_less_than_signed(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareLessThanSigned>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'signed greater than' comparator component to the simulation
+    pub fn add_compare_greater_than_signed(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareGreaterThanSigned>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'signed less than or equal' comparator component to the simulation
+    pub fn add_compare_less_than_or_equal_signed(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareLessThanOrEqualSigned>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
+    /// Adds a 'signed greater than or equal' comparator component to the simulation
+    pub fn add_compare_greater_than_or_equal_signed(
+        &mut self,
+        input_a: WireId,
+        input_b: WireId,
+        output: WireId,
+    ) -> Result<ComponentId, AddComponentError> {
+        self.add_component::<CompareGreaterThanOrEqualSigned>(BinaryGateArgs {
+            input_a,
+            input_b,
+            output,
+        })
+    }
+
     /*
     /// Adds a `Slice` component to the simulation
     pub fn add_slice(&mut self, input: WireId, offset: u8, output: WireId) -> AddComponentResult {
@@ -1739,66 +1879,6 @@ impl SimulatorBuilder {
 
         Ok(id)
     }
-
-    def_add_comparator!(
-        /// Adds an equality comparator component to the simulation
-        add_compare_equal,
-        CompareEqual
-    );
-
-    def_add_comparator!(
-        /// Adds an inequality comparator component to the simulation
-        add_compare_not_equal,
-        CompareNotEqual
-    );
-
-    def_add_comparator!(
-        /// Adds a 'less than' comparator component to the simulation
-        add_compare_less_than,
-        CompareLessThan
-    );
-
-    def_add_comparator!(
-        /// Adds a 'greater than' comparator component to the simulation
-        add_compare_greater_than,
-        CompareGreaterThan
-    );
-
-    def_add_comparator!(
-        /// Adds a 'less than or equal' comparator component to the simulation
-        add_compare_less_than_or_equal,
-        CompareLessThanOrEqual
-    );
-
-    def_add_comparator!(
-        /// Adds a 'greater than or equal' comparator component to the simulation
-        add_compare_greater_than_or_equal,
-        CompareGreaterThanOrEqual
-    );
-
-    def_add_comparator!(
-        /// Adds a 'signed less than' comparator component to the simulation
-        add_compare_less_than_signed,
-        CompareLessThanSigned
-    );
-
-    def_add_comparator!(
-        /// Adds a 'signed greater than' comparator component to the simulation
-        add_compare_greater_than_signed,
-        CompareGreaterThanSigned
-    );
-
-    def_add_comparator!(
-        /// Adds a 'signed less than or equal' comparator component to the simulation
-        add_compare_less_than_or_equal_signed,
-        CompareLessThanOrEqualSigned
-    );
-
-    def_add_comparator!(
-        /// Adds a 'signed greater than or equal' comparator component to the simulation
-        add_compare_greater_than_or_equal_signed,
-        CompareGreaterThanOrEqualSigned
-    );
 
     /// Adds a `zero extension` component to the simulation
     pub fn add_zero_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {

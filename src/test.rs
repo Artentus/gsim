@@ -319,88 +319,86 @@ macro_rules! wide_gate_test_data {
 
 use wide_gate_test_data;
 
-//fn test_comparator<F>(add_comparator: F, compare_op: impl Fn(u32, u32) -> bool)
-//where
-//    F: Fn(&mut SimulatorBuilder, WireId, WireId, WireId) -> AddComponentResult,
-//{
-//    const WIDTH: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(4) };
-//
-//    let mut builder = SimulatorBuilder::default();
-//
-//    let input_a = builder.add_wire(WIDTH).unwrap();
-//    let input_b = builder.add_wire(WIDTH).unwrap();
-//    let output = builder.add_wire(NonZeroU8::MIN).unwrap();
-//    let _comparator = add_comparator(&mut builder, input_a, input_b, output).unwrap();
-//
-//    let mut sim = builder.build();
-//
-//    for a in 0..16 {
-//        for b in 0..16 {
-//            sim.set_wire_drive(input_a, &LogicState::from_int(a))
-//                .unwrap();
-//            sim.set_wire_drive(input_b, &LogicState::from_int(b))
-//                .unwrap();
-//
-//            match sim.run_sim(2) {
-//                SimulationRunResult::Ok => {}
-//                SimulationRunResult::MaxStepsReached => {
-//                    panic!("[TEST ({a}, {b})] exceeded max steps")
-//                }
-//                SimulationRunResult::Err(err) => panic!("[TEST ({a}, {b})] {err:?}"),
-//            }
-//
-//            let expected = LogicState::from_bool(compare_op(a, b));
-//            let output_state = sim.get_wire_state(output).unwrap();
-//
-//            assert!(
-//                output_state.eq(&expected, NonZeroU8::MIN),
-//                "[TEST ({a}, {b})]  expected: {}  actual: {}",
-//                expected.display_string(NonZeroU8::MIN),
-//                output_state.display_string(NonZeroU8::MIN),
-//            );
-//        }
-//    }
-//}
-//
-//fn test_signed_comparator<F>(add_comparator: F, compare_op: impl Fn(i32, i32) -> bool)
-//where
-//    F: Fn(&mut SimulatorBuilder, WireId, WireId, WireId) -> AddComponentResult,
-//{
-//    const WIDTH: NonZeroU8 = unsafe { NonZeroU8::new_unchecked(4) };
-//
-//    let mut builder = SimulatorBuilder::default();
-//
-//    let input_a = builder.add_wire(WIDTH).unwrap();
-//    let input_b = builder.add_wire(WIDTH).unwrap();
-//    let output = builder.add_wire(NonZeroU8::MIN).unwrap();
-//    let _comparator = add_comparator(&mut builder, input_a, input_b, output).unwrap();
-//
-//    let mut sim = builder.build();
-//
-//    for a in -8..8 {
-//        for b in -8..8 {
-//            sim.set_wire_drive(input_a, &LogicState::from_int(a as u32))
-//                .unwrap();
-//            sim.set_wire_drive(input_b, &LogicState::from_int(b as u32))
-//                .unwrap();
-//
-//            match sim.run_sim(2) {
-//                SimulationRunResult::Ok => {}
-//                SimulationRunResult::MaxStepsReached => {
-//                    panic!("[TEST ({a}, {b})] exceeded max steps")
-//                }
-//                SimulationRunResult::Err(err) => panic!("[TEST ({a}, {b})] {err:?}"),
-//            }
-//
-//            let expected = LogicState::from_bool(compare_op(a, b));
-//            let output_state = sim.get_wire_state(output).unwrap();
-//
-//            assert!(
-//                output_state.eq(&expected, NonZeroU8::MIN),
-//                "[TEST ({a}, {b})]  expected: {}  actual: {}",
-//                expected.display_string(NonZeroU8::MIN),
-//                output_state.display_string(NonZeroU8::MIN),
-//            );
-//        }
-//    }
-//}
+fn test_comparator<F>(add_comparator: F, compare_op: impl Fn(u32, u32) -> bool)
+where
+    F: Fn(&mut SimulatorBuilder, WireId, WireId, WireId) -> AddComponentResult,
+{
+    const WIDTH: BitWidth = bit_width!(4);
+
+    let mut builder = SimulatorBuilder::default();
+
+    let input_a = builder.add_wire(WIDTH).unwrap();
+    let input_b = builder.add_wire(WIDTH).unwrap();
+    let output = builder.add_wire(BitWidth::MIN).unwrap();
+    let _comparator = add_comparator(&mut builder, input_a, input_b, output).unwrap();
+
+    let mut sim = builder.build();
+
+    for a in 0..16 {
+        for b in 0..16 {
+            sim.set_wire_drive(input_a, &LogicState::from_u32(a, WIDTH))
+                .unwrap();
+            sim.set_wire_drive(input_b, &LogicState::from_u32(b, WIDTH))
+                .unwrap();
+
+            match sim.run_sim(2) {
+                SimulationRunResult::Ok => {}
+                SimulationRunResult::MaxStepsReached => {
+                    panic!("[TEST ({a}, {b})] exceeded max steps")
+                }
+                SimulationRunResult::Err(err) => panic!("[TEST ({a}, {b})] {err:?}"),
+            }
+
+            let expected = LogicState::from_bool(compare_op(a, b));
+            let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+            assert_eq!(
+                output_state, expected,
+                "[TEST ({a}, {b})]  expected: {}  actual: {}",
+                expected, output_state,
+            );
+        }
+    }
+}
+
+fn test_signed_comparator<F>(add_comparator: F, compare_op: impl Fn(i32, i32) -> bool)
+where
+    F: Fn(&mut SimulatorBuilder, WireId, WireId, WireId) -> AddComponentResult,
+{
+    const WIDTH: BitWidth = bit_width!(4);
+
+    let mut builder = SimulatorBuilder::default();
+
+    let input_a = builder.add_wire(WIDTH).unwrap();
+    let input_b = builder.add_wire(WIDTH).unwrap();
+    let output = builder.add_wire(BitWidth::MIN).unwrap();
+    let _comparator = add_comparator(&mut builder, input_a, input_b, output).unwrap();
+
+    let mut sim = builder.build();
+
+    for a in -8..8 {
+        for b in -8..8 {
+            sim.set_wire_drive(input_a, &LogicState::from_u32(a as u32, WIDTH))
+                .unwrap();
+            sim.set_wire_drive(input_b, &LogicState::from_u32(b as u32, WIDTH))
+                .unwrap();
+
+            match sim.run_sim(2) {
+                SimulationRunResult::Ok => {}
+                SimulationRunResult::MaxStepsReached => {
+                    panic!("[TEST ({a}, {b})] exceeded max steps")
+                }
+                SimulationRunResult::Err(err) => panic!("[TEST ({a}, {b})] {err:?}"),
+            }
+
+            let expected = LogicState::from_bool(compare_op(a, b));
+            let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+            assert_eq!(
+                output_state, expected,
+                "[TEST ({a}, {b})]  expected: {}  actual: {}",
+                expected, output_state,
+            );
+        }
+    }
+}

@@ -30,7 +30,7 @@ pub enum LogicBitState {
 
 impl LogicBitState {
     #[inline]
-    const fn from_bits(bits: u8) -> Self {
+    pub(crate) const fn from_bits(bits: u8) -> Self {
         match bits {
             0b00 => Self::Logic0,
             0b01 => Self::Logic1,
@@ -41,7 +41,7 @@ impl LogicBitState {
     }
 
     #[inline]
-    const fn to_bits(self) -> u8 {
+    pub(crate) const fn to_bits(self) -> u8 {
         self as u8
     }
 
@@ -909,6 +909,24 @@ macro_rules! copy_from_impl {
             let (dst_plane_0, dst_plane_1) = self.bit_planes_mut();
             debug_assert_eq!(dst_plane_0.len(), 1);
             debug_assert_eq!(dst_plane_1.len(), 1);
+
+            if (src_plane_0 != dst_plane_0[0]) || (src_plane_1 != dst_plane_1[0]) {
+                dst_plane_0[0] = src_plane_0;
+                dst_plane_1[0] = src_plane_1;
+
+                CopyFromResult::Changed
+            } else {
+                CopyFromResult::Unchanged
+            }
+        }
+
+        pub(crate) fn copy_from_bit(&mut self, src_bit: LogicBitState) -> CopyFromResult {
+            let (dst_plane_0, dst_plane_1) = self.bit_planes_mut();
+            debug_assert_eq!(dst_plane_0.len(), 1);
+            debug_assert_eq!(dst_plane_1.len(), 1);
+
+            let src_plane_0 = (src_bit.to_bits() & 0b1) as u32;
+            let src_plane_1 = (src_bit.to_bits() >> 1) as u32;
 
             if (src_plane_0 != dst_plane_0[0]) || (src_plane_1 != dst_plane_1[0]) {
                 dst_plane_0[0] = src_plane_0;

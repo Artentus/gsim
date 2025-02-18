@@ -1,7 +1,4 @@
 use crate::{bit_width, logic::*};
-use crate::{CLog2, SafeDivCeil};
-use itertools::izip;
-use std::num::NonZeroU8;
 use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,12 +244,17 @@ pub(super) fn logic_xnor(a: [u32; 2], b: [u32; 2]) -> [u32; 2] {
 }
 
 #[inline]
-pub(super) fn add(a: [u32; 2], b: [u32; 2], c: LogicBitState) -> ([u32; 2], LogicBitState) {
-    let (sum, c0) = a[0].overflowing_add(b[0]);
+pub(super) fn add(
+    a: [u32; 2],
+    b: [u32; 2],
+    mask: u32,
+    c: LogicBitState,
+) -> ([u32; 2], LogicBitState) {
+    let (sum, c0) = (a[0] & mask).overflowing_add(b[0] & mask);
     let (sum, c1) = sum.overflowing_add((c as u32) & 0b1);
 
     let valid_count = if c.to_bool().is_some() {
-        (a[1] | b[1]).trailing_zeros()
+        ((a[1] | b[1]) & mask).trailing_zeros()
     } else {
         0
     };
@@ -274,8 +276,13 @@ pub(super) fn add(a: [u32; 2], b: [u32; 2], c: LogicBitState) -> ([u32; 2], Logi
 }
 
 #[inline]
-pub(super) fn sub(a: [u32; 2], b: [u32; 2], c: LogicBitState) -> ([u32; 2], LogicBitState) {
-    add(a, [!b[0], b[1]], c)
+pub(super) fn sub(
+    a: [u32; 2],
+    b: [u32; 2],
+    mask: u32,
+    c: LogicBitState,
+) -> ([u32; 2], LogicBitState) {
+    add(a, [!b[0], b[1]], mask, c)
 }
 
 #[inline]
@@ -357,8 +364,8 @@ pub(super) fn carrying_binary_op(
     input_a: LogicStateRef,
     input_b: LogicStateRef,
     carry_in: LogicBitState,
-    op: impl Fn([u32; 2], [u32; 2], LogicBitState) -> ([u32; 2], LogicBitState),
-) {
+    op: impl Fn([u32; 2], [u32; 2], u32, LogicBitState) -> ([u32; 2], LogicBitState),
+) -> LogicBitState {
     assert_eq!(sum.bit_width(), input_a.bit_width());
     assert_eq!(sum.bit_width(), input_b.bit_width());
     let bit_width = sum.bit_width();
@@ -370,11 +377,27 @@ pub(super) fn carrying_binary_op(
 
     let mut carry = carry_in;
     for i in 0..word_len {
+        let mask = if i == (word_len - 1) {
+            bit_width.last_word_mask()
+        } else {
+            u32::MAX
+        };
+
         ([sum_plane_0[i], sum_plane_1[i]], carry) = op(
             [input_a_plane_0[i], input_a_plane_1[i]],
             [input_b_plane_0[i], input_b_plane_1[i]],
+            mask,
             carry,
         );
+    }
+
+    let last_word_width = bit_width.last_word_width();
+    if last_word_width >= bit_width!(u32::BITS) {
+        carry
+    } else {
+        let carry_0 = (sum_plane_0[word_len - 1] >> last_word_width.get()) as u8 & 0b1;
+        let carry_1 = (sum_plane_1[word_len - 1] >> last_word_width.get()) as u8 & 0b1;
+        LogicBitState::from_bits(carry_0 | (carry_1 << 1))
     }
 }
 
@@ -608,6 +631,7 @@ pub(super) fn shift_right_arithmetic(
     }
 }
 
+#[inline]
 pub(super) fn horizontal_op<const INIT: u32, const INVERT: bool>(
     input: LogicStateRef,
     op: impl Fn([u32; 2], [u32; 2]) -> [u32; 2],
@@ -646,4 +670,81 @@ pub(super) fn horizontal_op<const INIT: u32, const INVERT: bool>(
     result[1] &= 0b1;
 
     result
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Flags {
+    pub(super) zero: Option<bool>,
+    pub(super) carry: Option<bool>,
+    pub(super) sign: Option<bool>,
+    pub(super) overflow: Option<bool>,
+}
+
+#[inline]
+fn is_zero(state: LogicStateRef) -> Option<bool> {
+    let bit_width = state.bit_width();
+    let word_len = bit_width.word_len() as usize;
+    let (plane_0, plane_1) = state.bit_planes();
+
+    for i in 0..word_len {
+        let (word_0, word_1) = if i == (word_len - 1) {
+            let mask = bit_width.last_word_mask();
+            (plane_0[i] & mask, plane_1[i] & mask)
+        } else {
+            (plane_0[i], plane_1[i])
+        };
+
+        if word_1 != 0 {
+            return None;
+        }
+
+        if word_0 != 0 {
+            return Some(false);
+        }
+    }
+
+    Some(true)
+}
+
+#[inline]
+fn sign(state: LogicStateRef) -> Option<bool> {
+    let bit_width = state.bit_width();
+    let word_len = bit_width.word_len() as usize;
+    let shift = bit_width.last_word_width().get() - 1;
+
+    let (plane_0, plane_1) = state.bit_planes();
+    let bit_0 = ((plane_0[word_len - 1] >> shift) & 0b1) > 0;
+    let bit_1 = ((plane_1[word_len - 1] >> shift) & 0b1) > 0;
+
+    (!bit_1).then_some(bit_0)
+}
+
+#[inline]
+pub(super) fn cmp_flags(input_a: LogicStateRef, input_b: LogicStateRef) -> Flags {
+    let mut sum = InlineLogicState::logic_0(input_a.bit_width());
+    let carry = carrying_binary_op(
+        sum.borrow_mut(),
+        input_a,
+        input_b,
+        LogicBitState::Logic1,
+        sub,
+    );
+
+    let sign_a = sign(input_a);
+    let sign_b = sign(input_b).map(std::ops::Not::not);
+
+    let carry = carry.to_bool();
+    let zero = is_zero(sum.borrow());
+    let sign = sign(sum.borrow());
+    let overflow = sign_a
+        .zip(sign_b)
+        .zip(sign)
+        .map(|((sign_a, sign_b), sign)| (sign_a == sign_b) & (sign_a != sign));
+
+    Flags {
+        zero,
+        carry,
+        sign,
+        overflow,
+    }
 }

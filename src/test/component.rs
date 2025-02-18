@@ -1385,6 +1385,69 @@ fn horizontal_xnor_gate() {
     );
 }
 
+#[test]
+fn compare_equal() {
+    test_comparator(SimulatorBuilder::add_compare_equal, |a, b| a == b);
+}
+
+#[test]
+fn compare_not_equal() {
+    test_comparator(SimulatorBuilder::add_compare_not_equal, |a, b| a != b);
+}
+
+#[test]
+fn compare_less_than() {
+    test_comparator(SimulatorBuilder::add_compare_less_than, |a, b| a < b);
+}
+
+#[test]
+fn compare_greater_than() {
+    test_comparator(SimulatorBuilder::add_compare_greater_than, |a, b| a > b);
+}
+
+#[test]
+fn compare_less_than_or_equal() {
+    test_comparator(SimulatorBuilder::add_compare_less_than_or_equal, |a, b| {
+        a <= b
+    });
+}
+
+#[test]
+fn compare_greater_than_or_equal() {
+    test_comparator(
+        SimulatorBuilder::add_compare_greater_than_or_equal,
+        |a, b| a >= b,
+    );
+}
+
+#[test]
+fn compare_less_than_signed() {
+    test_signed_comparator(SimulatorBuilder::add_compare_less_than_signed, |a, b| a < b);
+}
+
+#[test]
+fn compare_greater_than_signed() {
+    test_signed_comparator(SimulatorBuilder::add_compare_greater_than_signed, |a, b| {
+        a > b
+    });
+}
+
+#[test]
+fn compare_less_than_or_equal_signed() {
+    test_signed_comparator(
+        SimulatorBuilder::add_compare_less_than_or_equal_signed,
+        |a, b| a <= b,
+    );
+}
+
+#[test]
+fn compare_greater_than_or_equal_signed() {
+    test_signed_comparator(
+        SimulatorBuilder::add_compare_greater_than_or_equal_signed,
+        |a, b| a >= b,
+    );
+}
+
 /*
 #[test]
 fn slice() {
@@ -2109,69 +2172,6 @@ fn register() {
             "[TEST {i}] register data differs from output",
         );
     }
-}
-
-#[test]
-fn compare_equal() {
-    test_comparator(SimulatorBuilder::add_compare_equal, |a, b| a == b);
-}
-
-#[test]
-fn compare_not_equal() {
-    test_comparator(SimulatorBuilder::add_compare_not_equal, |a, b| a != b);
-}
-
-#[test]
-fn compare_less_than() {
-    test_comparator(SimulatorBuilder::add_compare_less_than, |a, b| a < b);
-}
-
-#[test]
-fn compare_greater_than() {
-    test_comparator(SimulatorBuilder::add_compare_greater_than, |a, b| a > b);
-}
-
-#[test]
-fn compare_less_than_or_equal() {
-    test_comparator(SimulatorBuilder::add_compare_less_than_or_equal, |a, b| {
-        a <= b
-    });
-}
-
-#[test]
-fn compare_greater_than_or_equal() {
-    test_comparator(
-        SimulatorBuilder::add_compare_greater_than_or_equal,
-        |a, b| a >= b,
-    );
-}
-
-#[test]
-fn compare_less_than_signed() {
-    test_signed_comparator(SimulatorBuilder::add_compare_less_than_signed, |a, b| a < b);
-}
-
-#[test]
-fn compare_greater_than_signed() {
-    test_signed_comparator(SimulatorBuilder::add_compare_greater_than_signed, |a, b| {
-        a > b
-    });
-}
-
-#[test]
-fn compare_less_than_or_equal_signed() {
-    test_signed_comparator(
-        SimulatorBuilder::add_compare_less_than_or_equal_signed,
-        |a, b| a <= b,
-    );
-}
-
-#[test]
-fn compare_greater_than_or_equal_signed() {
-    test_signed_comparator(
-        SimulatorBuilder::add_compare_greater_than_or_equal_signed,
-        |a, b| a >= b,
-    );
 }
 
 #[test]
