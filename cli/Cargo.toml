@@ -1,11 +1,11 @@
 [package]
 name = "gsim-cli"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Mathis Rech"]
 license = "MIT"
 description = "Command line interface for Gsim"
-rust-version = "1.70"
+rust-version = "1.85"
 
 [dependencies]
 gsim = { path = "..", features = ["yosys-import"] }

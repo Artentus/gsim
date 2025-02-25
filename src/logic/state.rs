@@ -1,4 +1,4 @@
-use crate::{bit_width, BitWidth};
+use crate::{BitWidth, bit_width};
 use std::fmt;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -813,7 +813,12 @@ impl<'de> serde::Deserialize<'de> for LogicState {
             type Value = LogicState;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                write!(f, "a string consisting of only the chars ['0', '1', 'Z', 'z', 'X', 'x'] and of length {} to {}", BitWidth::MIN, BitWidth::MAX)
+                write!(
+                    f,
+                    "a string consisting of only the chars ['0', '1', 'Z', 'z', 'X', 'x'] and of length {} to {}",
+                    BitWidth::MIN,
+                    BitWidth::MAX
+                )
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>

@@ -5,7 +5,6 @@ use ops::*;
 
 use crate::logic::{OutputStateAllocator, OutputStateViewMut};
 use crate::*;
-use itertools::izip;
 use smallvec::smallvec;
 #[cfg(feature = "dot-export")]
 use std::borrow::Cow;
@@ -160,11 +159,9 @@ macro_rules! def_components {
         }
 
         #[derive(Default)]
+        #[allow(non_snake_case)]
         pub(crate) struct ComponentStorage {
-            $(
-                #[allow(non_snake_case)]
-                $component_name: Vec<SyncUnsafeCell<$component_name>>,
-            )+
+            $($component_name: Vec<SyncUnsafeCell<$component_name>>,)+
         }
 
         impl ComponentStorage {

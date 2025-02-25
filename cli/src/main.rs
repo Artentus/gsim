@@ -203,7 +203,7 @@ fn eval(args: ArgMatches, context: &mut Context) -> Result<Option<String>> {
     ) {
         SimulationRunResult::Ok => (),
         SimulationRunResult::MaxStepsReached => {
-            return Ok(Some("Error: simulation exceeded allowed steps".to_owned()))
+            return Ok(Some("Error: simulation exceeded allowed steps".to_owned()));
         }
         SimulationRunResult::Err(_) => {
             context.sim.reset();

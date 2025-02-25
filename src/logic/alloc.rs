@@ -1,5 +1,5 @@
 use super::{BitWidth, LogicStateMut, LogicStateRef};
-use crate::id::{def_id_type, Id};
+use crate::id::{Id, def_id_type};
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ptr::{self, NonNull};

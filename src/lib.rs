@@ -78,11 +78,7 @@ type HashMap<K, V> = ahash::AHashMap<K, V>;
 type HashSet<T> = ahash::AHashSet<T>;
 
 const fn const_max(a: usize, b: usize) -> usize {
-    if a >= b {
-        a
-    } else {
-        b
-    }
+    if a >= b { a } else { b }
 }
 
 trait InlineCount {
