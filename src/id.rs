@@ -203,6 +203,15 @@ impl<T: Id> Drop for IdVec<T> {
     }
 }
 
+impl<T: Id> std::ops::Deref for IdVec<T> {
+    type Target = [T];
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
+
 unsafe impl<T: Id> Send for IdVec<T> {}
 unsafe impl<T: Id> Sync for IdVec<T> {}
 

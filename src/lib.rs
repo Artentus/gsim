@@ -1174,10 +1174,7 @@ impl SimulatorBuilder {
     }
 
     #[inline]
-    fn add_component<T: ComponentAuto>(
-        &mut self,
-        args: T::Args<'_>,
-    ) -> Result<ComponentId, AddComponentError> {
+    fn add_component<T: ComponentAuto>(&mut self, args: T::Args<'_>) -> AddComponentResult {
         let component = T::new(args, &mut self.data.wires, &mut self.data.output_states)?;
         if let Some(id) = self.data.components.push(component) {
             args.connect_drivers(id, &mut self.data.wires)?;
@@ -1188,11 +1185,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds an `AND Gate` component to the simulation
-    pub fn add_and_gate(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_and_gate(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
         match inputs {
             &[input_a, input_b] => self.add_component::<AndGate>(BinaryGateArgs {
                 input_a,
@@ -1204,11 +1197,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds an `OR Gate` component to the simulation
-    pub fn add_or_gate(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_or_gate(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
         match inputs {
             &[input_a, input_b] => self.add_component::<OrGate>(BinaryGateArgs {
                 input_a,
@@ -1220,11 +1209,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds an `XOR Gate` component to the simulation
-    pub fn add_xor_gate(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_xor_gate(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
         match inputs {
             &[input_a, input_b] => self.add_component::<XorGate>(BinaryGateArgs {
                 input_a,
@@ -1236,11 +1221,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds a `NAND Gate` component to the simulation
-    pub fn add_nand_gate(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_nand_gate(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
         match inputs {
             &[input_a, input_b] => self.add_component::<NandGate>(BinaryGateArgs {
                 input_a,
@@ -1252,11 +1233,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds a `NOR Gate` component to the simulation
-    pub fn add_nor_gate(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_nor_gate(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
         match inputs {
             &[input_a, input_b] => self.add_component::<NorGate>(BinaryGateArgs {
                 input_a,
@@ -1268,11 +1245,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds an `XNOR Gate` component to the simulation
-    pub fn add_xnor_gate(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_xnor_gate(&mut self, inputs: &[WireId], output: WireId) -> AddComponentResult {
         match inputs {
             &[input_a, input_b] => self.add_component::<XnorGate>(BinaryGateArgs {
                 input_a,
@@ -1284,11 +1257,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds a `NOT Gate` component to the simulation
-    pub fn add_not_gate(
-        &mut self,
-        input: WireId,
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_not_gate(&mut self, input: WireId, output: WireId) -> AddComponentResult {
         self.add_component::<NotGate>(UnaryGateArgs { input, output })
     }
 
@@ -1298,7 +1267,7 @@ impl SimulatorBuilder {
         input: WireId,
         enable: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<Buffer>(BinaryGateArgs {
             input_a: input,
             input_b: enable,
@@ -1312,7 +1281,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<Add>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1326,7 +1295,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<Sub>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1335,11 +1304,7 @@ impl SimulatorBuilder {
     }
 
     /// Adds a `NEG` component to the simulation
-    pub fn add_neg(
-        &mut self,
-        input: WireId,
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_neg(&mut self, input: WireId, output: WireId) -> AddComponentResult {
         self.add_component::<Neg>(UnaryGateArgs { input, output })
     }
 
@@ -1349,7 +1314,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<Mul>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1363,7 +1328,7 @@ impl SimulatorBuilder {
         input: WireId,
         shift_amount: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<LeftShift>(BinaryGateArgs {
             input_a: input,
             input_b: shift_amount,
@@ -1377,7 +1342,7 @@ impl SimulatorBuilder {
         input: WireId,
         shift_amount: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<LogicalRightShift>(BinaryGateArgs {
             input_a: input,
             input_b: shift_amount,
@@ -1391,7 +1356,7 @@ impl SimulatorBuilder {
         input: WireId,
         shift_amount: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<ArithmeticRightShift>(BinaryGateArgs {
             input_a: input,
             input_b: shift_amount,
@@ -1400,29 +1365,17 @@ impl SimulatorBuilder {
     }
 
     /// Adds a `Horizontal AND Gate` component to the simulation
-    pub fn add_horizontal_and_gate(
-        &mut self,
-        input: WireId,
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_horizontal_and_gate(&mut self, input: WireId, output: WireId) -> AddComponentResult {
         self.add_component::<HorizontalAnd>(UnaryGateArgs { input, output })
     }
 
     /// Adds a `Horizontal OR Gate` component to the simulation
-    pub fn add_horizontal_or_gate(
-        &mut self,
-        input: WireId,
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_horizontal_or_gate(&mut self, input: WireId, output: WireId) -> AddComponentResult {
         self.add_component::<HorizontalOr>(UnaryGateArgs { input, output })
     }
 
     /// Adds a `Horizontal XOR Gate` component to the simulation
-    pub fn add_horizontal_xor_gate(
-        &mut self,
-        input: WireId,
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_horizontal_xor_gate(&mut self, input: WireId, output: WireId) -> AddComponentResult {
         self.add_component::<HorizontalXor>(UnaryGateArgs { input, output })
     }
 
@@ -1431,16 +1384,12 @@ impl SimulatorBuilder {
         &mut self,
         input: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<HorizontalNand>(UnaryGateArgs { input, output })
     }
 
     /// Adds a `Horizontal NOR Gate` component to the simulation
-    pub fn add_horizontal_nor_gate(
-        &mut self,
-        input: WireId,
-        output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    pub fn add_horizontal_nor_gate(&mut self, input: WireId, output: WireId) -> AddComponentResult {
         self.add_component::<HorizontalNor>(UnaryGateArgs { input, output })
     }
 
@@ -1449,7 +1398,7 @@ impl SimulatorBuilder {
         &mut self,
         input: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<HorizontalXnor>(UnaryGateArgs { input, output })
     }
 
@@ -1459,7 +1408,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareEqual>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1473,7 +1422,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareNotEqual>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1487,7 +1436,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareLessThan>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1501,7 +1450,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareGreaterThan>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1515,7 +1464,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareLessThanOrEqual>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1529,7 +1478,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareGreaterThanOrEqual>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1543,7 +1492,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareLessThanSigned>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1557,7 +1506,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareGreaterThanSigned>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1571,7 +1520,7 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareLessThanOrEqualSigned>(BinaryGateArgs {
             input_a,
             input_b,
@@ -1585,10 +1534,24 @@ impl SimulatorBuilder {
         input_a: WireId,
         input_b: WireId,
         output: WireId,
-    ) -> Result<ComponentId, AddComponentError> {
+    ) -> AddComponentResult {
         self.add_component::<CompareGreaterThanOrEqualSigned>(BinaryGateArgs {
             input_a,
             input_b,
+            output,
+        })
+    }
+
+    /// Adds a `Multiplexer` component to the simulation
+    pub fn add_multiplexer(
+        &mut self,
+        inputs: &[WireId],
+        select: WireId,
+        output: WireId,
+    ) -> AddComponentResult {
+        self.add_component::<Multiplexer>(MultiplexerArgs {
+            select,
+            inputs,
             output,
         })
     }
@@ -1729,58 +1692,6 @@ impl SimulatorBuilder {
         self.mark_driving(carry_in, id)?;
         self.mark_driver(output, output_state)?;
         self.mark_driver(carry_out, cout_state)?;
-
-        Ok(id)
-    }
-
-    /// Adds a `Multiplexer` component to the simulation
-    pub fn add_multiplexer(
-        &mut self,
-        inputs: &[WireId],
-        select: WireId,
-        output: WireId,
-    ) -> AddComponentResult {
-        if !inputs.len().is_power_of_two() {
-            return Err(AddComponentError::InvalidInputCount);
-        }
-
-        let expected_select_bits = inputs.len().ilog2();
-        if expected_select_bits > (Atom::BITS.get() as u32) {
-            return Err(AddComponentError::InvalidInputCount);
-        }
-
-        let select_width = self.get_wire_width(select)?;
-        if (select_width.get() as u32) != expected_select_bits {
-            return Err(AddComponentError::InvalidInputCount);
-        }
-
-        let width = self.check_wire_widths_match(inputs)?;
-        self.check_wire_widths_match(&[inputs[0], output])?;
-
-        let output_state = self
-            .data
-            .output_states
-            .push(width)
-            .ok_or(AddComponentError::TooManyComponents)?;
-
-        let wires: SmallVec<_> = inputs
-            .iter()
-            .map(|&input| self.data.wires.get(input).map(|wire| wire.state))
-            .collect::<Option<_>>()
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let wire_sel = self
-            .data
-            .wires
-            .get(select)
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let mux = Multiplexer::new(wires, wire_sel.state, output_state, output);
-        let id = self.add_large_component(mux, &[output_state])?;
-
-        for &input in inputs {
-            self.mark_driving(input, id)?;
-        }
-        self.mark_driving(select, id)?;
-        self.mark_driver(output, output_state)?;
 
         Ok(id)
     }

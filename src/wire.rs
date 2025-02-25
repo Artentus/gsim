@@ -56,12 +56,12 @@ impl Wire {
 
     #[inline]
     pub(crate) fn drivers(&self) -> &[OutputStateId] {
-        self.drivers.as_slice()
+        &self.drivers
     }
 
     #[inline]
     pub(crate) fn driving(&self) -> &[ComponentId] {
-        self.driving.as_slice()
+        &self.driving
     }
 
     pub(crate) fn add_driver(&mut self, output: OutputStateId) {

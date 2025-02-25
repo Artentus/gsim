@@ -549,6 +549,15 @@ def_components! {
         output_state: OutputStateId,
         output_wire: WireId,
     }
+
+    struct Multiplexer {
+        bit_width: BitWidth,
+        select_width: BitWidth,
+        select: WireStateId,
+        inputs: IdVec<WireStateId>,
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
 }
 
 impl ComponentArgs for () {
@@ -1239,6 +1248,31 @@ macro_rules! wide_gate_inv_update_impl {
     };
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct MultiplexerArgs<'a> {
+    pub(crate) select: WireId,
+    pub(crate) inputs: &'a [WireId],
+    pub(crate) output: WireId,
+}
+
+impl ComponentArgs for MultiplexerArgs<'_> {
+    fn connect_drivers(
+        self,
+        component: ComponentId,
+        wires: &mut WireList,
+    ) -> Result<(), AddComponentError> {
+        let select_wire = wires.get_mut(self.select).ok_or(InvalidWireIdError)?;
+        select_wire.add_driving(component);
+
+        for &input in self.inputs {
+            let wire = wires.get_mut(input).ok_or(InvalidWireIdError)?;
+            wire.add_driving(component);
+        }
+
+        Ok(())
+    }
+}
+
 impl Component for AndGate {
     binary_gate_impl!("AND");
     binary_gate_update_impl!(logic_and);
@@ -1765,6 +1799,122 @@ impl Component for SignExtend {
         output_states: OutputStateViewMut,
     ) -> inline_vec!(WireId) {
         todo!()
+    }
+}
+
+impl Component for Multiplexer {
+    type Args<'a> = MultiplexerArgs<'a>;
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        let output_wire = wires
+            .get(args.output)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let select_wire = wires
+            .get(args.select)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let select_width = select_wire.bit_width();
+        if select_width.get() > u32::BITS {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        let expected_input_count = 1u64 << select_width.get();
+        if (args.inputs.len() as u64) != expected_input_count {
+            return Err(AddComponentError::InvalidInputCount);
+        }
+        let select = select_wire.state_id();
+
+        let mut inputs = IdVec::new();
+        for &input in args.inputs {
+            let input_wire = wires.get(input).ok_or(AddComponentError::InvalidWireId)?;
+
+            if input_wire.bit_width() != output_wire.bit_width() {
+                return Err(AddComponentError::WireWidthMismatch);
+            }
+
+            inputs.push(input_wire.state_id());
+        }
+
+        let output_wire = wires
+            .get_mut(args.output)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let output_state = output_states.alloc(output_wire.bit_width())?;
+        output_wire.add_driver(output_state);
+
+        Ok(Self {
+            bit_width: output_wire.bit_width(),
+            select_width,
+            select,
+            inputs,
+            output_state,
+            output_wire: args.output,
+        })
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> Cow<'static, str> {
+        "MUX".into()
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        smallvec![(self.output_wire, "Out".into())]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        std::iter::once((self.select, "Select".into()))
+            .chain(
+                self.inputs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, input)| (input, format!("In{i}").into())),
+            )
+            .collect()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.bit_width)
+    }
+
+    fn update(
+        &mut self,
+        wire_states: WireStateView,
+        mut output_states: OutputStateViewMut,
+    ) -> inline_vec!(WireId) {
+        let mut tmp_state = InlineLogicState::undefined(self.bit_width);
+
+        let [select, _] = wire_states
+            .get(self.select, self.select_width)
+            .expect("invalid wire state ID");
+        let (select_plane_0, select_plane_1) = select.bit_planes();
+
+        let select_mask = self.select_width.last_word_mask();
+        let select = select_plane_0[0] & select_mask;
+        let select_valid = select_plane_1[0] & select_mask;
+
+        let [mut output] = output_states
+            .get_mut(self.output_state, self.bit_width)
+            .expect("invalid output state ID");
+
+        if select_valid == 0 {
+            let [input, _] = wire_states
+                .get(self.inputs[select as usize], self.bit_width)
+                .expect("invalid wire state ID");
+            unary_op(tmp_state.borrow_mut(), input, high_z_to_undefined);
+        }
+
+        match output.copy_from(&tmp_state) {
+            CopyFromResult::Unchanged => smallvec![],
+            CopyFromResult::Changed => smallvec![self.output_wire],
+        }
     }
 }
 

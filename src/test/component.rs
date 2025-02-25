@@ -1448,6 +1448,95 @@ fn compare_greater_than_or_equal_signed() {
     );
 }
 
+#[test]
+fn multiplexer() {
+    struct TestData<'a> {
+        inputs: &'a [LogicState],
+        select: LogicState,
+        output: LogicState,
+    }
+
+    macro_rules! test_data {
+        ($(([$($i:tt),+ $(,)?], $s:tt) -> $o:tt),* $(,)?) => {
+            &[
+                $({
+                    const INPUT_COUNT: usize = [$(stringify!($i)),+].len();
+
+                    TestData {
+                        inputs: &[$(logic_state!(WIDTH_32; $i)),+],
+                        select: logic_state!(bit_width!(INPUT_COUNT.ilog2()); $s),
+                        output: logic_state!(WIDTH_32; $o),
+                    }
+                },)*
+            ]
+        };
+    }
+
+    let test_data = test_data!(
+        ([high_z, high_z], high_z) -> undefined,
+        ([high_z, high_z], undefined) -> undefined,
+        ([high_z, undefined], high_z) -> undefined,
+        ([high_z, undefined], undefined) -> undefined,
+        ([undefined, high_z], high_z) -> undefined,
+        ([undefined, high_z], undefined) -> undefined,
+        ([undefined, undefined], high_z) -> undefined,
+        ([undefined, undefined], undefined) -> undefined,
+
+        ([high_z, high_z], 0) -> undefined,
+        ([high_z, high_z], 1) -> undefined,
+
+        ([high_z, undefined], 0) -> undefined,
+        ([high_z, undefined], 1) -> undefined,
+
+        ([undefined, high_z], 0) -> undefined,
+        ([undefined, high_z], 1) -> undefined,
+
+        ([undefined, undefined], 0) -> undefined,
+        ([undefined, undefined], 1) -> undefined,
+
+        ([0x55, 0xAA], 0) -> 0x55,
+        ([0x55, 0xAA], 1) -> 0xAA,
+
+        ([1, 2, 3, 4], 0) -> 1,
+        ([1, 2, 3, 4], 1) -> 2,
+        ([1, 2, 3, 4], 2) -> 3,
+        ([1, 2, 3, 4], 3) -> 4,
+    );
+
+    for (i, test_data) in test_data.iter().enumerate() {
+        let mut builder = SimulatorBuilder::default();
+
+        let inputs: Vec<_> = test_data
+            .inputs
+            .iter()
+            .map(|drive| {
+                let wire = builder.add_wire(WIDTH_32).unwrap();
+                builder.set_wire_drive(wire, drive).unwrap();
+                wire
+            })
+            .collect();
+        let select = builder.add_wire(test_data.select.bit_width()).unwrap();
+        builder.set_wire_drive(select, &test_data.select).unwrap();
+        let output = builder.add_wire(WIDTH_32).unwrap();
+        let _mux = builder.add_multiplexer(&inputs, select, output).unwrap();
+
+        let mut sim = builder.build();
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+        assert_eq!(
+            output_state, test_data.output,
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output, output_state,
+        );
+    }
+}
+
 /*
 #[test]
 fn slice() {
@@ -1829,96 +1918,6 @@ fn adder() {
             "[TEST {i}]  expected: {}  actual: {}",
             test_data.carry_out.display_string(WIDTH_1),
             carry_out_state.display_string(WIDTH_1),
-        );
-    }
-}
-
-#[test]
-fn multiplexer() {
-    struct TestData {
-        inputs: &'static [LogicState],
-        select: LogicState,
-        output: LogicState,
-    }
-
-    macro_rules! test_data {
-        ($(([$($i:tt),+ $(,)?], $s:tt) -> $o:tt),* $(,)?) => {
-            &[
-                $(
-                    TestData {
-                        inputs: &[$(logic_state!($i)),+],
-                        select: logic_state!($s),
-                        output: logic_state!($o),
-                    },
-                )*
-            ]
-        };
-    }
-
-    const TEST_DATA: &[TestData] = test_data!(
-        ([HIGH_Z, HIGH_Z], HIGH_Z) -> UNDEFINED,
-        ([HIGH_Z, HIGH_Z], UNDEFINED) -> UNDEFINED,
-        ([HIGH_Z, UNDEFINED], HIGH_Z) -> UNDEFINED,
-        ([HIGH_Z, UNDEFINED], UNDEFINED) -> UNDEFINED,
-        ([UNDEFINED, HIGH_Z], HIGH_Z) -> UNDEFINED,
-        ([UNDEFINED, HIGH_Z], UNDEFINED) -> UNDEFINED,
-        ([UNDEFINED, UNDEFINED], HIGH_Z) -> UNDEFINED,
-        ([UNDEFINED, UNDEFINED], UNDEFINED) -> UNDEFINED,
-
-        ([HIGH_Z, HIGH_Z], 0) -> UNDEFINED,
-        ([HIGH_Z, HIGH_Z], 1) -> UNDEFINED,
-
-        ([HIGH_Z, UNDEFINED], 0) -> UNDEFINED,
-        ([HIGH_Z, UNDEFINED], 1) -> UNDEFINED,
-
-        ([UNDEFINED, HIGH_Z], 0) -> UNDEFINED,
-        ([UNDEFINED, HIGH_Z], 1) -> UNDEFINED,
-
-        ([UNDEFINED, UNDEFINED], 0) -> UNDEFINED,
-        ([UNDEFINED, UNDEFINED], 1) -> UNDEFINED,
-
-        ([0x55, 0xAA], 0) -> 0x55,
-        ([0x55, 0xAA], 1) -> 0xAA,
-
-        ([1, 2, 3, 4], 0) -> 1,
-        ([1, 2, 3, 4], 1) -> 2,
-        ([1, 2, 3, 4], 2) -> 3,
-        ([1, 2, 3, 4], 3) -> 4,
-    );
-
-    for (i, test_data) in TEST_DATA.iter().enumerate() {
-        let mut builder = SimulatorBuilder::default();
-
-        let inputs: Vec<_> = test_data
-            .inputs
-            .iter()
-            .map(|drive| {
-                let wire = builder.add_wire(WIDTH_32).unwrap();
-                builder.set_wire_drive(wire, drive).unwrap();
-                wire
-            })
-            .collect();
-        let select = builder
-            .add_wire(NonZeroU8::new(inputs.len().ilog2() as u8).unwrap())
-            .unwrap();
-        builder.set_wire_drive(select, &test_data.select).unwrap();
-        let output = builder.add_wire(WIDTH_32).unwrap();
-        let _mux = builder.add_multiplexer(&inputs, select, output).unwrap();
-
-        let mut sim = builder.build();
-        match sim.run_sim(2) {
-            SimulationRunResult::Ok => {}
-            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-        }
-
-        let output_state = sim.get_wire_state(output).unwrap();
-
-        assert!(
-            output_state.eq(&test_data.output, WIDTH_32),
-            "[TEST {i}]  expected: {}  actual: {}",
-            test_data.output.display_string(WIDTH_32),
-            output_state.display_string(WIDTH_32),
         );
     }
 }
