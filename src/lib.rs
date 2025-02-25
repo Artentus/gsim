@@ -86,10 +86,7 @@ trait InlineCount {
 }
 
 impl<T> InlineCount for T {
-    const INLINE_COUNT: usize = const_max(
-        std::mem::size_of::<[usize; 2]>() / std::mem::size_of::<T>(),
-        1,
-    );
+    const INLINE_COUNT: usize = const_max(size_of::<[usize; 2]>() / size_of::<T>(), 1);
 }
 
 macro_rules! inline_vec {

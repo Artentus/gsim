@@ -5,10 +5,12 @@ use ops::*;
 
 use crate::logic::{OutputStateAllocator, OutputStateViewMut};
 use crate::*;
+use sync_unsafe_cell::SyncUnsafeCell;
+
+#[cfg(feature = "dot-export")]
 use smallvec::smallvec;
 #[cfg(feature = "dot-export")]
 use std::borrow::Cow;
-use sync_unsafe_cell::SyncUnsafeCell;
 
 def_id_type!(
     /// A unique identifier for a component inside a simulation
@@ -59,7 +61,7 @@ pub(crate) trait Component: Sized {
         &mut self,
         wire_states: WireStateView,
         output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId);
+    ) -> IdVec<WireId>;
 
     #[inline]
     fn reset(&mut self) {}
@@ -209,7 +211,7 @@ macro_rules! def_components {
                 id: ComponentId,
                 wire_states: WireStateView,
                 output_states: &OutputStateAllocator,
-            ) -> inline_vec!(WireId) {
+            ) -> IdVec<WireId> {
                 match id.kind() {
                     $(
                         <$component_name>::ID => {
@@ -710,7 +712,7 @@ macro_rules! horizontal_gate_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let [input, _] = wire_states
                 .get(self.input, self.bit_width)
                 .expect("invalid wire state ID");
@@ -721,8 +723,8 @@ macro_rules! horizontal_gate_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from_one(new_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -825,7 +827,7 @@ macro_rules! binary_gate_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
             let [input_a, _] = wire_states
@@ -841,8 +843,8 @@ macro_rules! binary_gate_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from(&tmp_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -854,7 +856,7 @@ macro_rules! carrying_binary_gate_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
             let [input_a, _] = wire_states
@@ -877,8 +879,8 @@ macro_rules! carrying_binary_gate_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from(&tmp_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -963,7 +965,7 @@ macro_rules! shifter_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
             let [input, _] = wire_states
@@ -979,8 +981,8 @@ macro_rules! shifter_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from(&tmp_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -1063,7 +1065,7 @@ macro_rules! cmp_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let [input_a, _] = wire_states
                 .get(self.input_a, self.bit_width)
                 .expect("invalid wire state ID");
@@ -1078,8 +1080,8 @@ macro_rules! cmp_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from_bit(new_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -1177,7 +1179,7 @@ macro_rules! wide_gate_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
             let mut input_iter = self.inputs.iter();
@@ -1200,8 +1202,8 @@ macro_rules! wide_gate_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from(&tmp_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -1213,7 +1215,7 @@ macro_rules! wide_gate_inv_update_impl {
             &mut self,
             wire_states: WireStateView,
             mut output_states: OutputStateViewMut,
-        ) -> inline_vec!(WireId) {
+        ) -> IdVec<WireId> {
             let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
             let mut input_iter = self.inputs.iter();
@@ -1238,8 +1240,8 @@ macro_rules! wide_gate_inv_update_impl {
                 .expect("invalid output state ID");
 
             match output.copy_from(&tmp_state) {
-                CopyFromResult::Unchanged => smallvec![],
-                CopyFromResult::Changed => smallvec![self.output_wire],
+                CopyFromResult::Unchanged => idvec![],
+                CopyFromResult::Changed => idvec![self.output_wire],
             }
         }
     };
@@ -1337,7 +1339,7 @@ impl Component for NotGate {
         &mut self,
         wire_states: WireStateView,
         mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
         let [input, _] = wire_states
@@ -1350,8 +1352,8 @@ impl Component for NotGate {
             .expect("invalid output state ID");
 
         match output.copy_from(&tmp_state) {
-            CopyFromResult::Unchanged => smallvec![],
-            CopyFromResult::Changed => smallvec![self.output_wire],
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
         }
     }
 }
@@ -1427,7 +1429,7 @@ impl Component for Buffer {
         &mut self,
         wire_states: WireStateView,
         mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         let mut tmp_state = InlineLogicState::logic_0(self.bit_width);
 
         let [input, _] = wire_states
@@ -1448,8 +1450,8 @@ impl Component for Buffer {
             .expect("invalid output state ID");
 
         match output.copy_from(&tmp_state) {
-            CopyFromResult::Unchanged => smallvec![],
-            CopyFromResult::Changed => smallvec![self.output_wire],
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
         }
     }
 }
@@ -1489,7 +1491,7 @@ impl Component for Slice {
         &mut self,
         wire_states: WireStateView,
         output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         todo!()
     }
 }
@@ -1511,7 +1513,7 @@ impl Component for Neg {
         &mut self,
         wire_states: WireStateView,
         mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
         let [input, _] = wire_states
@@ -1533,8 +1535,8 @@ impl Component for Neg {
             .expect("invalid output state ID");
 
         match output.copy_from(&tmp_state) {
-            CopyFromResult::Unchanged => smallvec![],
-            CopyFromResult::Changed => smallvec![self.output_wire],
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
         }
     }
 }
@@ -1546,7 +1548,7 @@ impl Component for Mul {
         &mut self,
         wire_states: WireStateView,
         mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
         let [input_a, _] = wire_states
@@ -1562,8 +1564,8 @@ impl Component for Mul {
             .expect("invalid output state ID");
 
         match output.copy_from(&tmp_state) {
-            CopyFromResult::Unchanged => smallvec![],
-            CopyFromResult::Changed => smallvec![self.output_wire],
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
         }
     }
 }
@@ -1754,7 +1756,7 @@ impl Component for ZeroExtend {
         &mut self,
         wire_states: WireStateView,
         output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         todo!()
     }
 }
@@ -1794,7 +1796,7 @@ impl Component for SignExtend {
         &mut self,
         wire_states: WireStateView,
         output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         todo!()
     }
 }
@@ -1885,7 +1887,7 @@ impl Component for Multiplexer {
         &mut self,
         wire_states: WireStateView,
         mut output_states: OutputStateViewMut,
-    ) -> inline_vec!(WireId) {
+    ) -> IdVec<WireId> {
         let mut tmp_state = InlineLogicState::undefined(self.bit_width);
 
         let [select, _] = wire_states
@@ -1909,8 +1911,8 @@ impl Component for Multiplexer {
         }
 
         match output.copy_from(&tmp_state) {
-            CopyFromResult::Unchanged => smallvec![],
-            CopyFromResult::Changed => smallvec![self.output_wire],
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
         }
     }
 }

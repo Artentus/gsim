@@ -69,6 +69,24 @@ impl<T: Id> HeapIdVec<T> {
     }
 }
 
+fn alloc<T: Id>(slice: &[T]) -> HeapIdVec<T> {
+    let mut vec = slice.to_vec();
+
+    let len = vec.len();
+    assert!(len <= (u32::MAX as usize), "capacity overflow");
+    let cap = vec.capacity();
+    assert!(cap <= (u32::MAX as usize), "capacity overflow");
+
+    let data = NonNull::new(vec.as_mut_ptr()).expect("`Vec::as_mut_ptr` returned null-pointer");
+    std::mem::forget(vec);
+
+    HeapIdVec {
+        len: len as u32,
+        cap: cap as u32,
+        data,
+    }
+}
+
 fn alloc_new<T: Id>(existing: &[T], new: T) -> HeapIdVec<T> {
     let mut vec = Vec::<T>::with_capacity(existing.len().saturating_mul(2));
     vec.extend_from_slice(existing);
@@ -99,7 +117,7 @@ pub(crate) union IdVec<T: Id> {
 
 impl<T: Id> IdVec<T> {
     #[inline]
-    pub(crate) fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             inline: ManuallyDrop::new(InlineIdVec {
                 len: 0,
@@ -109,10 +127,30 @@ impl<T: Id> IdVec<T> {
     }
 
     #[inline]
-    pub(crate) fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         unsafe {
             // SAFETY: len is always initialized because the filed exists at the same location in all variants
             self.len as usize
+        }
+    }
+
+    pub(crate) fn from_slice(slice: &[T]) -> Self {
+        if slice.len() <= INLINE_CAP {
+            let mut data = [const { MaybeUninit::uninit() }; INLINE_CAP];
+            for i in 0..slice.len() {
+                data[i].write(slice[i]);
+            }
+
+            Self {
+                inline: ManuallyDrop::new(InlineIdVec {
+                    len: slice.len() as u32,
+                    data,
+                }),
+            }
+        } else {
+            Self {
+                heap: ManuallyDrop::new(alloc(slice)),
+            }
         }
     }
 
@@ -212,8 +250,55 @@ impl<T: Id> std::ops::Deref for IdVec<T> {
     }
 }
 
+impl<'a, T: Id> From<&'a [T]> for IdVec<T> {
+    #[inline]
+    fn from(slice: &'a [T]) -> Self {
+        Self::from_slice(slice)
+    }
+}
+
+pub(crate) struct IdVecIter<T: Id> {
+    current_index: usize,
+    vec: IdVec<T>,
+}
+
+impl<T: Id> Iterator for IdVecIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let item = (self.current_index < self.vec.len()).then(|| self.vec[self.current_index]);
+        self.current_index += 1;
+        item
+    }
+}
+
+impl<T: Id> IntoIterator for IdVec<T> {
+    type Item = T;
+    type IntoIter = IdVecIter<T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        IdVecIter {
+            current_index: 0,
+            vec: self,
+        }
+    }
+}
+
 unsafe impl<T: Id> Send for IdVec<T> {}
 unsafe impl<T: Id> Sync for IdVec<T> {}
+
+/// `idvec![]`
+macro_rules! idvec {
+    () => {
+        $crate::id::IdVec::new()
+    };
+    ($($item:expr),+) => {
+        $crate::id::IdVec::from_slice(&[$($item),+])
+    }
+}
+
+pub(crate) use idvec;
 
 pub(crate) struct CapacityOverflowError;
 
@@ -231,7 +316,7 @@ macro_rules! def_id_list {
 
             #[inline]
             pub(crate) fn alloc_size(&self) -> crate::AllocationSize {
-                crate::AllocationSize(self.0.capacity() * std::mem::size_of::<$t>())
+                crate::AllocationSize(self.0.capacity() * size_of::<$t>())
             }
 
             #[inline]
