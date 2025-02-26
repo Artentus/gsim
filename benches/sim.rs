@@ -1,7 +1,7 @@
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use gsim::*;
 
-fn generate_sim(first: bool) -> Simulator {
+fn generate_sim() -> Simulator {
     use rand::distributions::Uniform;
     use rand::prelude::*;
 
@@ -71,43 +71,30 @@ fn generate_sim(first: bool) -> Simulator {
         wires.push(output);
     }
 
-    let sim = builder.build();
-
-    if first {
-        let stats = sim.stats();
-
-        println!();
-        println!();
-        println!("Wires: {} ({})", stats.wire_count, stats.wire_alloc_size);
-        println!("    State alloc: {}", stats.wire_state_alloc_size);
-        println!(
-            "Components: {} ({})",
-            stats.component_count, stats.component_alloc_size,
-        );
-        println!("    State alloc: {}", stats.output_state_alloc_size);
-        println!("Total memory: {}", stats.total_alloc_size());
-    }
-
-    sim
+    builder.build()
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let mut first = true;
+    let mut sim = generate_sim();
+
+    let stats = sim.stats();
+    println!();
+    println!();
+    println!("Wires: {} ({})", stats.wire_count, stats.wire_alloc_size);
+    println!("    State alloc: {}", stats.wire_state_alloc_size);
+    println!(
+        "Components: {} ({})",
+        stats.component_count, stats.component_alloc_size,
+    );
+    println!("    State alloc: {}", stats.output_state_alloc_size);
+    println!("Total memory: {}", stats.total_alloc_size());
 
     c.bench_function("sim", |b| {
-        b.iter_batched(
-            || {
-                let sim = generate_sim(first);
-                first = false;
-                sim
-            },
-            |mut sim| {
-                sim.reset();
-                let result = sim.run_sim(u64::MAX);
-                assert!(matches!(result, SimulationRunResult::Ok));
-            },
-            BatchSize::LargeInput,
-        )
+        b.iter(|| {
+            sim.reset();
+            let result = sim.run_sim(u64::MAX);
+            assert!(matches!(result, SimulationRunResult::Ok));
+        })
     });
 }
 
