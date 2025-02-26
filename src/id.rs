@@ -316,7 +316,7 @@ macro_rules! def_id_list {
 
             #[inline]
             pub(crate) fn alloc_size(&self) -> crate::AllocationSize {
-                crate::AllocationSize(self.0.capacity() * size_of::<$t>())
+                crate::AllocationSize(self.0.len() * size_of::<$t>())
             }
 
             #[inline]

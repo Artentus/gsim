@@ -167,6 +167,18 @@ macro_rules! def_components {
         }
 
         impl ComponentStorage {
+            pub(crate) fn count(&self) -> usize {
+                let mut count = 0;
+                $(count += self.$component_name.len();)+
+                count
+            }
+
+            pub(crate) fn alloc_size(&self) -> AllocationSize {
+                let mut alloc_size = 0;
+                $(alloc_size += self.$component_name.len() * size_of::<$component_name>();)+
+                AllocationSize(alloc_size)
+            }
+
             pub(crate) fn push<T: ComponentAuto>(&mut self, component: T) -> Option<ComponentId> {
                 let storage = T::extract_storage_mut(self);
 

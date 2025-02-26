@@ -55,11 +55,6 @@ impl Wire {
     }
 
     #[inline]
-    pub(crate) fn drivers(&self) -> &[OutputStateId] {
-        &self.drivers
-    }
-
-    #[inline]
     pub(crate) fn driving(&self) -> &[ComponentId] {
         &self.driving
     }
@@ -164,7 +159,7 @@ def_id_list!(WireList<WireId, Wire>);
 
 impl WireList {
     #[inline]
-    pub(crate) fn wire_count(&self) -> usize {
+    pub(crate) fn count(&self) -> usize {
         self.0.len()
     }
 }

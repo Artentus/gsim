@@ -201,25 +201,25 @@ pub struct SimulationStats {
     pub wire_count: usize,
     /// The size of the allocation storing wires
     pub wire_alloc_size: AllocationSize,
-    /// The size of the allocation storing wire widths
-    pub wire_width_alloc_size: AllocationSize,
-    /// The size of the allocation storing wire drives
-    pub wire_drive_alloc_size: AllocationSize,
     /// The size of the allocation storing wire states
     pub wire_state_alloc_size: AllocationSize,
 
-    /// The number of components stored inline in the simulation
-    pub small_component_count: usize,
-    /// The number of components stored out-of-line in the simulation
-    pub large_component_count: usize,
+    /// The number of components in the simulation
+    pub component_count: usize,
     /// The size of the allocation storing components
     pub component_alloc_size: AllocationSize,
-    /// The size of out-of-line components
-    pub large_component_alloc_size: AllocationSize,
-    /// The size of the allocation storing output widths
-    pub output_width_alloc_size: AllocationSize,
     /// The size of the allocation storing output states
     pub output_state_alloc_size: AllocationSize,
+}
+
+impl SimulationStats {
+    /// The total allocation size of the simulation
+    pub fn total_alloc_size(&self) -> AllocationSize {
+        self.wire_alloc_size
+            + self.wire_state_alloc_size
+            + self.component_alloc_size
+            + self.output_state_alloc_size
+    }
 }
 
 /// Contains data of all errors that occurred in a simulation
@@ -576,22 +576,14 @@ impl SimulatorData {
     }
 
     fn stats(&self) -> SimulationStats {
-        todo!()
-        //    let (small_component_count, large_component_count) = self.components.component_counts();
-
-        //    SimulationStats {
-        //        wire_count: self.wires.wire_count(),
-        //        wire_alloc_size: self.wires.alloc_size(),
-        //        wire_width_alloc_size: self.wire_states.width_alloc_size(),
-        //        wire_drive_alloc_size: self.wire_states.drive_alloc_size(),
-        //        wire_state_alloc_size: self.wire_states.state_alloc_size(),
-        //        small_component_count,
-        //        large_component_count,
-        //        component_alloc_size: self.components.alloc_size(),
-        //        large_component_alloc_size: self.components.large_alloc_size(),
-        //        output_width_alloc_size: self.output_states.width_alloc_size(),
-        //        output_state_alloc_size: self.output_states.state_alloc_size(),
-        //    }
+        SimulationStats {
+            wire_count: self.wires.count(),
+            wire_alloc_size: self.wires.alloc_size(),
+            wire_state_alloc_size: self.wire_states.alloc_size(),
+            component_count: self.components.count(),
+            component_alloc_size: self.components.alloc_size(),
+            output_state_alloc_size: self.output_states.alloc_size(),
+        }
     }
 
     #[cfg(feature = "dot-export")]

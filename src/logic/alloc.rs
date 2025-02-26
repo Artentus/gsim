@@ -1,4 +1,5 @@
 use super::{BitWidth, LogicStateMut, LogicStateRef};
+use crate::AllocationSize;
 use crate::id::{Id, def_id_type};
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -296,6 +297,10 @@ impl<T: Id, const N: usize> LogicStateAllocator<T, N> {
             bit_planes: [const { BitPlanes::new() }; N],
             _t: PhantomData,
         }
+    }
+
+    pub(crate) fn alloc_size(&self) -> AllocationSize {
+        AllocationSize((self.word_len as usize) * size_of::<u32>() * 2 * N)
     }
 
     #[inline]

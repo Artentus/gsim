@@ -73,36 +73,20 @@ fn generate_sim(first: bool) -> Simulator {
 
     let sim = builder.build();
 
-    //if first {
-    //    let stats = sim.stats();
+    if first {
+        let stats = sim.stats();
 
-    //    println!();
-    //    println!();
-    //    println!("Wires: {} ({})", stats.wire_count, stats.wire_alloc_size);
-    //    println!("    Width alloc: {}", stats.wire_width_alloc_size);
-    //    println!("    Drive alloc: {}", stats.wire_drive_alloc_size);
-    //    println!("    State alloc: {}", stats.wire_state_alloc_size);
-    //    println!(
-    //        "Components: {} + {} ({} + {})",
-    //        stats.small_component_count,
-    //        stats.large_component_count,
-    //        stats.component_alloc_size,
-    //        stats.large_component_alloc_size
-    //    );
-    //    println!("    Width alloc: {}", stats.output_width_alloc_size);
-    //    println!("    State alloc: {}", stats.output_state_alloc_size);
-    //    println!(
-    //        "Total memory: {}",
-    //        stats.wire_alloc_size
-    //            + stats.wire_width_alloc_size
-    //            + stats.wire_drive_alloc_size
-    //            + stats.wire_state_alloc_size
-    //            + stats.component_alloc_size
-    //            + stats.large_component_alloc_size
-    //            + stats.output_width_alloc_size
-    //            + stats.output_state_alloc_size
-    //    );
-    //}
+        println!();
+        println!();
+        println!("Wires: {} ({})", stats.wire_count, stats.wire_alloc_size);
+        println!("    State alloc: {}", stats.wire_state_alloc_size);
+        println!(
+            "Components: {} ({})",
+            stats.component_count, stats.component_alloc_size,
+        );
+        println!("    State alloc: {}", stats.output_state_alloc_size);
+        println!("Total memory: {}", stats.total_alloc_size());
+    }
 
     sim
 }
