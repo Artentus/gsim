@@ -318,8 +318,6 @@ pub enum AddComponentError {
     WireWidthIncompatible,
     /// A specified offset was outside the range of its corresponding wire's width
     OffsetOutOfRange,
-    /// Too few inputs were specified
-    TooFewInputs,
     /// The number of inputs was not valid for the component
     InvalidInputCount,
 }
@@ -354,7 +352,6 @@ impl fmt::Display for AddComponentError {
             AddComponentError::OffsetOutOfRange => {
                 "a specified offset was outside the range of its corresponding wire's width"
             }
-            AddComponentError::TooFewInputs => "too few inputs were specified",
             AddComponentError::InvalidInputCount => {
                 "the number of inputs was not valid for the component"
             }
@@ -1549,6 +1546,15 @@ impl SimulatorBuilder {
         })
     }
 
+    /// Adds a `Priority Decoder` component to the simulation
+    pub fn add_priority_decoder(
+        &mut self,
+        inputs: &[WireId],
+        output: WireId,
+    ) -> AddComponentResult {
+        self.add_component::<PriorityDecoder>(WideGateArgs { inputs, output })
+    }
+
     /*
     /// Adds a `Slice` component to the simulation
     pub fn add_slice(&mut self, input: WireId, offset: u8, output: WireId) -> AddComponentResult {
@@ -1685,48 +1691,6 @@ impl SimulatorBuilder {
         self.mark_driving(carry_in, id)?;
         self.mark_driver(output, output_state)?;
         self.mark_driver(carry_out, cout_state)?;
-
-        Ok(id)
-    }
-
-    /// Adds a `Priority Decoder` component to the simulation
-    pub fn add_priority_decoder(
-        &mut self,
-        inputs: &[WireId],
-        output: WireId,
-    ) -> AddComponentResult {
-        if inputs.is_empty() {
-            return Err(AddComponentError::TooFewInputs);
-        }
-
-        for &input in inputs {
-            self.check_wire_width_eq(input, NonZeroU8::MIN)?;
-        }
-
-        let output_width = self.get_wire_width(output)?;
-        let expected_width = (inputs.len() + 1).clog2();
-        if (output_width.get() as u32) != expected_width {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let output_state = self
-            .data
-            .output_states
-            .push(output_width)
-            .ok_or(AddComponentError::TooManyComponents)?;
-
-        let wires: SmallVec<_> = inputs
-            .iter()
-            .map(|&input| self.data.wires.get(input).map(|wire| wire.state))
-            .collect::<Option<_>>()
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let decoder = PriorityDecoder::new(wires, output_state, output);
-        let id = self.add_large_component(decoder, &[output_state])?;
-
-        for &input in inputs {
-            self.mark_driving(input, id)?;
-        }
-        self.mark_driver(output, output_state)?;
 
         Ok(id)
     }

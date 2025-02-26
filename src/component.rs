@@ -557,6 +557,13 @@ def_components! {
         output_state: OutputStateId,
         output_wire: WireId,
     }
+
+    struct PriorityDecoder {
+        output_width: BitWidth,
+        inputs: IdVec<WireStateId>,
+        output_state: OutputStateId,
+        output_wire: WireId,
+    }
 }
 
 impl ComponentArgs for () {
@@ -1911,6 +1918,119 @@ impl Component for Multiplexer {
         }
 
         match output.copy_from(&tmp_state) {
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
+        }
+    }
+}
+
+impl Component for PriorityDecoder {
+    type Args<'a> = WideGateArgs<'a>;
+
+    fn new(
+        args: Self::Args<'_>,
+        wires: &mut WireList,
+        output_states: &mut OutputStateAllocator,
+    ) -> Result<Self, AddComponentError> {
+        let output_wire = wires
+            .get(args.output)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let output_width = output_wire.bit_width();
+        if output_width.get() > u32::BITS {
+            return Err(AddComponentError::WireWidthIncompatible);
+        }
+
+        if args.inputs.is_empty() {
+            return Err(AddComponentError::InvalidInputCount);
+        }
+
+        let expected_input_count = 1u64 << output_width.get();
+        if ((args.inputs.len() as u64) + 1) > expected_input_count {
+            return Err(AddComponentError::InvalidInputCount);
+        }
+
+        let mut inputs = IdVec::new();
+        for &input in args.inputs {
+            let input_wire = wires.get(input).ok_or(AddComponentError::InvalidWireId)?;
+
+            if input_wire.bit_width() != BitWidth::MIN {
+                return Err(AddComponentError::WireWidthMismatch);
+            }
+
+            inputs.push(input_wire.state_id());
+        }
+
+        let output_wire = wires
+            .get_mut(args.output)
+            .ok_or(AddComponentError::InvalidWireId)?;
+
+        let output_state = output_states.alloc(output_wire.bit_width())?;
+        output_wire.add_driver(output_state);
+
+        Ok(Self {
+            output_width,
+            inputs,
+            output_state,
+            output_wire: args.output,
+        })
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn node_name(&self) -> Cow<'static, str> {
+        "MUX".into()
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+        smallvec![(self.output_wire, "Out".into())]
+    }
+
+    #[cfg(feature = "dot-export")]
+    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+        self.inputs
+            .iter()
+            .enumerate()
+            .map(|(i, input)| (input, format!("In{i}").into()))
+            .collect()
+    }
+
+    #[inline]
+    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+        (self.output_state, self.output_state, self.output_width)
+    }
+
+    fn update(
+        &mut self,
+        wire_states: WireStateView,
+        mut output_states: OutputStateViewMut,
+    ) -> IdVec<WireId> {
+        let mut new_state = [u32::MIN, u32::MIN];
+
+        for (i, input) in self.inputs.iter().enumerate() {
+            let [input, _] = wire_states
+                .get(input, BitWidth::MIN)
+                .expect("invalid wire state ID");
+            let input = input.bits().nth(0).unwrap();
+
+            match input {
+                LogicBitState::Logic0 => continue,
+                LogicBitState::Logic1 => {
+                    new_state = [(i as u32) + 1, u32::MIN];
+                    break;
+                }
+                LogicBitState::HighZ | LogicBitState::Undefined => {
+                    new_state = [u32::MAX, u32::MAX];
+                    break;
+                }
+            }
+        }
+
+        let [mut output] = output_states
+            .get_mut(self.output_state, self.output_width)
+            .expect("invalid output state ID");
+
+        match output.copy_from_one(new_state) {
             CopyFromResult::Unchanged => idvec![],
             CopyFromResult::Changed => idvec![self.output_wire],
         }
