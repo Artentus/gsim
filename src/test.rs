@@ -9,7 +9,7 @@ macro_rules! logic_state {
     ($width:expr; $state:ident) => {
         LogicState::$state($width)
     };
-    ({% $($bit:tt),*}) => {
+    ($width:expr; {% $($bit:tt),*}) => {
         $crate::bits!($($bit),*)
     };
     ($width:expr; {$value:expr}) => {
@@ -261,6 +261,21 @@ macro_rules! horizontal_gate_test_data {
 }
 
 use horizontal_gate_test_data;
+
+macro_rules! extend_test_data {
+    ($input_width:expr; $output_width:expr; $($i:tt -> $o:tt),* $(,)?) => {
+        &[
+            $(
+                UnaryGateTestData {
+                    input: logic_state!($input_width; $i),
+                    output: logic_state!($output_width; $o),
+                },
+            )*
+        ]
+    };
+}
+
+use extend_test_data;
 
 struct WideGateTestData<'a> {
     inputs: &'a [LogicState],

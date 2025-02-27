@@ -548,14 +548,16 @@ def_components! {
     }
 
     struct ZeroExtend {
-        bit_width: BitWidth,
+        input_width: BitWidth,
+        output_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
     }
 
     struct SignExtend {
-        bit_width: BitWidth,
+        input_width: BitWidth,
+        output_width: BitWidth,
         input: WireStateId,
         output_state: OutputStateId,
         output_wire: WireId,
@@ -745,6 +747,68 @@ macro_rules! horizontal_gate_update_impl {
                 CopyFromResult::Unchanged => idvec![],
                 CopyFromResult::Changed => idvec![self.output_wire],
             }
+        }
+    };
+}
+
+macro_rules! extend_impl {
+    ($name:literal) => {
+        type Args<'a> = UnaryGateArgs;
+
+        fn new(
+            args: Self::Args<'_>,
+            wires: &mut WireList,
+            output_states: &mut OutputStateAllocator,
+        ) -> Result<Self, AddComponentError> {
+            let output_wire = wires
+                .get(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+            let input_wire = wires
+                .get(args.input)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            let input_width = input_wire.bit_width();
+            let output_width = output_wire.bit_width();
+            if output_width <= input_width {
+                return Err(AddComponentError::WireWidthIncompatible);
+            }
+
+            let input = input_wire.state_id();
+
+            let output_wire = wires
+                .get_mut(args.output)
+                .ok_or(AddComponentError::InvalidWireId)?;
+
+            let output_state = output_states.alloc(output_width)?;
+            output_wire.add_driver(output_state);
+
+            Ok(Self {
+                input_width,
+                output_width,
+                input,
+                output_state,
+                output_wire: args.output,
+            })
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn node_name(&self) -> Cow<'static, str> {
+            $name.into()
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
+            smallvec![(self.output_wire, "Out".into())]
+        }
+
+        #[cfg(feature = "dot-export")]
+        fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
+            smallvec![(self.input, format!("In").into())]
+        }
+
+        #[inline]
+        fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
+            (self.output_state, self.output_state, self.output_width)
         }
     };
 }
@@ -1741,82 +1805,79 @@ impl Component for CompareGreaterThanOrEqualSigned {
 }
 
 impl Component for ZeroExtend {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
+    extend_impl!("ZEXT");
 
     fn update(
         &mut self,
         wire_states: WireStateView,
-        output_states: OutputStateViewMut,
+        mut output_states: OutputStateViewMut,
     ) -> IdVec<WireId> {
-        todo!()
+        let mut tmp_state = InlineLogicState::logic_0(self.output_width);
+
+        let [input, _] = wire_states
+            .get(self.input, self.input_width)
+            .expect("invalid wire state ID");
+
+        let (output_plane_0, output_plane_1) = tmp_state.bit_planes_mut();
+        let (input_plane_0, input_plane_1) = input.bit_planes();
+        output_plane_0[..input_plane_0.len()].copy_from_slice(input_plane_0);
+        output_plane_1[..input_plane_1.len()].copy_from_slice(input_plane_1);
+
+        let mask = self.input_width.last_word_mask();
+        output_plane_0[input_plane_0.len() - 1] &= mask;
+        output_plane_1[input_plane_1.len() - 1] &= mask;
+
+        let [mut output] = output_states
+            .get_mut(self.output_state, self.output_width)
+            .expect("invalid output state ID");
+
+        match output.copy_from(&tmp_state) {
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
+        }
     }
 }
 
 impl Component for SignExtend {
-    type Args<'a> = ();
-
-    fn new(
-        args: Self::Args<'_>,
-        wires: &mut WireList,
-        output_states: &mut OutputStateAllocator,
-    ) -> Result<Self, AddComponentError> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn node_name(&self) -> Cow<'static, str> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn output_wires(&self) -> SmallVec<[(WireId, Cow<'static, str>); 1]> {
-        todo!()
-    }
-
-    #[cfg(feature = "dot-export")]
-    fn input_wires(&self) -> SmallVec<[(WireStateId, Cow<'static, str>); 2]> {
-        todo!()
-    }
-
-    #[inline]
-    fn output_range(&self) -> (OutputStateId, OutputStateId, BitWidth) {
-        (self.output_state, self.output_state, self.bit_width)
-    }
+    extend_impl!("SEXT");
 
     fn update(
         &mut self,
         wire_states: WireStateView,
-        output_states: OutputStateViewMut,
+        mut output_states: OutputStateViewMut,
     ) -> IdVec<WireId> {
-        todo!()
+        let mut tmp_state = InlineLogicState::logic_0(self.output_width);
+
+        let [input, _] = wire_states
+            .get(self.input, self.input_width)
+            .expect("invalid wire state ID");
+
+        let (output_plane_0, output_plane_1) = tmp_state.bit_planes_mut();
+        let (input_plane_0, input_plane_1) = input.bit_planes();
+        output_plane_0[..input_plane_0.len()].copy_from_slice(input_plane_0);
+        output_plane_1[..input_plane_1.len()].copy_from_slice(input_plane_1);
+
+        let last_word_width = self.input_width.last_word_width().get();
+        let last_0 = output_plane_0[input_plane_0.len() - 1];
+        let last_1 = output_plane_1[input_plane_1.len() - 1];
+
+        let shift = u32::BITS - last_word_width;
+        output_plane_0[input_plane_0.len() - 1] = (((last_0 << shift) as i32) >> shift) as u32;
+        output_plane_1[input_plane_1.len() - 1] = (((last_1 << shift) as i32) >> shift) as u32;
+
+        let ext_0 = (((last_0 << shift) as i32) >> (u32::BITS - 1)) as u32;
+        let ext_1 = (((last_1 << shift) as i32) >> (u32::BITS - 1)) as u32;
+        output_plane_0[input_plane_0.len()..].fill(ext_0);
+        output_plane_1[input_plane_1.len()..].fill(ext_1);
+
+        let [mut output] = output_states
+            .get_mut(self.output_state, self.output_width)
+            .expect("invalid output state ID");
+
+        match output.copy_from(&tmp_state) {
+            CopyFromResult::Unchanged => idvec![],
+            CopyFromResult::Changed => idvec![self.output_wire],
+        }
     }
 }
 

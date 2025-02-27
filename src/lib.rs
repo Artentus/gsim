@@ -1524,6 +1524,16 @@ impl SimulatorBuilder {
         })
     }
 
+    /// Adds a `zero extension` component to the simulation
+    pub fn add_zero_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+        self.add_component::<ZeroExtend>(UnaryGateArgs { input, output })
+    }
+
+    /// Adds a `sign extension` component to the simulation
+    pub fn add_sign_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
+        self.add_component::<SignExtend>(UnaryGateArgs { input, output })
+    }
+
     /// Adds a `Multiplexer` component to the simulation
     pub fn add_multiplexer(
         &mut self,
@@ -1736,66 +1746,6 @@ impl SimulatorBuilder {
         self.mark_driving(enable, id)?;
         self.mark_driving(clock, id)?;
         self.mark_driver(data_out, output_state)?;
-
-        Ok(id)
-    }
-
-    /// Adds a `zero extension` component to the simulation
-    pub fn add_zero_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-        let input_width = self.get_wire_width(input)?;
-        let output_width = self.get_wire_width(output)?;
-
-        if output_width < input_width {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let output_state = self
-            .data
-            .output_states
-            .push(output_width)
-            .ok_or(AddComponentError::TooManyComponents)?;
-
-        let wire = self
-            .data
-            .wires
-            .get(input)
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let extend =
-            SmallComponent::new(SmallComponentKind::ZeroExtend { input: wire.state }, output);
-        let id = self.add_small_component(extend, &[output_state])?;
-
-        self.mark_driving(input, id)?;
-        self.mark_driver(output, output_state)?;
-
-        Ok(id)
-    }
-
-    /// Adds a `sign extension` component to the simulation
-    pub fn add_sign_extend(&mut self, input: WireId, output: WireId) -> AddComponentResult {
-        let input_width = self.get_wire_width(input)?;
-        let output_width = self.get_wire_width(output)?;
-
-        if output_width < input_width {
-            return Err(AddComponentError::WireWidthIncompatible);
-        }
-
-        let output_state = self
-            .data
-            .output_states
-            .push(output_width)
-            .ok_or(AddComponentError::TooManyComponents)?;
-
-        let wire = self
-            .data
-            .wires
-            .get(input)
-            .ok_or(AddComponentError::InvalidWireId)?;
-        let extend =
-            SmallComponent::new(SmallComponentKind::SignExtend { input: wire.state }, output);
-        let id = self.add_small_component(extend, &[output_state])?;
-
-        self.mark_driving(input, id)?;
-        self.mark_driver(output, output_state)?;
 
         Ok(id)
     }

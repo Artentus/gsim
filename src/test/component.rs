@@ -1449,6 +1449,80 @@ fn compare_greater_than_or_equal_signed() {
 }
 
 #[test]
+fn zero_extend() {
+    let test_data = extend_test_data!(WIDTH_1; WIDTH_2;
+        high_z -> {% 0, Z },
+        undefined -> {% 0, X },
+        0 -> {% 0, 0 },
+        1 -> {% 0, 1 },
+    );
+
+    let mut builder = SimulatorBuilder::default();
+
+    let input = builder.add_wire(WIDTH_1).unwrap();
+    let output = builder.add_wire(WIDTH_2).unwrap();
+    let _extend = builder.add_zero_extend(input, output).unwrap();
+
+    let mut sim = builder.build();
+
+    for (i, test_data) in test_data.iter().enumerate() {
+        sim.set_wire_drive(input, &test_data.input).unwrap();
+
+        match sim.run_sim(2) {
+            SimulationRunResult::Ok => {}
+            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+        }
+
+        let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+        assert_eq!(
+            output_state, test_data.output,
+            "[TEST {i}]  expected: {}  actual: {}",
+            test_data.output, output_state,
+        );
+    }
+}
+
+#[test]
+fn sign_extend() {
+    for width in [WIDTH_2, WIDTH_32, WIDTH_33, WIDTH_64] {
+        let test_data = extend_test_data!(WIDTH_1; width;
+            high_z -> high_z,
+            undefined -> undefined,
+            logic_0 -> logic_0,
+            logic_1 -> logic_1,
+        );
+
+        let mut builder = SimulatorBuilder::default();
+
+        let input = builder.add_wire(WIDTH_1).unwrap();
+        let output = builder.add_wire(width).unwrap();
+        let _extend = builder.add_sign_extend(input, output).unwrap();
+
+        let mut sim = builder.build();
+
+        for (i, test_data) in test_data.iter().enumerate() {
+            sim.set_wire_drive(input, &test_data.input).unwrap();
+
+            match sim.run_sim(2) {
+                SimulationRunResult::Ok => {}
+                SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
+                SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
+            }
+
+            let [output_state, _] = sim.get_wire_state_and_drive(output).unwrap();
+
+            assert_eq!(
+                output_state, test_data.output,
+                "[TEST {i}]  expected: {}  actual: {}",
+                test_data.output, output_state,
+            );
+        }
+    }
+}
+
+#[test]
 fn multiplexer() {
     struct TestData<'a> {
         inputs: &'a [LogicState],
@@ -2167,80 +2241,6 @@ fn register() {
         assert!(
             register_data.read().eq(&output_state, WIDTH_32),
             "[TEST {i}] register data differs from output",
-        );
-    }
-}
-
-#[test]
-fn zero_extend() {
-    let test_data: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> {% 0, Z },
-        UNDEFINED -> {% 0, X },
-        0 -> {% 0, 0 },
-        1 -> {% 0, 1 },
-    );
-
-    let mut builder = SimulatorBuilder::default();
-
-    let input = builder.add_wire(WIDTH_1).unwrap();
-    let output = builder.add_wire(WIDTH_2).unwrap();
-    let _extend = builder.add_zero_extend(input, output).unwrap();
-
-    let mut sim = builder.build();
-
-    for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input, &test_data.input).unwrap();
-
-        match sim.run_sim(2) {
-            SimulationRunResult::Ok => {}
-            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-        }
-
-        let output_state = sim.get_wire_state(output).unwrap();
-
-        assert!(
-            output_state.eq(&test_data.output, WIDTH_2),
-            "[TEST {i}]  expected: {}  actual: {}",
-            test_data.output.display_string(WIDTH_2),
-            output_state.display_string(WIDTH_2),
-        );
-    }
-}
-
-#[test]
-fn sign_extend() {
-    let test_data: &[UnaryGateTestData] = unary_gate_test_data!(
-        HIGH_Z -> {% Z, Z },
-        UNDEFINED -> {% X, X },
-        0 -> {% 0, 0 },
-        1 -> {% 1, 1 },
-    );
-
-    let mut builder = SimulatorBuilder::default();
-
-    let input = builder.add_wire(WIDTH_1).unwrap();
-    let output = builder.add_wire(WIDTH_2).unwrap();
-    let _extend = builder.add_sign_extend(input, output).unwrap();
-
-    let mut sim = builder.build();
-
-    for (i, test_data) in test_data.iter().enumerate() {
-        sim.set_wire_drive(input, &test_data.input).unwrap();
-
-        match sim.run_sim(2) {
-            SimulationRunResult::Ok => {}
-            SimulationRunResult::MaxStepsReached => panic!("[TEST {i}] exceeded max steps"),
-            SimulationRunResult::Err(err) => panic!("[TEST {i}] {err:?}"),
-        }
-
-        let output_state = sim.get_wire_state(output).unwrap();
-
-        assert!(
-            output_state.eq(&test_data.output, WIDTH_2),
-            "[TEST {i}]  expected: {}  actual: {}",
-            test_data.output.display_string(WIDTH_2),
-            output_state.display_string(WIDTH_2),
         );
     }
 }
